@@ -1,0 +1,8 @@
+# Project Files
+.idea/
+
+# CMake
+cmake-build-*/
+
+# Clang-Format
+.clang-format
