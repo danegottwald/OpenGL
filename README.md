@@ -10,3 +10,5 @@ Since this is mostly a learning experience for me, I will share the resources I 
 I am currently using the following libraries:
 * [GLFW](https://www.glfw.org/) : OpenGL Utility Library
 * [GLEW](http://glew.sourceforge.net/) : OpenGL Extension Library
+* [GLM](https://github.com/g-truc/glm) : OpenGL Math Library
+* [STB](https://github.com/nothings/stb/blob/master/stb_image.h) : Image Loader
