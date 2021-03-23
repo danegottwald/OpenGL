@@ -1,6 +1,5 @@
 
 #include "VertexArray.h"
-#include <iostream>
 
 VertexArray::VertexArray() {
     // Generate a Vertex Array object and store its ID
