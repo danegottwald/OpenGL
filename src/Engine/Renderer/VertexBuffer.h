@@ -1,7 +1,7 @@
 
 #pragma once
 
-#include "Renderer.h"
+#include <GL/glew.h>
 
 #include <array>
 
@@ -26,7 +26,7 @@ public:
 
 };
 
-// Templated Constructor for std::array
+// Constructor template for std::array
 template<typename T, size_t N>
 VertexBuffer::VertexBuffer(const std::array<T, N> &vb) {
     // Generates 1 buffer object name (ID) into m_RendererID
