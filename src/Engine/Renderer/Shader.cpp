@@ -8,33 +8,35 @@
 #include <string>
 #include <sstream>
 
-Shader::Shader(const std::string &filepath) : m_Filepath(filepath), m_RendererID(0) {
+// Create a attach the Shaders within the specified file
+Shader::Shader(const std::string &filepath) : m_Filepath(filepath) {
     // Parse the Shader file into separate vertex and fragment shaders
-    ShaderProgramSource source = ParseShader(filepath);
+    m_Source = ParseShader(filepath);
     // Returns an ID to reference the current Shader program
-    m_RendererID = CreateShader(source.VertexSource, source.FragmentSource);
+    m_RendererID = CreateShader(m_Source.VertexSource, m_Source.FragmentSource);
 }
 
+// Frees memory and restores the name taken by m_RendererID
 Shader::~Shader() {
-    // Frees memory and restores the name taken by m_RendererID
     glDeleteProgram(m_RendererID);
 }
 
+// Sets the Shader program as part of the current rendering state
 void Shader::Bind() const {
-    // Sets the Shader program as part of the current rendering state
     glUseProgram(m_RendererID);
 }
 
+// Removes the Shader program from part of the rendering state
 void Shader::Unbind() const {
-    // Removes the Shader program from part of the rendering state
     glUseProgram(0);
 }
 
+// Specifies the value of a uniform variable in the current Shader program
 void Shader::SetUniform4f(const std::string &name, float v0, float v1, float v2, float v3) {
-    // Specifies the value of a uniform variable in the current Shader program
     glUniform4f(GetUniformLocation(name), v0, v1, v2, v3);
 }
 
+// Returns the location of a uniform value within the Shader
 unsigned int Shader::GetUniformLocation(const std::string &name) {
     // Search the cache to check if the uniform variable has been hit before
     if (m_UniformLocationCache.find(name) != m_UniformLocationCache.end()) {
@@ -52,12 +54,14 @@ unsigned int Shader::GetUniformLocation(const std::string &name) {
 
 // Parses the specified file into separate Shader source code
 // Returns a struct that contains the source codes
-ShaderProgramSource Shader::ParseShader(const std::string &filepath) {
+Shader::ShaderProgramSource Shader::ParseShader(const std::string &filepath) {
     // Opens the file at 'filepath'
     std::ifstream stream(filepath);
 
     enum class ShaderType {
-        NONE = -1, VERTEX = 0, FRAGMENT = 1
+        NONE = -1,
+        VERTEX = 0,
+        FRAGMENT = 1
     };
 
     std::string line;
@@ -74,11 +78,14 @@ ShaderProgramSource Shader::ParseShader(const std::string &filepath) {
                 type = ShaderType::FRAGMENT;
             }
         }
-        else {
+        else if (type != ShaderType::NONE) {
             ss[(int) type] << line << '\n';
         }
     }
-    return {ss[0].str(), ss[1].str()};
+    return {
+            ss[0].str(),
+            ss[1].str()
+    };
 }
 
 // Creates a Shader program, attaches a vertex and fragment shader, then links

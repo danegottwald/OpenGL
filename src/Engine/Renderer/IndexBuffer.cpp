@@ -1,6 +1,7 @@
 
 #include "IndexBuffer.h"
 
+// Generate an Index Buffer, bind it, and fill it with the specified data
 IndexBuffer::IndexBuffer(const unsigned int *data, unsigned int count) : m_Count(count) {
     // Generates 1 buffer object name (ID) into m_RendererID
     glGenBuffers(1, &m_RendererID);
@@ -10,17 +11,18 @@ IndexBuffer::IndexBuffer(const unsigned int *data, unsigned int count) : m_Count
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(unsigned int), data, GL_STATIC_DRAW);
 }
 
+// Deletes the Index Buffer referenced by its ID
 IndexBuffer::~IndexBuffer() {
-    // Deletes the Index Buffer referenced by its ID
     glDeleteBuffers(1, &m_RendererID);
 }
 
+// Manually bind the Index Buffer (ID/m_RendererID) to the OpenGL state
 void IndexBuffer::Bind() const {
-    // Manually bind the Index Buffer (ID/m_RendererID) to the OpenGL state
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
 }
 
+// Unbinds the most recently bound Index Buffer
 void IndexBuffer::Unbind() const {
-    // Unbinds the most recently bound Index Buffer
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
+
