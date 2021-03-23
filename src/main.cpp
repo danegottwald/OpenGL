@@ -71,18 +71,18 @@ int main(int argc, char **argv) {
     glDebugMessageCallback(ErrorCallback, nullptr);
 
     // Vertex Positions
-    float positions[] = {
+    std::array<float, 15> positions = {
             -0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
             0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
             0.f, 0.5f, 0.0f, 0.0f, 1.0f,
     };
 
-    unsigned int indices[] = {
+    std::array<unsigned int, 3> indices = {
             0, 1, 2,
     };
 
     // Vertex Buffer
-    VertexBuffer vb(positions, sizeof(positions));
+    VertexBuffer vb(positions);
 
     // Vertex Array
     VertexArray va;
@@ -92,7 +92,7 @@ int main(int argc, char **argv) {
     va.AddBuffer(vb, layout);
 
     // Index Buffer
-    IndexBuffer ib(indices, sizeof(indices) / sizeof(unsigned int));
+    IndexBuffer ib(indices);
 
     // Shader
     Shader shader("res/shaders/Basic.glsl");
