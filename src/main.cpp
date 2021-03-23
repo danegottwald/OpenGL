@@ -71,14 +71,16 @@ int main(int argc, char **argv) {
     glDebugMessageCallback(ErrorCallback, nullptr);
 
     // Vertex Positions
-    std::array<float, 15> positions = {
+    std::array<float, 20> positions = {
             -0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
             0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-            0.f, 0.5f, 0.0f, 0.0f, 1.0f,
+            0.5f, 0.5f, 0.0f, 0.0f, 1.0f,
+            -0.5f, 0.5f, 0.0f, 0.0f, 1.0f,
     };
 
-    std::array<unsigned int, 3> indices = {
+    std::array<unsigned int, 6> indices = {
             0, 1, 2,
+            2, 3, 0
     };
 
     // Vertex Buffer
@@ -87,8 +89,8 @@ int main(int argc, char **argv) {
     // Vertex Array
     VertexArray va;
     VertexBufferLayout layout;
-    layout.Push<float>(2);
-    layout.Push<float>(3);
+    layout.Push<float>(2); // location = 0
+    layout.Push<float>(3); // location = 1
     va.AddBuffer(vb, layout);
 
     // Index Buffer
@@ -97,27 +99,22 @@ int main(int argc, char **argv) {
     // Shader
     Shader shader("res/shaders/Basic.glsl");
 
+    Renderer renderer;
+
     // Set time and Frames for Getting Frametime
     double lastTime = glfwGetTime();
     int nbFrames = 0;
 
     // Loop until the user closes the window
     while (!glfwWindowShouldClose(window)) {
-        // Render here
-        glClear(GL_COLOR_BUFFER_BIT);
+        renderer.Clear();
 
         // Binds the Shader
         shader.Bind();
         // Set uniform4f value in Shader
         //shader.SetUniform4f("u_Color", red, blue, green, 1.0f);
 
-        // Bind the Vertex Array (this binds the vertex buffer too)
-        va.Bind();
-        // Bind the Index Buffer
-        ib.Bind();
-
-        // For Index Buffer
-        glDrawElements(GL_TRIANGLES, ib.GetCount(), GL_UNSIGNED_INT, nullptr);
+        renderer.Draw(va, ib, shader);
 
         // Print Frametime
         //FrameTime(lastTime, nbFrames);
