@@ -2,13 +2,15 @@
 #version 330 core
 
 layout(location = 0) in vec4 position;
-layout(location = 1) in vec3 color;
+layout(location = 1) in vec2 texCoord;
 
-out vec3 ourColor;
+out vec2 v_TexCoord;
+
+uniform mat4 u_MVP;
 
 void main() {
-    gl_Position = position;
-    ourColor = color;
+    gl_Position = u_MVP * position;
+    v_TexCoord = texCoord;
 }
 
 
@@ -18,10 +20,11 @@ void main() {
 
 layout(location = 0) out vec4 color;
 
-in vec3 ourColor;
-uniform vec4 u_Color;
+in vec2 v_TexCoord;
+uniform sampler2D u_Texture;
 
 void main() {
-    color = vec4(ourColor, 1.0);
+    vec4 texColor = texture(u_Texture, v_TexCoord);
+    color = texColor;
 }
 
