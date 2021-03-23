@@ -9,22 +9,33 @@ set(RENDERER_DIR src/Engine/Renderer/)
 set(RENDERER
         ${RENDERER_DIR}Renderer.h
         ${RENDERER_DIR}Renderer.cpp
-        ${RENDERER_DIR}VertexBuffer.cpp
         ${RENDERER_DIR}VertexBuffer.h
-        ${RENDERER_DIR}IndexBuffer.cpp
+        ${RENDERER_DIR}VertexBuffer.cpp
         ${RENDERER_DIR}IndexBuffer.h
-        ${RENDERER_DIR}Shader.cpp
+        ${RENDERER_DIR}IndexBuffer.cpp
         ${RENDERER_DIR}Shader.h
-        ${RENDERER_DIR}VertexArray.cpp
+        ${RENDERER_DIR}Shader.cpp
         ${RENDERER_DIR}VertexArray.h
+        ${RENDERER_DIR}VertexArray.cpp
+        ${RENDERER_DIR}VertexBufferLayout.h
         ${RENDERER_DIR}VertexBufferLayout.cpp
-        ${RENDERER_DIR}VertexBufferLayout.h)
+        ${RENDERER_DIR}Texture.h
+        ${RENDERER_DIR}Texture.cpp)
+
+#Vendor
+include_directories(src/vendor/)
+set(VENDOR_DIR src/vendor/)
+set(VENDOR
+        ${VENDOR_DIR}stb_image/stb_image.h
+        ${VENDOR_DIR}stb_image/stb_image.cpp)
+
 
 set(SOURCES src/main.cpp)
 
 add_executable(${PROJECT_NAME}
         ${SOURCES}
-        ${RENDERER})
+        ${RENDERER}
+        ${VENDOR})
 
 # Copy Resources Folder to Build Directory
 file(COPY res DESTINATION ${CMAKE_BINARY_DIR})
