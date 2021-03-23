@@ -26,6 +26,9 @@ add_executable(${PROJECT_NAME}
         ${SOURCES}
         ${RENDERER})
 
+# Copy Resources Folder to Build Directory
+file(COPY res DESTINATION ${CMAKE_BINARY_DIR})
+
 # GLFW
 add_subdirectory(${CMAKE_SOURCE_DIR}/Dependencies/GLFW)
 include_directories(${CMAKE_SOURCE_DIR}/Dependencies/GLFW/include)
@@ -39,3 +42,4 @@ target_link_libraries(${PROJECT_NAME} glew_s)
 # OpenGL
 find_package(OpenGL REQUIRED)
 target_link_libraries(${PROJECT_NAME} OpenGL::GL)
+
