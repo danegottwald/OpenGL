@@ -14,6 +14,11 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui_impl_opengl3.h"
+
+
 void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_P && action == GLFW_PRESS) { // Flip flop wireframe and fillframe
         static bool wireMode = true;
@@ -28,17 +33,6 @@ void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
     }
 }
 
-void FrameTime(double &lastTime, int &nbFrames) {
-    double currentTime = glfwGetTime();
-    nbFrames++;
-    if (currentTime - lastTime >= 1.0) {
-        std::cout << "FPS: " << double(nbFrames) << std::endl;
-        std::cout << "Frametime: " << 1000.0 / double(nbFrames) << "ms" << std::endl;
-        nbFrames = 0;
-        lastTime += 1.0;
-    }
-}
-
 int main(int argc, char **argv) {
     // Initialize the library
     if (!glfwInit()) {
@@ -50,7 +44,8 @@ int main(int argc, char **argv) {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // Create a windowed mode window and its OpenGL context
-    GLFWwindow *window = glfwCreateWindow(640, 480, "OpenGL", nullptr, nullptr);
+    unsigned int width = 1280, height = 720;
+    GLFWwindow *window = glfwCreateWindow(width, height, "OpenGL", nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         return -1;
@@ -76,10 +71,10 @@ int main(int argc, char **argv) {
 
     // Vertex Positions
     std::array<float, 16> positions_0 = {
-            -0.5f, -0.5f, 0.0f, 0.0f, // 0
-            0.5f, -0.5f, 1.0f, 0.0f, // 1
-            0.5f, 0.5f, 1.0f, 1.0f, // 2
-            -0.5f, 0.5f, 0.0f, 1.0f, // 3
+            100.0f, 100.0f, 0.0f, 0.0f, // 0
+            200.0f, 100.0f, 1.0f, 0.0f, // 1
+            200.0f, 200.0f, 1.0f, 1.0f, // 2
+            100.0f, 200.0f, 0.0f, 1.0f, // 3
     };
 
     std::array<unsigned int, 6> indices = {
@@ -104,19 +99,26 @@ int main(int argc, char **argv) {
     IndexBuffer ib(indices);
 
     // GLM
-    glm::mat4 proj = glm::ortho(-2.0f, 2.0f, -1.5f, 1.5f, -1.0f, 1.0f);
+    glm::mat4 proj = glm::ortho(0.0f, (float)width, 0.0f, (float)height, -1.0f, 1.0f);
+    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(-100, 0, 0));
+    glm::vec3 translation(200, 200, 0);
 
     // Shader
     Shader shader("res/shaders/Basic.glsl");
     shader.Bind();
-    shader.SetUniformMat4f("u_MVP", proj);
 
     // Texture
     Texture texture("res/textures/kitty.jpg");
     texture.Bind();
     shader.SetUniform1i("u_Texture", 0);
 
+    // Renderer
     Renderer renderer;
+
+    ImGui::CreateContext();
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+    ImGui::StyleColorsDark();
 
     // Set time and Frames for Getting Frametime
     double lastTime = glfwGetTime();
@@ -126,14 +128,27 @@ int main(int argc, char **argv) {
     while (!glfwWindowShouldClose(window)) {
         renderer.Clear();
 
+        // Initialize New Frames for ImGui
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
         // Set uniform4f value in Shader
-        //shader.SetUniform4f("u_Color", red, blue, green, 1.0f);
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), translation);
+        glm::mat4 mvp = proj * view * model;
+        shader.SetUniformMat4f("u_MVP", mvp);
 
         // Draw
         renderer.Draw(va, ib, shader);
 
-        // Print Frametime
-        //FrameTime(lastTime, nbFrames);
+        // ImGui Debug Window
+        ImGui::Begin("Hello, world!");
+        ImGui::SliderFloat3("Translation", &translation.x, 0.0f, (float)width);            
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        ImGui::End();
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         // Swap front and back buffers
         glfwSwapBuffers(window);
@@ -141,6 +156,11 @@ int main(int argc, char **argv) {
         // Poll for and process events
         glfwPollEvents();
     }
+
+    // Shutdown ImGui
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 
     glfwTerminate();
     return 0;
