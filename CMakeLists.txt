@@ -4,38 +4,21 @@ project(OpenGL)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Renderer
-set(RENDERER_DIR src/Engine/Renderer/)
-set(RENDERER
-        ${RENDERER_DIR}Renderer.h
-        ${RENDERER_DIR}Renderer.cpp
-        ${RENDERER_DIR}VertexBuffer.h
-        ${RENDERER_DIR}VertexBuffer.cpp
-        ${RENDERER_DIR}IndexBuffer.h
-        ${RENDERER_DIR}IndexBuffer.cpp
-        ${RENDERER_DIR}Shader.h
-        ${RENDERER_DIR}Shader.cpp
-        ${RENDERER_DIR}VertexArray.h
-        ${RENDERER_DIR}VertexArray.cpp
-        ${RENDERER_DIR}VertexBufferLayout.h
-        ${RENDERER_DIR}VertexBufferLayout.cpp
-        ${RENDERER_DIR}Texture.h
-        ${RENDERER_DIR}Texture.cpp)
+# Engine
+set(ENGINE_DIR src/Engine/)
+file(GLOB_RECURSE ENGINE "${ENGINE_DIR}*.h" "${ENGINE_DIR}*.cpp")
 
-#Vendor
-include_directories(src/vendor/)
+# Vendor
 set(VENDOR_DIR src/vendor/)
-set(VENDOR
-        ${VENDOR_DIR}stb_image/stb_image.h
-        ${VENDOR_DIR}stb_image/stb_image.cpp)
+include_directories(${VENDOR_DIR})
+file(GLOB_RECURSE VENDOR "${VENDOR_DIR}*.h" "${VENDOR_DIR}*.cpp")
 
-
-set(SOURCES src/main.cpp)
-
+set(ENTRY src/main.cpp)
 add_executable(${PROJECT_NAME}
-        ${SOURCES}
-        ${RENDERER}
-        ${VENDOR})
+        ${ENTRY}
+        ${ENGINE}
+        ${VENDOR}
+        )
 
 # Copy Resources Folder to Build Directory
 file(COPY res DESTINATION ${CMAKE_BINARY_DIR})
