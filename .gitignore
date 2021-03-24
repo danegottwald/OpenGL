@@ -1,6 +1,7 @@
 # Project Files
 .vs/
 out/
+*.user
 
 # CMake
 cmake-build-*/
