@@ -5,10 +5,6 @@
 #include <iostream>
 
 #include "Engine/Renderer/Renderer.h"
-#include "Engine/Renderer/VertexBuffer.h"
-#include "Engine/Renderer/VertexArray.h"
-#include "Engine/Renderer/IndexBuffer.h"
-#include "Engine/Renderer/Shader.h"
 #include "Engine/Renderer/Texture.h"
 
 #include "glm/glm.hpp"
@@ -71,10 +67,10 @@ int main(int argc, char **argv) {
 
     // Vertex Positions
     std::array<float, 16> positions_0 = {
-            100.0f, 100.0f, 0.0f, 0.0f, // 0
-            200.0f, 100.0f, 1.0f, 0.0f, // 1
-            200.0f, 200.0f, 1.0f, 1.0f, // 2
-            100.0f, 200.0f, 0.0f, 1.0f, // 3
+            -50.0f, -50.0f, 0.0f, 0.0f, // 0
+             50.0f, -50.0f, 1.0f, 0.0f, // 1
+             50.0f,  50.0f, 1.0f, 1.0f, // 2
+            -50.0f,  50.0f, 0.0f, 1.0f, // 3
     };
 
     std::array<unsigned int, 6> indices = {
@@ -100,8 +96,9 @@ int main(int argc, char **argv) {
 
     // GLM
     glm::mat4 proj = glm::ortho(0.0f, (float)width, 0.0f, (float)height, -1.0f, 1.0f);
-    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(-100, 0, 0));
-    glm::vec3 translation(200, 200, 0);
+    glm::mat4 view = glm::translate(glm::mat4(1.0f), glm::vec3(0, 0, 0));
+    glm::vec3 translationA(200, 200, 0);
+    glm::vec3 translationB(400, 200, 0);
 
     // Shader
     Shader shader("res/shaders/Basic.glsl");
@@ -115,7 +112,9 @@ int main(int argc, char **argv) {
     // Renderer
     Renderer renderer;
 
+    // ImGui Initialization
     ImGui::CreateContext();
+    // ImGui_ImplXXXX_Init() for each backend
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
     ImGui::StyleColorsDark();
@@ -133,20 +132,35 @@ int main(int argc, char **argv) {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // Set uniform4f value in Shader
-        glm::mat4 model = glm::translate(glm::mat4(1.0f), translation);
-        glm::mat4 mvp = proj * view * model;
-        shader.SetUniformMat4f("u_MVP", mvp);
+        {   // Draw Object A
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), translationA);
+            glm::mat4 mvp = proj * view * model;
+            shader.SetUniformMat4f("u_MVP", mvp);
+            // Draw
+            renderer.Draw(va, ib, shader);
+        }
 
-        // Draw
-        renderer.Draw(va, ib, shader);
+        {   // Draw Object B
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), translationB);
+            glm::mat4 mvp = proj * view * model;
+            shader.SetUniformMat4f("u_MVP", mvp);
+            // Draw
+            renderer.Draw(va, ib, shader);
+        }
 
         // ImGui Debug Window
+        // Begin a window session
         ImGui::Begin("Hello, world!");
-        ImGui::SliderFloat3("Translation", &translation.x, 0.0f, (float)width);            
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        // Create a float slider on the window
+        ImGui::SliderFloat2("Translation A", &translationA.x, 0.0f, (float)width); 
+        ImGui::SliderFloat2("Translation B", &translationB.x, 0.0f, (float)width); 
+        // Add text to the window
+        ImGui::Text("FPS: %.0f FPS", ImGui::GetIO().Framerate);
+        ImGui::Text("Frametime: %.1f ms", 1000.0f / ImGui::GetIO().Framerate);
+        // End the window session
         ImGui::End();
 
+        // Render the ImGui Elements to OpenGL
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -157,7 +171,7 @@ int main(int argc, char **argv) {
         glfwPollEvents();
     }
 
-    // Shutdown ImGui
+    // Shutdown ImGui (each backend)
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
