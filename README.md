@@ -12,3 +12,4 @@ I am currently using the following libraries:
 * [GLEW](http://glew.sourceforge.net/) : OpenGL Extension Library
 * [GLM](https://github.com/g-truc/glm) : OpenGL Math Library
 * [STB](https://github.com/nothings/stb/blob/master/stb_image.h) : Image Loader
+* [ImGui](https://github.com/ocornut/imgui) : GUI Library
