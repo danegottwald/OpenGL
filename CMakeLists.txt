@@ -13,11 +13,16 @@ set(VENDOR_DIR src/vendor/)
 include_directories(${VENDOR_DIR})
 file(GLOB_RECURSE VENDOR "${VENDOR_DIR}*.h" "${VENDOR_DIR}*.cpp")
 
+# Tests
+set(TESTS_DIR src/tests/)
+file(GLOB_RECURSE TESTS "${TESTS_DIR}*.h" "${TESTS_DIR}*.cpp")
+
 set(ENTRY src/main.cpp)
 add_executable(${PROJECT_NAME}
         ${ENTRY}
         ${ENGINE}
         ${VENDOR}
+        ${TESTS}
         )
 
 # Copy Resources Folder to Build Directory
