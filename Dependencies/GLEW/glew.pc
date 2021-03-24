@@ -1,6 +1,6 @@
-prefix=C:/Program Files (x86)/OpenGL
+prefix=D:/WindowsFolders/Documents/Programming/Projects/OpenGL/out/install/x64-Debug
 exec_prefix=${prefix}
-libdir=C:/Program Files (x86)/OpenGL/lib
+libdir=D:/WindowsFolders/Documents/Programming/Projects/OpenGL/out/install/x64-Debug/lib
 includedir=${prefix}/include
 
 Name: glew
