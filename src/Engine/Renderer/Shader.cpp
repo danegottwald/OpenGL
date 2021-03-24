@@ -79,11 +79,9 @@ Shader::ShaderProgramSource Shader::ParseShader(const std::string &filepath) {
     while (getline(stream, line)) {
         if (line.find("#type") != std::string::npos) {
             if (line.find("vertex") != std::string::npos) {
-                std::cout << "Vertex shader set" << std::endl;
                 type = ShaderType::VERTEX;
             }
             else if (line.find("fragment") != std::string::npos) {
-                std::cout << "Fragment shader set" << std::endl;
                 type = ShaderType::FRAGMENT;
             }
         }
