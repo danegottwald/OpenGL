@@ -10,16 +10,16 @@
 void GLAPIENTRY ErrorCallback(GLenum source, GLenum type, GLuint id, GLenum severity, 
     GLsizei length, const GLchar* message, const void* userParam) {
     if (type != 33361) {
-        std::cout << "[GL_ERROR] (" << type << ")::" << message <<
-            std::endl;
+        std::cout << "[GL_ERROR] (" << type << ")::" << message << std::endl;
     }
 }
 
 Application::Application() 
     : m_Window(nullptr), m_WindowWidth(0), m_WindowHeight(0) {
     // Initialize Library
+    bool init;
     if (!glfwInit()) {
-        static_assert(true, "glfwInit failed!");
+        std::cout << "glfwInit() error" << std::endl;
     }
 }
 
@@ -57,10 +57,12 @@ void Application::VerticalSync(bool state) {
     glfwSwapInterval(state);
 }
 
-bool Application::InitWindow() {
+bool Application::InitWindow(bool debug) {
     auto init = glewInit();
-    glEnable(GL_DEBUG_OUTPUT);
-    glDebugMessageCallback(ErrorCallback, nullptr);
+	if (debug) {
+		glEnable(GL_DEBUG_OUTPUT);
+		glDebugMessageCallback(ErrorCallback, nullptr);
+	}
     return (init == GLEW_OK);
 }
 

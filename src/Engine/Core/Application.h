@@ -23,7 +23,7 @@ public:
 	void SetOpenGLCoreProfile(unsigned int majorVersion, unsigned int minorVersion);
 	bool CreateWindow(unsigned int width, unsigned int height, const std::string& name);
 	void VerticalSync(bool state);
-	bool InitWindow();
+	bool InitWindow(bool debug = false);
 	void UpdateWindow();
 	inline bool WindowIsOpen() { return !glfwWindowShouldClose(m_Window); }
 
