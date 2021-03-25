@@ -19,10 +19,8 @@ void Renderer::Clear() const {
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
-void Renderer::EnableBlending() {
+void Renderer::EnableBlending(GLenum sFactor, GLenum dFactor) {
     glEnable(GL_BLEND);
-}
-
-void Renderer::BlendFunction(GLenum sFactor, GLenum dFactor) {
     glBlendFunc(sFactor, dFactor);
 }
+
