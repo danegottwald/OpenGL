@@ -8,7 +8,7 @@
 #include "Engine/Renderer/Renderer.h"
 
 #include "tests/ClearColor.h"
-
+#include "tests/RenderTexture.h"
 
 void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
     if (key == GLFW_KEY_P && action == GLFW_PRESS) { // Flip flop wireframe and fillframe
@@ -25,7 +25,6 @@ void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods
 }
 
 int main(int argc, char **argv) {
-    
     Application app;
     app.SetOpenGLCoreProfile(3, 3);
 
@@ -43,27 +42,45 @@ int main(int argc, char **argv) {
 
     // Renderer
     Renderer renderer;
-    renderer.EnableBlending();
-    renderer.BlendFunction(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    renderer.EnableBlending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // ImGui Initialization for each backend
     app.CreateGui("#version 330");
 
-    TestSpace::ClearColor test;
+	// Setup Test Environment
+    TestSpace::Test* currentTest = nullptr;
+    TestSpace::TestMenu* testMenu = new TestSpace::TestMenu(currentTest);
+    currentTest = testMenu;
 
+	// Add Tests
+    testMenu->RegisterTest<TestSpace::ClearColor>("Clear Color");
+    testMenu->RegisterTest<TestSpace::RenderTexture>("Render Texture");
+	
     // Loop until the user closes the window
     while (app.WindowIsOpen()) {
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         renderer.Clear();
 
-        test.OnUpdate(0.0f);
-        test.OnRender();
-
         app.CreateGuiFrame();
-
-        test.OnImGuiRender();
+    	if (currentTest) {
+            currentTest->OnUpdate(0.0f);
+            currentTest->OnRender();
+            ImGui::Begin("Test");
+    		if (currentTest != testMenu && ImGui::Button("<-")) {
+                delete currentTest;
+                currentTest = testMenu;
+    		}
+            currentTest->OnImGuiRender();
+            ImGui::End();
+    	}
 
         app.RenderGui();
         app.UpdateWindow();
+    }
+
+    delete currentTest;
+    if (currentTest != testMenu) {
+        delete testMenu;
     }
 
     return 0;
