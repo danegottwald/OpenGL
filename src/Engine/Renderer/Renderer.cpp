@@ -3,6 +3,14 @@
 
 #include <iostream>
 
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+
+// Clears the screen
+void Renderer::Clear() const {
+    glClear(GL_COLOR_BUFFER_BIT);
+}
+
 // Binds the Shader, Vertex Array, and the Index Buffer, then issues a Draw Call
 void Renderer::Draw(const VertexArray &va, const IndexBuffer &ib, const Shader &shader) const {
     // Binds the Shader, Vertex Array (includes Vertex Buffer), and the Index Buffer
@@ -14,9 +22,8 @@ void Renderer::Draw(const VertexArray &va, const IndexBuffer &ib, const Shader &
     glDrawElements(GL_TRIANGLES, ib.GetCount(), GL_UNSIGNED_INT, nullptr);
 }
 
-// Clears the screen
-void Renderer::Clear() const {
-    glClear(GL_COLOR_BUFFER_BIT);
+void Renderer::Present() {
+    
 }
 
 void Renderer::EnableBlending(GLenum sFactor, GLenum dFactor) {

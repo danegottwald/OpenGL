@@ -1,38 +1,42 @@
 
 #pragma once
 
-#include <string>
-
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+
+#include <string>
+
+#include "Window.h"
 
 #include "imgui/imgui.h"
 
 class Application {
 private:
-	GLFWwindow *m_Window;
-	std::string m_WindowName;
-	unsigned int m_WindowWidth;
-	unsigned int m_WindowHeight;
+	static Application *s_Instance;
+	Window m_Window;
+
+	void Init();
 
 public:
 	Application();
 	~Application();
 
+	void Run();
+
+	// Get Reference to Window Object
+	Window &GetWindowRef() { return *&m_Window; }
+
 	// GLFW, GLEW, OpenGL Functions
 	void SetOpenGLCoreProfile(unsigned int majorVersion, unsigned int minorVersion);
-	bool CreateWindow(unsigned int width, unsigned int height, const std::string& name);
-	void VerticalSync(bool state);
-	bool InitWindow(bool debug = false);
-	void UpdateWindow();
-	inline bool WindowIsOpen() { return !glfwWindowShouldClose(m_Window); }
+	//bool WindowIsOpen() { return !glfwWindowShouldClose(m_Window); }
 
 	// ImGui Functions
-	void CreateGui(const std::string &glslVersion);
+	void InitGui(const std::string &glslVersion);
 	void CreateGuiFrame();
 	void RenderGui();
 
 	// Getters/Setters
-	inline const GLubyte *GetOpenGLVersion() { return glGetString(GL_VERSION); }
-
+	const GLubyte *GetOpenGLVersion() { return glGetString(GL_VERSION); }
+	
 };
+

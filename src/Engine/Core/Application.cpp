@@ -6,30 +6,31 @@
 #include "imgui/imgui_impl_glfw.h"
 #include "imgui/imgui_impl_opengl3.h"
 
-// OpenGL Error Callback Function
-void GLAPIENTRY ErrorCallback(GLenum source, GLenum type, GLuint id, GLenum severity, 
-    GLsizei length, const GLchar* message, const void* userParam) {
-    if (type != 33361) {
-        std::cout << "[GL_ERROR] (" << type << ")::" << message << std::endl;
-    }
-}
+Application* Application::s_Instance = nullptr;
 
-Application::Application() 
-    : m_Window(nullptr), m_WindowWidth(0), m_WindowHeight(0) {
-    // Initialize Library
-    bool init;
-    if (!glfwInit()) {
-        std::cout << "glfwInit() error" << std::endl;
-    }
+Application::Application() : m_Window({ "OpenGL", 1280, 720 }) {
+    std::cout << "Application Constructor" << std::endl;
+    assert(!s_Instance, "Application already exists!");
+    s_Instance = this;
+
+    //Init();
+	
 }
 
 Application::~Application() {
+    std::cout << "Application Destructor" << std::endl;
     // Shutdown ImGui (each backend)
-    ImGui_ImplOpenGL3_Shutdown();
+    /*ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
+    ImGui::DestroyContext();*/
+}
 
-    glfwTerminate();
+void Application::Run() {
+	
+}
+
+void Application::Init() {
+    m_Window = Window({ "OpenGL", 1280, 720 });
 }
 
 void Application::SetOpenGLCoreProfile(unsigned int majorVersion, unsigned int minorVersion) {
@@ -38,47 +39,11 @@ void Application::SetOpenGLCoreProfile(unsigned int majorVersion, unsigned int m
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 }
 
-bool Application::CreateWindow(unsigned int width, unsigned int height, const std::string& name) {
-    if (m_Window) {
-        return false;
-    }
-    m_WindowName = name;
-    m_WindowWidth = width;
-    m_WindowHeight = height;
-    m_Window = glfwCreateWindow(width, height, name.c_str(), nullptr, nullptr);
-    if (!m_Window) {
-        glfwTerminate();
-    }
-    glfwMakeContextCurrent(m_Window);
-    return m_Window;
-}
-
-void Application::VerticalSync(bool state) {
-    glfwSwapInterval(state);
-}
-
-bool Application::InitWindow(bool debug) {
-    auto init = glewInit();
-	if (debug) {
-		glEnable(GL_DEBUG_OUTPUT);
-		glDebugMessageCallback(ErrorCallback, nullptr);
-	}
-    return (init == GLEW_OK);
-}
-
-void Application::UpdateWindow() {
-    // Swap front and back buffers
-    glfwSwapBuffers(m_Window);
-
-    // Poll for and process events
-    glfwPollEvents();
-}
-
-void Application::CreateGui(const std::string& glslVersion) {
+void Application::InitGui(const std::string& glslVersion) {
     // ImGui Initialization for each backend
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
+    //ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
     ImGui_ImplOpenGL3_Init(glslVersion.c_str());
     ImGui::StyleColorsDark();
 }

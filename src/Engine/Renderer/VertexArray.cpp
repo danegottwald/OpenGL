@@ -22,9 +22,8 @@ void VertexArray::Unbind() const {
 }
 
 void VertexArray::AddBuffer(const VertexBuffer &vb, const VertexBufferLayout &layout) {
-    // Binds 'this' Vertex Array
+    // Binds 'this' Vertex Array and the Vertex Buffer
     Bind();
-    // Binds the Vertex Buffer object
     vb.Bind();
     unsigned int offset = 0;
     const auto &elements = layout.GetElements();

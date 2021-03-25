@@ -16,12 +16,12 @@ private:
 
     // Member Variables
     unsigned int m_RendererID;
-    std::string m_Filepath;
+    std::string m_File;
     ShaderProgramSource m_Source;
     std::unordered_map<std::string, unsigned int> m_UniformLocationCache;
 
     // Member Functions
-    ShaderProgramSource ParseShader(const std::string &filepath);
+    ShaderProgramSource ParseShader(const std::string &file);
     unsigned int CreateShader(const std::string &vertexShader, const std::string &fragmentShader);
     unsigned int CompileShader(unsigned int type, const std::string &source);
 
@@ -29,7 +29,7 @@ private:
 
 public:
     // Constructor
-    explicit Shader(const std::string &filepath);
+    explicit Shader(const std::string &file);
     // Destructor
     ~Shader();
 

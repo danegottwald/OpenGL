@@ -1,88 +1,81 @@
 
-#include <GL/glew.h>
-#include <GLFW/glfw3.h>
-
 #include <iostream>
 
 #include "Engine/Core/Application.h"
-#include "Engine/Renderer/Renderer.h"
-
-#include "tests/ClearColor.h"
-#include "tests/RenderTexture.h"
-
-void KeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-    if (key == GLFW_KEY_P && action == GLFW_PRESS) { // Flip flop wireframe and fillframe
-        static bool wireMode = true;
-        if (wireMode) {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            wireMode = false;
-        }
-        else {
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            wireMode = true;
-        }
-    }
-}
 
 int main(int argc, char **argv) {
-    Application app;
-    app.SetOpenGLCoreProfile(3, 3);
+	Application app;
+	std::cout << "vsync: " << app.GetWindowRef().GetVSync() << std::endl;
+	app.GetWindowRef().SetVSync(true);
+	std::cout << "vsync: " << app.GetWindowRef().GetVSync() << std::endl;
 
-    if (!app.CreateWindow(1280, 720, "OpenGL")) {
-        return -1;
-    }
+	GLFWwindow* w;
+	while (!glfwWindowShouldClose(w = app.GetWindowRef().GetWindow())) {
+		// Render here
+		glClear(GL_COLOR_BUFFER_BIT);
 
-    app.VerticalSync(true);
-    if (!app.InitWindow()) {
-        return -2;
-    }
+		// Swap front and back buffers
+		glfwSwapBuffers(w);
 
-    // Print Version and Set Debug Mode
-    std::cout << app.GetOpenGLVersion() << std::endl;
+		// Poll for and process events
+		glfwPollEvents();
+	}
 
-    // Renderer
-    Renderer renderer;
-    renderer.EnableBlending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // ImGui Initialization for each backend
-    app.CreateGui("#version 330");
-
-	// Setup Test Environment
-    TestSpace::Test* currentTest = nullptr;
-    TestSpace::TestMenu* testMenu = new TestSpace::TestMenu(currentTest);
-    currentTest = testMenu;
-
-	// Add Tests
-    testMenu->RegisterTest<TestSpace::ClearColor>("Clear Color");
-    testMenu->RegisterTest<TestSpace::RenderTexture>("Render Texture");
+	return 0;
 	
-    // Loop until the user closes the window
-    while (app.WindowIsOpen()) {
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        renderer.Clear();
+ //   Application app;
+ //   app.SetOpenGLCoreProfile(3, 3);
 
-        app.CreateGuiFrame();
-    	if (currentTest) {
-            currentTest->OnUpdate(0.0f);
-            currentTest->OnRender();
-            ImGui::Begin("Test");
-    		if (currentTest != testMenu && ImGui::Button("<-")) {
-                delete currentTest;
-                currentTest = testMenu;
-    		}
-            currentTest->OnImGuiRender();
-            ImGui::End();
-    	}
+ //   if (!app.CreateWindow(1280, 720, "OpenGL")) {
+ //       return -1;
+ //   }
 
-        app.RenderGui();
-        app.UpdateWindow();
-    }
+ //   app.VerticalSync(true);
+ //   if (!app.InitWindow()) {
+ //       return -2;
+ //   }
 
-    delete currentTest;
-    if (currentTest != testMenu) {
-        delete testMenu;
-    }
+ //   std::array<float, 6> positions = {
+ //       -0.5f, -0.5f,
+ //       0.5f, -0.5f,
+ //       0.0f, 0.5f
+ //   };
 
-    return 0;
+ //   std::array<unsigned int, 3> indices = {
+ //       0, 1, 2
+ //   };
+
+ //   VertexBuffer vb(positions);
+ //   VertexArray va;
+ //   VertexBufferLayout layout;
+ //   layout.Push<float>(2);
+ //   va.AddBuffer(vb, layout);
+ //   IndexBuffer ib(indices);
+ //   Shader shader("BasicTwo.glsl");
+	//shader.Bind();
+	//
+ //   // Print Version and Set Debug Mode
+ //   std::cout << app.GetOpenGLVersion() << std::endl;
+
+ //   // Renderer
+ //   Renderer renderer;
+ //   renderer.EnableBlending(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+ //   // ImGui Initialization for each backend
+ //   app.InitGui("#version 330");
+
+ //   // Loop until the user closes the window
+ //   while (app.WindowIsOpen()) {
+ //       renderer.Clear();
+
+ //       app.CreateGuiFrame();
+
+ //       renderer.Draw(va, ib, shader);
+
+ //       app.RenderGui();
+ //       renderer.Present();
+ //   }
+
+ //   return 0;
 }
 

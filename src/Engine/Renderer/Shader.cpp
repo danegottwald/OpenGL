@@ -9,9 +9,9 @@
 #include <sstream>
 
 // Create a attach the Shaders within the specified file
-Shader::Shader(const std::string &filepath) : m_Filepath(filepath) {
+Shader::Shader(const std::string &file) : m_File(file) {
     // Parse the Shader file into separate vertex and fragment shaders
-    m_Source = ParseShader(filepath);
+    m_Source = ParseShader(file);
     // Returns an ID to reference the current Shader program
     m_RendererID = CreateShader(m_Source.VertexSource, m_Source.FragmentSource);
 }
@@ -31,41 +31,11 @@ void Shader::Unbind() const {
     glUseProgram(0);
 }
 
-// Specifies the value of a uniform variable in the current Shader program
-void Shader::SetUniform1i(const std::string &name, int value) {
-    glUniform1i(GetUniformLocation(name), value);
-}
-
-// Specifies the value of a uniform variable in the current Shader program
-void Shader::SetUniform4f(const std::string &name, float v0, float v1, float v2, float v3) {
-    glUniform4f(GetUniformLocation(name), v0, v1, v2, v3);
-}
-
-void Shader::SetUniformMat4f(const std::string &name, const glm::mat4 &matrix) {
-    glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, &matrix[0][0]);
-}
-
-// Returns the location of a uniform value within the Shader
-int Shader::GetUniformLocation(const std::string &name) {
-    // Search the cache to check if the uniform variable has been hit before
-    if (m_UniformLocationCache.find(name) != m_UniformLocationCache.end()) {
-        return m_UniformLocationCache[name];
-    }
-    // Find the location of the uniform variable
-    int location = glGetUniformLocation(m_RendererID, name.c_str());
-    if (location == -1) {
-        std::cout << "Warning: uniform '" << name << "' doesn't exist!" << std::endl;
-    }
-    // Cache variable for future references
-    m_UniformLocationCache[name] = location;
-    return location;
-}
-
 // Parses the specified file into separate Shader source code
 // Returns a struct that contains the source codes
-Shader::ShaderProgramSource Shader::ParseShader(const std::string &filepath) {
+Shader::ShaderProgramSource Shader::ParseShader(const std::string &file) {
     // Opens the file at 'filepath'
-    std::ifstream stream(filepath);
+    std::ifstream stream("../../../res/shaders/" + file);
 
     enum class ShaderType {
         NONE = -1,
@@ -154,4 +124,38 @@ unsigned int Shader::CompileShader(unsigned int type, const std::string &source)
 
     return id;
 }
+
+
+/* Uniform Related Functions */
+
+// Returns the location of a uniform value within the Shader
+int Shader::GetUniformLocation(const std::string& name) {
+    // Search the cache to check if the uniform variable has been hit before
+    if (m_UniformLocationCache.find(name) != m_UniformLocationCache.end()) {
+        return m_UniformLocationCache[name];
+    }
+    // Find the location of the uniform variable
+    int location = glGetUniformLocation(m_RendererID, name.c_str());
+    if (location == -1) {
+        std::cout << "Warning: uniform '" << name << "' doesn't exist!" << std::endl;
+    }
+    // Cache variable for future references
+    m_UniformLocationCache[name] = location;
+    return location;
+}
+
+// Specifies the value of a uniform variable in the current Shader program
+void Shader::SetUniform1i(const std::string& name, int value) {
+    glUniform1i(GetUniformLocation(name), value);
+}
+
+// Specifies the value of a uniform variable in the current Shader program
+void Shader::SetUniform4f(const std::string& name, float v0, float v1, float v2, float v3) {
+    glUniform4f(GetUniformLocation(name), v0, v1, v2, v3);
+}
+
+void Shader::SetUniformMat4f(const std::string& name, const glm::mat4& matrix) {
+    glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, &matrix[0][0]);
+}
+
 
