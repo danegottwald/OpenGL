@@ -3,61 +3,65 @@
 
 #include <iostream>
 
-#include "imgui/imgui_impl_glfw.h"
-#include "imgui/imgui_impl_opengl3.h"
+#include "imgui/imgui.h"
 
 Application* Application::s_Instance = nullptr;
 
-Application::Application() : m_Window({ "OpenGL", 1280, 720 }) {
-    std::cout << "Application Constructor" << std::endl;
+Application::Application() : m_Renderer(nullptr) {
     assert(!s_Instance, "Application already exists!");
     s_Instance = this;
 
-    //Init();
+     m_Window.reset(new Window({ "OpenGL", 1280, 720, false }));
 	
 }
 
 Application::~Application() {
-    std::cout << "Application Destructor" << std::endl;
-    // Shutdown ImGui (each backend)
-    /*ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();*/
+}
+
+void FrameTime(double& lastTime, int& nbFrames) {
+    double currentTime = glfwGetTime();
+    nbFrames++;
+    if (currentTime - lastTime >= 1.0) {
+        float fps = double(nbFrames);
+        float frametime = 1000.0 / double(nbFrames);
+        std::cout << "FPS: " << double(nbFrames) << " | " << frametime << " ms" << std::endl;
+        nbFrames = 0;
+        lastTime += 1.0;
+    }
 }
 
 void Application::Run() {
-	
+    auto &window = GetWindowRef();
+    m_Renderer.reset(new Renderer());
+    m_Gui.reset(new GuiOverlay);
+
+    m_Gui->Attach();
+    while (window.IsRunning()) {
+        m_Renderer->Clear();
+        // Render here
+
+    	if (!window.IsMinimized()) {
+            // Render stuff
+            m_Gui->Begin();
+
+    		// ImGui draw stuff here
+            ImGui::Begin("Debug");
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    		ImGui::End();
+
+    		//ImGui Render stuff
+            m_Gui->End();
+    	}
+        //FrameTime(lastTime, nbFrames);
+    	
+        m_Window->Update();
+    }
+    m_Gui->Detach();
 }
 
-void Application::Init() {
-    m_Window = Window({ "OpenGL", 1280, 720 });
-}
-
-void Application::SetOpenGLCoreProfile(unsigned int majorVersion, unsigned int minorVersion) {
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, majorVersion);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minorVersion);
+void Application::SetOpenGLCoreProfile(unsigned int major, unsigned int minor) {
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, major);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minor);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-}
-
-void Application::InitGui(const std::string& glslVersion) {
-    // ImGui Initialization for each backend
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    //ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
-    ImGui_ImplOpenGL3_Init(glslVersion.c_str());
-    ImGui::StyleColorsDark();
-}
-
-void Application::CreateGuiFrame() {
-    // Initialize New Frames for ImGui
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
-    ImGui::NewFrame();
-}
-
-void Application::RenderGui() {
-    // Render the ImGui Elements to OpenGL
-    ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 

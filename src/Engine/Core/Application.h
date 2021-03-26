@@ -2,40 +2,32 @@
 #pragma once
 
 #include <GL/glew.h>
-#include <GLFW/glfw3.h>
 
-#include <string>
+#include <memory>
 
 #include "Window.h"
-
-#include "imgui/imgui.h"
+#include "GuiOverlay.h"
+#include "../Renderer/Renderer.h"
 
 class Application {
 private:
 	static Application *s_Instance;
-	Window m_Window;
-
-	void Init();
+	std::unique_ptr<Window> m_Window;
+	std::unique_ptr<Renderer> m_Renderer;
+	std::unique_ptr<GuiOverlay> m_Gui;
 
 public:
 	Application();
 	~Application();
 
 	void Run();
-
-	// Get Reference to Window Object
-	Window &GetWindowRef() { return *&m_Window; }
-
+	static Application &Get() { return *s_Instance; }
+	Window& GetWindowRef() const { return *m_Window; }
+	Renderer& GetRendererRef() const { return *m_Renderer; }
+	GuiOverlay& GetGuiRef() const { return *m_Gui; }
+	
 	// GLFW, GLEW, OpenGL Functions
-	void SetOpenGLCoreProfile(unsigned int majorVersion, unsigned int minorVersion);
-	//bool WindowIsOpen() { return !glfwWindowShouldClose(m_Window); }
-
-	// ImGui Functions
-	void InitGui(const std::string &glslVersion);
-	void CreateGuiFrame();
-	void RenderGui();
-
-	// Getters/Setters
+	void SetOpenGLCoreProfile(unsigned int major, unsigned int minor);
 	const GLubyte *GetOpenGLVersion() { return glGetString(GL_VERSION); }
 	
 };
