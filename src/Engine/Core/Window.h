@@ -15,7 +15,8 @@ struct WindowData {
 class Window {
 private:
 	GLFWwindow *m_Window;
-	WindowData m_Data;
+	WindowData m_Properties;
+	bool m_Running, m_Minimized;
 
 	void Init(const WindowData &props);
 	void SetCallbacks() const;
@@ -26,13 +27,16 @@ public:
 
 	void Update() const;
 
-	GLFWwindow* GetWindow() const { return m_Window; }
+	GLFWwindow &GetWindow() const { return *m_Window; }
+	WindowData &GetWindowData() { return m_Properties; }
+	bool IsRunning() const { return m_Running; }
+	bool IsMinimized() const { return m_Minimized; }
 
 	// Attribute Functions
-	std::string GetName() const { return m_Data.Name; }
-	unsigned int GetWidth() const { return m_Data.Width; }
-	unsigned int GetHeight() const { return m_Data.Height; }
-	bool GetVSync() const { return m_Data.VSync; }
+	std::string GetName() const { return m_Properties.Name; }
+	unsigned int GetWidth() const { return m_Properties.Width; }
+	unsigned int GetHeight() const { return m_Properties.Height; }
+	bool GetVSync() const { return m_Properties.VSync; }
 	
 	void SetVSync(bool state);
 	

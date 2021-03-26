@@ -2,15 +2,12 @@
 #include "Window.h"
 
 #include <iostream>
-#include <stdexcept>
 
-Window::Window(const WindowData &props) {
-    std::cout << "Window Constructor" << std::endl;
+Window::Window(const WindowData &props) : m_Minimized(false) {
     Init(props);
 }
 
 Window::~Window() {
-    std::cout << "Window Destructor" << std::endl;
     glfwDestroyWindow(m_Window);
     glfwTerminate();
 }
@@ -24,10 +21,11 @@ void Window::Update() const {
 }
 
 void Window::SetVSync(bool state) {
-	if (state != m_Data.VSync) {
-	    m_Data.VSync = state;
+	if (state != m_Properties.VSync) {
+	    m_Properties.VSync = state;
 	    glfwSwapInterval(state);
 	}
+	
 }
 
 void Window::Init(const WindowData& props) {
@@ -36,22 +34,22 @@ void Window::Init(const WindowData& props) {
         throw std::runtime_error("GLFW failed to initialize.");
     }
 	
-    m_Data.Name = props.Name;
-    m_Data.Width = props.Width;
-    m_Data.Height = props.Height;
-    m_Data.VSync = props.VSync;
+    m_Properties.Name = props.Name;
+    m_Properties.Width = props.Width;
+    m_Properties.Height = props.Height;
+    m_Properties.VSync = props.VSync;
     m_Window = glfwCreateWindow(props.Width, props.Height, props.Name.c_str(), nullptr, nullptr);
     if (!m_Window) {
-        throw std::runtime_error("Window failed to initialize.");
         glfwTerminate();
+        throw std::runtime_error("Window failed to initialize.");
     }
+    glfwSetWindowUserPointer(m_Window, this);
     glfwMakeContextCurrent(m_Window);
 
     if (glewInit() != GLEW_OK) {
         throw std::runtime_error("GLEW failed to initialize.");
     }
 
-    // Set Window Callbacks
     SetCallbacks();
 	
 }
@@ -72,16 +70,30 @@ void Window::SetCallbacks() const {
         std::cout << "[ERROR](GLFW) [" << code << "]: " << message << std::endl;
     });
 
-    glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, int width, int height) {
-        WindowData& data = *(WindowData *)glfwGetWindowUserPointer(window);
-    	data.Width = width;
-        data.Height = height;
+    glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window) {
+        auto& thisWindow = *static_cast<Window*>(glfwGetWindowUserPointer(window));
+        thisWindow.m_Running = false;
+    });
+
+    glfwSetWindowSizeCallback(m_Window, [](GLFWwindow *window, int width, int height) {
+        auto& thisWindow = *static_cast<Window *>(glfwGetWindowUserPointer(window));
+        std::cout << width << " " << height << std::endl;
+    	thisWindow.m_Properties.Width = width;
+        thisWindow.m_Properties.Height = height;
+
+    	if (width == 0 && height == 0) {
+	        thisWindow.m_Minimized = true;
+        }
+        else {
+	        thisWindow.m_Minimized = false;
+	        glViewport(0, 0, width, height);
+        }
     });
 
     glfwSetKeyCallback(m_Window, [](GLFWwindow* window, int key, 
         int scancode, int action, int mods) {
     	if (action == GLFW_PRESS) {
-			std::cout << "[LOG](GLFW) [KEY]: key code '" << key << "'" << std::endl;
+			std::cout << "[LOG](GLFW) [KEY]: key code '" << (char)(key) << "'" << std::endl;
     	}
         if (key == GLFW_KEY_P && action == GLFW_PRESS) {
             static bool wireMode = true;
