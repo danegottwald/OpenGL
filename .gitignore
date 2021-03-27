@@ -2,6 +2,7 @@
 .vs/
 out/
 *.user
+*.DotSettings
 
 # CMake
 cmake-build-*/
