@@ -11,49 +11,45 @@ Application::Application() : m_Renderer(nullptr) {
     assert(!s_Instance, "Application already exists!");
     s_Instance = this;
 
-     m_Window.reset(new Window({ "OpenGL", 1280, 720, false }));
-	
+    m_Window.reset(new Window({ "OpenGL", 1280, 720, false }));
+    
 }
 
 Application::~Application() {
 }
 
-void FrameTime(double& lastTime, int& nbFrames) {
-    double currentTime = glfwGetTime();
-    nbFrames++;
-    if (currentTime - lastTime >= 1.0) {
-        float fps = double(nbFrames);
-        float frametime = 1000.0 / double(nbFrames);
-        std::cout << "FPS: " << double(nbFrames) << " | " << frametime << " ms" << std::endl;
-        nbFrames = 0;
-        lastTime += 1.0;
-    }
-}
-
 void Application::Run() {
-    auto &window = GetWindowRef();
+    auto &window = GetWindow();
     m_Renderer.reset(new Renderer());
     m_Gui.reset(new GuiOverlay);
+    Layer a;
+    a.Enable();
+    m_Layers.emplace_back(a);
 
     m_Gui->Attach();
     while (window.IsRunning()) {
-        m_Renderer->Clear();
-        // Render here
+        
+        if (!window.IsMinimized()) {
 
-    	if (!window.IsMinimized()) {
-            // Render stuff
+            for (auto &layer : m_Layers) {
+                layer.Draw();
+            }
+
+            // for each render in queue
+            // m_Renderer.Draw();
+
+            // for each gui to render in queue
+            // m_Renderer.DrawGui();
+
             m_Gui->Begin();
 
-    		// ImGui draw stuff here
             ImGui::Begin("Debug");
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-    		ImGui::End();
+            ImGui::End();
 
-    		//ImGui Render stuff
             m_Gui->End();
-    	}
-        //FrameTime(lastTime, nbFrames);
-    	
+        }
+        
         m_Window->Update();
     }
     m_Gui->Detach();

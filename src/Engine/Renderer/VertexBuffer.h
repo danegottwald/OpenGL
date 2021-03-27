@@ -23,7 +23,6 @@ public:
     // Member Functions
     void Bind() const;
     void Unbind() const;
-
 };
 
 // Constructor template for std::array

@@ -29,10 +29,11 @@ public:
 
 	GLFWwindow &GetWindow() const { return *m_Window; }
 	WindowData &GetWindowData() { return m_Properties; }
+	
 	bool IsRunning() const { return m_Running; }
 	bool IsMinimized() const { return m_Minimized; }
 
-	// Attribute Functions
+	// Getters for WindowData
 	std::string GetName() const { return m_Properties.Name; }
 	unsigned int GetWidth() const { return m_Properties.Width; }
 	unsigned int GetHeight() const { return m_Properties.Height; }

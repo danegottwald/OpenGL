@@ -38,6 +38,8 @@ void Window::Init(const WindowData& props) {
     m_Properties.Width = props.Width;
     m_Properties.Height = props.Height;
     m_Properties.VSync = props.VSync;
+
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
     m_Window = glfwCreateWindow(props.Width, props.Height, props.Name.c_str(), nullptr, nullptr);
     if (!m_Window) {
         glfwTerminate();
@@ -77,7 +79,6 @@ void Window::SetCallbacks() const {
 
     glfwSetWindowSizeCallback(m_Window, [](GLFWwindow *window, int width, int height) {
         auto& thisWindow = *static_cast<Window *>(glfwGetWindowUserPointer(window));
-        std::cout << width << " " << height << std::endl;
     	thisWindow.m_Properties.Width = width;
         thisWindow.m_Properties.Height = height;
 

@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "Window.h"
+#include "Layer.h"
 #include "GuiOverlay.h"
 #include "../Renderer/Renderer.h"
 
@@ -15,16 +16,17 @@ private:
 	std::unique_ptr<Window> m_Window;
 	std::unique_ptr<Renderer> m_Renderer;
 	std::unique_ptr<GuiOverlay> m_Gui;
+	std::vector<Layer> m_Layers;
 
 public:
 	Application();
 	~Application();
 
 	void Run();
+	
 	static Application &Get() { return *s_Instance; }
-	Window& GetWindowRef() const { return *m_Window; }
-	Renderer& GetRendererRef() const { return *m_Renderer; }
-	GuiOverlay& GetGuiRef() const { return *m_Gui; }
+	Window &GetWindow() const { return *m_Window; }
+	Renderer &GetRenderer() const { return *m_Renderer; }
 	
 	// GLFW, GLEW, OpenGL Functions
 	void SetOpenGLCoreProfile(unsigned int major, unsigned int minor);

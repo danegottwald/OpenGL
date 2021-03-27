@@ -4,9 +4,14 @@
 #include "VertexBuffer.h"
 #include "VertexBufferLayout.h"
 
+#include "glm/glm.hpp"
+
+
+
 class VertexArray {
 private:
-    unsigned int m_RendererID;
+    unsigned int m_VertexArrayID;
+    unsigned int m_VertexBufferID;
 
 public:
     VertexArray();
@@ -15,7 +20,7 @@ public:
     void Bind() const;
     void Unbind() const;
 
-    void AddBuffer(const VertexBuffer &vb, const VertexBufferLayout &layout);
+    void AddBuffer();
 
 };
 

@@ -8,11 +8,11 @@ private:
 public:
     GuiOverlay();
     ~GuiOverlay();
-	
+    
     void Attach();
-    void Detach();
     void Begin();
     void End();
+    void Detach();
     
 };
 

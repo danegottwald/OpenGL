@@ -25,16 +25,8 @@ void GuiOverlay::Attach() {
 
     ImGui::StyleColorsDark();
     auto &app = Application::Get();
-    ImGui_ImplGlfw_InitForOpenGL(&app.GetWindowRef().GetWindow(), true);
+    ImGui_ImplGlfw_InitForOpenGL(&app.GetWindow().GetWindow(), true);
     ImGui_ImplOpenGL3_Init("#version 330");	
-}
-
-void GuiOverlay::Detach() {
-    m_Active = false;
-	
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
 }
 
 void GuiOverlay::Begin() {
@@ -46,9 +38,17 @@ void GuiOverlay::Begin() {
 void GuiOverlay::End() {
     ImGuiIO& io = ImGui::GetIO();
     auto &app = Application::Get();
-    io.DisplaySize = ImVec2((float)app.GetWindowRef().GetWidth(), (float)app.GetWindowRef().GetHeight());
+    io.DisplaySize = ImVec2((float)app.GetWindow().GetWidth(), (float)app.GetWindow().GetHeight());
 	
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void GuiOverlay::Detach() {
+    m_Active = false;
+	
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
 }
 
