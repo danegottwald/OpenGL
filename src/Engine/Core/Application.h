@@ -8,6 +8,7 @@
 #include "Window.h"
 #include "Layer.h"
 #include "GuiOverlay.h"
+#include "PlayerController.h"
 #include "../Renderer/Renderer.h"
 
 class Application {
@@ -16,6 +17,7 @@ private:
 	std::unique_ptr<Window> m_Window;
 	std::unique_ptr<Renderer> m_Renderer;
 	std::unique_ptr<GuiOverlay> m_Gui;
+	std::unique_ptr<PlayerController> m_Controller;
 	std::vector<Layer> m_Layers;
 
 public:
