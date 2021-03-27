@@ -15,7 +15,7 @@ file(GLOB_RECURSE VENDOR "${VENDOR_DIR}*.h" "${VENDOR_DIR}*.cpp")
 
 # Tests
 set(TESTS_DIR src/tests/)
-file(GLOB_RECURSE TESTS "${TESTS_DIR}*.h" "${TESTS_DIR}*.cpp")
+#file(GLOB_RECURSE TESTS "${TESTS_DIR}*.h" "${TESTS_DIR}*.cpp")
 
 set(ENTRY src/main.cpp)
 add_executable(${PROJECT_NAME}
