@@ -6,8 +6,13 @@
 class PlayerController {
 private:
     static PlayerController* s_Controller;
-    glm::vec3 m_CameraPos;
-    float m_CameraRot, m_FOV, m_Speed;
+    glm::vec3 m_Position;
+    glm::vec3 m_ViewDirection;
+    const glm::vec3 m_Up;
+    glm::vec2 m_OldMousePos;
+    float m_FOV;
+    float m_MoveSpeed;
+    float m_LookSpeed;
 
 public:
     PlayerController();
@@ -15,10 +20,11 @@ public:
 
     static PlayerController& GetController() { return *s_Controller; }
 
-    void UpdateCamera(float frametime);
+    void Update(float frametime);
+    glm::mat4 GetViewMatrix() const;
+    glm::mat4 GetProjectionMatrix() const;
 
-    const glm::vec3 &GetCameraPos() { return m_CameraPos; }
-    float GetCameraRot() { return m_CameraRot; }
+    const glm::vec3& GetPosition() { return m_Position; }
     float GetFOV() { return m_FOV; }
 
 };
