@@ -7,6 +7,7 @@
 #include "glm/ext/matrix_clip_space.hpp"
 #include "glm/ext/matrix_transform.hpp"
 
+#include "Window.h"
 #include "PlayerController.h"
 
 Layer::Layer() : m_VAID(0), m_VBID(0), m_IBID(0) {
@@ -26,7 +27,7 @@ Layer::~Layer() {
 }
 
 void Layer::Enable() {
-    // '6' is how many Vertex structs to allocate space for
+    // '1000' is how many Vertex structs to allocate space for
     glBufferData(GL_ARRAY_BUFFER, 1000, nullptr, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
@@ -51,7 +52,7 @@ void Layer::Enable() {
 
     glCreateBuffers(1, &m_IBID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_IBID);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * 4, indices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int), indices.data(), GL_STATIC_DRAW);
 
     //load textures
     
@@ -60,7 +61,7 @@ void Layer::Enable() {
 void Layer::Draw(float frametime) {
     // update camera
     auto &pc = PlayerController::GetController();
-    pc.UpdateCamera(frametime);
+    pc.Update(frametime);
 
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -77,17 +78,9 @@ void Layer::Draw(float frametime) {
     glBindBuffer(GL_ARRAY_BUFFER, m_VBID);
     glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(float), vertices.data());
 
-    // get camera controller
-    // set view projection and transform from camera
-    glm::mat4 transform = glm::translate(glm::mat4(1.0f), pc.GetCameraPos())
-                        * glm::rotate(glm::mat4(1.0f), glm::radians(pc.GetCameraRot()), glm::vec3(0.0f, 1.0f, 0.0f));
-    glm::mat4 view = glm::inverse(transform);
-    //glm::mat4 view = glm::lookAt(pc.GetCameraPos(), glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 1.0, 0.0));
-    glm::mat4 proj = glm::perspective(pc.GetFOV(), (float)(16 / 9), 0.1f, 100.0f);
-    glm::mat4 mvp = proj * view;
-
     m_Shader->Bind();
-    m_Shader->SetUniformMat4f("u_MVP", mvp);
+    m_Shader->SetUniformMat4f("u_MVP", pc.GetProjectionMatrix() * pc.GetViewMatrix());
+
     //glBindTextureUnit();
 
     glBindVertexArray(m_VAID);
