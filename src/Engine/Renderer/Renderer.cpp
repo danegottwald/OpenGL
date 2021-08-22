@@ -10,6 +10,8 @@ Renderer::Renderer() {
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
+    glMatrixMode(GL_MODELVIEW);
+
     m_Shader.reset(new Shader("Basic.glsl"));
     m_Shader->Bind();
 }

@@ -35,7 +35,7 @@ void Shader::Unbind() const {
 // Returns a struct that contains the source codes
 Shader::ShaderProgramSource Shader::ParseShader(const std::string &file) {
     // Opens the file at 'filepath'
-    std::ifstream stream("../../../res/shaders/" + file);
+    std::ifstream stream("./res/shaders/" + file);
 
     enum class ShaderType {
         NONE = -1,

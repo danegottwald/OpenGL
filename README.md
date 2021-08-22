@@ -6,10 +6,33 @@ Since this is mostly a learning experience for me, I will share the resources I 
 * [LearnOpenGL](https://learnopengl.com/Introduction) : Written Guide to OpenGL
 * [Learning Modern 3D Graphics Programming](https://nicolbolas.github.io/oldtut/) : Written Guide to OpenGL/Modern Graphics Programming
 
-## **Libraries**
+<!-- LIBRARIES -->
+## Libraries
 I am currently using the following libraries:
 * [GLFW](https://www.glfw.org/) : OpenGL Utility Library
 * [GLEW](http://glew.sourceforge.net/) : OpenGL Extension Library
 * [GLM](https://github.com/g-truc/glm) : OpenGL Math Library
 * [STB](https://github.com/nothings/stb/blob/master/stb_image.h) : Image Loader
 * [ImGui](https://github.com/ocornut/imgui) : GUI Library
+
+<!-- INSTALLATION -->
+## Installation
+
+```bash
+# Clone repository
+git clone https://github.com/danegottwald/OpenGL.git
+
+# Go to project directory
+cd OpenGL
+
+# Run cmake
+cmake -G "Unix Makefiles" -B build
+
+# Go to build directory
+cd build
+
+# Run make
+make
+```
+
+

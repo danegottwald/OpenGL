@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.17)
 project(OpenGL)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -17,28 +17,29 @@ file(GLOB_RECURSE VENDOR "${VENDOR_DIR}*.h" "${VENDOR_DIR}*.cpp")
 set(TESTS_DIR src/tests/)
 #file(GLOB_RECURSE TESTS "${TESTS_DIR}*.h" "${TESTS_DIR}*.cpp")
 
-set(ENTRY src/main.cpp)
+# Set Output Directory
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+
+set(ENTRY src/Main.cpp)
 add_executable(${PROJECT_NAME}
         ${ENTRY}
         ${ENGINE}
         ${VENDOR}
         ${TESTS}
-        )
+)
 
-# Copy Resources Folder to Build Directory
-file(COPY res DESTINATION ${CMAKE_BINARY_DIR})
+# Set Include Directories
+include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# GLFW
-add_subdirectory(${CMAKE_SOURCE_DIR}/Dependencies/GLFW)
-include_directories(${CMAKE_SOURCE_DIR}/Dependencies/GLFW/include)
-target_link_libraries(${PROJECT_NAME} glfw)
+# Link Libraries
+set(LIB_DIR ${CMAKE_SOURCE_DIR}/lib)
 
-# GLEW
-add_subdirectory(${CMAKE_SOURCE_DIR}/Dependencies/GLEW/build/cmake)
-include_directories(${CMAKE_SOURCE_DIR}/Dependencies/GLEW/include)
-target_link_libraries(${PROJECT_NAME} glew_s)
-
-# OpenGL
 find_package(OpenGL REQUIRED)
-target_link_libraries(${PROJECT_NAME} OpenGL::GL)
+
+target_link_libraries(${PROJECT_NAME} 
+        ${LIB_DIR}/glew32.lib
+        ${LIB_DIR}/libglfw3dll.a
+        imm32.lib
+        ${OPENGL_LIBRARIES}
+)
 

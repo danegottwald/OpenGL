@@ -1,21 +1,23 @@
-
 #pragma once
 
 #include <GL/glew.h>
 
-#include "../Engine/Renderer/Shader.h"
+#include "../Renderer/Shader.h"
+#include "../Renderer/Texture.h"
 
 class Layer {
 private:
     GLuint m_VAID, m_VBID, m_IBID;
-    Shader* m_Shader;
+    std::shared_ptr<Shader> m_Shader;
+    std::shared_ptr<Texture> m_Texture;
 
 public:
     Layer();
     ~Layer();
 
     void Enable();
-    void Draw(float frametime);
+    void Draw(float deltaTime);
+
+    void LoadModel(const std::string &filename);
 
 };
-

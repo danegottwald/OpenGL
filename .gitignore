@@ -1,11 +1,6 @@
 # Project Files
-.vs/
-out/
-*.user
-*.DotSettings
+.vscode/
 
 # CMake
-cmake-build-*/
+build/
 
-# Clang-Format
-.clang-format

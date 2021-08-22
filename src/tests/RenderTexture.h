@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "Test.h"
@@ -10,24 +9,24 @@
 
 namespace TestSpace {
 
-	class RenderTexture : public Test {
-	private:
-		VertexBuffer *vb;
-		VertexArray *va;
-		VertexBufferLayout layout;
-		IndexBuffer *ib;
-		Shader *shader;
-		Texture *texture;
-		glm::vec3 translation;
+    class RenderTexture : public Test {
+    private:
+        VertexBuffer* vb;
+        VertexArray* va;
+        VertexBufferLayout layout;
+        IndexBuffer* ib;
+        Shader* shader;
+        Texture* texture;
+        glm::vec3 translation;
 
-	public:
-		RenderTexture();
-		~RenderTexture();
+    public:
+        RenderTexture();
+        ~RenderTexture();
 
-		void OnUpdate(float deltaTime) override;
-		void OnRender() override;
-		void OnImGuiRender() override;
-		
-	};
+        void OnUpdate(float deltaTime) override;
+        void OnRender() override;
+        void OnImGuiRender() override;
+
+    };
 
 }
