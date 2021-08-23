@@ -1,6 +1,17 @@
+# Ignore All
+*
+
+# Unignore files with extensions and directories
+!*.*
+!*/
+
 # Project Files
 .vscode/
 
-# CMake
-build/
+# Config/Logging Files
+*.ini
 
+# Build Results
+build/
+*.exe
+*.dll
