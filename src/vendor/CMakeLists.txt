@@ -1,14 +1,27 @@
 # Special Includes for Nested Includes
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/glad/include)
-set(GLOB_RECURSE GLAD CONFIGURE_DEPENDS "glad/*.h" "glad/*.cxx")
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/glfw/include)
+set(GLAD_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/glad/include)
+set(GLAD 
+    "${CMAKE_CURRENT_SOURCE_DIR}/glad/include/glad/gl.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/glad/include/KHR/khrplatform.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/glad/src/gl.c"
+)
+
+set(GLFW_INCLUDE ${CMAKE_CURRENT_SOURCE_DIR}/glfw/include)
+if (WIN32)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/glfw)
+endif (WIN32)
 
 # Include Libraries to Maintain Folder Structure
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+file(GLOB_RECURSE IMGUI CONFIGURE_DEPENDS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/imgui/*.cpp"
+)
+set(STB_IMAGE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/stb_image/stb_image.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/stb_image/stb_image.cpp"
+) 
 
-set(GLOB_RECURSE IMGUI CONFIGURE_DEPENDS "include/imgui/*.h" "include/imgui/*.cxx")
-set(GLOB_RECURSE STB_IMAGE CONFIGURE_DEPENDS "include/stb_image/*.h" "include/stb_image/*.cxx")
-
+# Vendor Source Files
 set(VENDOR
     ${GLAD}
     ${IMGUI}
@@ -16,25 +29,29 @@ set(VENDOR
     PARENT_SCOPE
 )
 
-# Find and Link OpenGL
-find_package(OpenGL REQUIRED)
-target_link_libraries(${PROJECT_NAME} ${OPENGL_LIBRARIES})
+# Vendor Include Paths
+set(VENDOR_INCLUDES
+    ${GLAD_INCLUDE}
+    ${GLFW_INCLUDE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PARENT_SCOPE
+)
 
-# Link Remaining Libraries for Windows
+# Libraries for Windows
 if (WIN32)
-    # GLFW
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/glfw)
-    
-    target_link_libraries(${PROJECT_NAME}
-        glfw 
+    set(VENDOR_LIBRARIES
+        glfw
         ${GLFW_LIBRARIES}
         imm32.lib
+        PARENT_SCOPE
     )
 endif (WIN32)
 
-# Link Remaining Libraries for Unix
+# Libraries for Unix-like
 if (UNIX)
-    target_link_libraries(${PROJECT_NAME} 
+    set(VENDOR_LIBRARIES
         glfw
+        PARENT_SCOPE
     )
 endif (UNIX)
+
