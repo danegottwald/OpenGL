@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <glad/gl.h>
 
 #include "../Renderer/Shader.h"
 #include "../Renderer/Texture.h"
@@ -19,5 +19,4 @@ public:
     void Draw(float deltaTime);
 
     void LoadModel(const std::string &filename);
-
 };

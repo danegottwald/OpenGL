@@ -22,7 +22,8 @@ void GuiOverlay::Attach() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     (void)io;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+    io.ConfigFlags |=
+        ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
 
     ImGui::StyleColorsDark();
     auto& app = Application::Get();

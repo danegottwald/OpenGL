@@ -6,8 +6,6 @@
 
 #include "glm/glm.hpp"
 
-
-
 class VertexArray {
 private:
     unsigned int m_VertexArrayID;
@@ -21,7 +19,4 @@ public:
     void Unbind() const;
 
     void AddBuffer();
-
 };
-
-

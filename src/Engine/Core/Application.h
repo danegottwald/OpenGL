@@ -1,6 +1,6 @@
 #pragma once
 
-#include <GL/glew.h>
+#include <glad/gl.h>
 
 #include <memory>
 
@@ -24,11 +24,16 @@ public:
 
     void Run();
 
-    static Application& Get() { return *s_Instance; }
-    Renderer& GetRenderer() const { return *m_Renderer; }
+    static Application& Get() {
+        return *s_Instance;
+    }
+    Renderer& GetRenderer() const {
+        return *m_Renderer;
+    }
 
-    // GLFW, GLEW, OpenGL Functions
+    // GLFW, Glad, OpenGL Functions
     void SetOpenGLCoreProfile(unsigned int major, unsigned int minor);
-    const GLubyte* GetOpenGLVersion() { return glGetString(GL_VERSION); }
-
+    const GLubyte* GetOpenGLVersion() {
+        return glGetString(GL_VERSION);
+    }
 };

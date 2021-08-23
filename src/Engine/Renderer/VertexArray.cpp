@@ -28,47 +28,46 @@ void VertexArray::AddBuffer() {
     glCreateBuffers(1, &m_VertexBufferID);
     glBindBuffer(GL_ARRAY_BUFFER, m_VertexBufferID);
     // sizeof(m_Data) * 1, the 1 is the number of Vertex's
-    //glBufferData(GL_ARRAY_BUFFER, sizeof(m_Data) * 3, nullptr, GL_DYNAMIC_DRAW);
+    // glBufferData(GL_ARRAY_BUFFER, sizeof(m_Data) * 3, nullptr,
+    // GL_DYNAMIC_DRAW);
 
     glEnableVertexArrayAttrib(m_VertexBufferID, 0);
-    //glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const void*)offsetof(Vertex, Position));
+    // glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const
+    // void*)offsetof(Vertex, Position));
 
     glEnableVertexArrayAttrib(m_VertexBufferID, 1);
-    //glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const void*)offsetof(Vertex, Color));
+    // glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const
+    // void*)offsetof(Vertex, Color));
 
     // Continue for each attribute in Vertex Struct
     // ...
 
-    //define indices
+    // define indices
 
-    //glCreateBuffers(1, &m_IndexBufferID);
-    //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_IndexBufferID);
-    //glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+    // glCreateBuffers(1, &m_IndexBufferID);
+    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_IndexBufferID);
+    // glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices,
+    // GL_STATIC_DRAW);
 
-    //load textures
-
-
+    // load textures
 
     // OnUpdate()
 
     // get vertex data here
 
     glBindBuffer(GL_ARRAY_BUFFER, m_VertexBufferID);
-    //glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+    // glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    //glUseProgram(shader);
-    //glBindTextureUnit();
+    // glUseProgram(shader);
+    // glBindTextureUnit();
 
     // get camera controller
     // set view projection and transform from camera
 
     glBindVertexArray(m_VertexArrayID);
-    //glDrawElements(GL_TRIANGLES, ib.Count(), GL_UNSIGNED_INT, nullptr);
+    // glDrawElements(GL_TRIANGLES, ib.Count(), GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
     glUseProgram(0);
-
 }
-
-

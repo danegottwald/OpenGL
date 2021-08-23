@@ -18,13 +18,18 @@ private:
 public:
     PlayerController();
 
-    static PlayerController& GetController() { return *s_Controller; }
+    static PlayerController& GetController() {
+        return *s_Controller;
+    }
 
     void Update(float deltaTime);
     glm::mat4 GetViewMatrix() const;
     glm::mat4 GetProjectionMatrix() const;
 
-    const glm::vec3& GetPosition() { return m_Position; }
-    float GetFOV() const { return m_FOV; }
-
+    const glm::vec3& GetPosition() {
+        return m_Position;
+    }
+    float GetFOV() const {
+        return m_FOV;
+    }
 };

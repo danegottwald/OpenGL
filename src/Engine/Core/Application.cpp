@@ -8,14 +8,14 @@
 Application* Application::s_Instance = nullptr;
 
 Application::Application() {
-    //assert(!s_Instance, "Application already exists!");
+    // assert(!s_Instance, "Application already exists!");
     s_Instance = this;
 }
 
 void Application::Run() {
-    m_Window.reset(new Window({ "OpenGL", 1280, 720, false }));
+    m_Window.reset(new Window({"OpenGL", 1280, 720, false}));
     auto& window = Window::Get();
-    //m_Renderer.reset(new Renderer());
+    // m_Renderer.reset(new Renderer());
     m_Gui.reset(new GuiOverlay);
     m_Controller.reset(new PlayerController());
     Layer a;
@@ -24,13 +24,13 @@ void Application::Run() {
     window.SetVSync(true);
 
     int selectedItem = 0;
-    std::vector<char *> items;
-    for (const auto &item : std::filesystem::directory_iterator("res/models/")) {
+    std::vector<char*> items;
+    for (const auto& item :
+         std::filesystem::directory_iterator("res/models/")) {
         items.push_back(strdup(item.path().string().c_str()));
     }
 
     float deltaTime = 0.0f;
-
     m_Gui->Attach();
     while (window.IsRunning()) {
         if (!window.IsMinimized()) {
@@ -42,14 +42,16 @@ void Application::Run() {
                 m_Gui->Begin();
                 auto& pc = PlayerController::GetController();
                 ImGui::Begin("Debug");
-                ImGui::Text("%d FPS (%.1f ms)", static_cast<int>(ImGui::GetIO().Framerate),
-                    1000.0f / ImGui::GetIO().Framerate);
+                ImGui::Text("%d FPS (%.1f ms)",
+                            static_cast<int>(ImGui::GetIO().Framerate),
+                            1000.0f / ImGui::GetIO().Framerate);
                 ImGui::Text("%f", deltaTime);
                 ImGui::Text("Position: %.1f, %.1f, %.1f", pc.GetPosition().x,
-                    pc.GetPosition().y, pc.GetPosition().z);
+                            pc.GetPosition().y, pc.GetPosition().z);
 
                 int lastSelected = selectedItem;
-                ImGui::Combo("Model", &selectedItem, items.data(), items.size());
+                ImGui::Combo("Model", &selectedItem, items.data(),
+                             items.size());
 
                 if (lastSelected != selectedItem) {
                     layer.LoadModel(items[selectedItem]);

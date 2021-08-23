@@ -18,7 +18,7 @@ Layer::Layer() : m_VAID(0), m_VBID(0), m_IBID(0) {
     glBindBuffer(GL_ARRAY_BUFFER, m_VBID);
 
     m_Shader.reset(new Shader("Basic.glsl"));
-    //m_Texture.reset(new Texture("cobble.png"));
+    // m_Texture.reset(new Texture("cobble.png"));
 }
 
 Layer::~Layer() {
@@ -32,17 +32,20 @@ void Layer::Enable() {
     glBufferData(GL_ARRAY_BUFFER, 100000000, nullptr, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), static_cast<const void*>(nullptr));
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float),
+                          static_cast<const void*>(nullptr));
 
-    //glEnableVertexAttribArray(1);
-    //glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const void*)12);
+    // glEnableVertexAttribArray(1);
+    // glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (const
+    // void*)12);
 
     // Continue for each attribute in Vertex Struct
     // ...
 
-    // generate index buffer in the format depending on how many triangles are wanted
+    // generate index buffer in the format depending on how many triangles are
+    // wanted
 
-    //std::array<unsigned int, 36> i = {
+    // std::array<unsigned int, 36> i = {
     //    // front
     //    0, 1, 2,
     //    2, 3, 0,
@@ -66,10 +69,11 @@ void Layer::Enable() {
     glCreateBuffers(1, &m_IBID);
     LoadModel("monkey.obj");
 
-    //glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_IBID);
-    //glBufferData(GL_ELEMENT_ARRAY_BUFFER, i.size() * sizeof(unsigned int), i.data(), GL_STATIC_DRAW);
+    // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_IBID);
+    // glBufferData(GL_ELEMENT_ARRAY_BUFFER, i.size() * sizeof(unsigned int),
+    // i.data(), GL_STATIC_DRAW);
 
-    //load textures
+    // load textures
 
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 }
@@ -82,7 +86,7 @@ void Layer::Draw(float deltaTime) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     //// get vertex data here
-    //std::array<float, 40> v = {
+    // std::array<float, 40> v = {
     // // front
     // -1.0, -1.0,  1.0,  0.0,  0.0,
     //  1.0, -1.0,  1.0,  1.0,  0.0,
@@ -99,10 +103,11 @@ void Layer::Draw(float deltaTime) {
     glBufferSubData(GL_ARRAY_BUFFER, 0, v.size() * sizeof(float), v.data());
 
     m_Shader->Bind();
-    m_Shader->SetUniformMat4f("u_MVP", pc.GetProjectionMatrix() * pc.GetViewMatrix());
+    m_Shader->SetUniformMat4f("u_MVP",
+                              pc.GetProjectionMatrix() * pc.GetViewMatrix());
 
-    //m_Texture->Bind(0);
-    //m_Shader->SetUniform1i("u_Texture", 0);
+    // m_Texture->Bind(0);
+    // m_Shader->SetUniform1i("u_Texture", 0);
 
     glBindVertexArray(m_VAID);
     glDrawElements(GL_TRIANGLES, i.size(), GL_UNSIGNED_INT, nullptr);
@@ -113,7 +118,7 @@ void Layer::Draw(float deltaTime) {
     glUseProgram(0);
 }
 
-void Layer::LoadModel(const std::string &filename) {
+void Layer::LoadModel(const std::string& filename) {
     v.clear();
     i.clear();
     std::ifstream obj(filename);
@@ -122,18 +127,17 @@ void Layer::LoadModel(const std::string &filename) {
         if (data[0] == 'v') {
             float x, y, z;
             sscanf(data.c_str(), "v %f %f %f", &x, &y, &z);
-            //std::cout << x << " " << y << " " << z << std::endl;
+            // std::cout << x << " " << y << " " << z << std::endl;
             v.push_back(x);
             v.push_back(y);
             v.push_back(z);
-        }
-        else if (data[0] == 'f') {
+        } else if (data[0] == 'f') {
             unsigned int x, y, z;
             sscanf(data.c_str(), "f %u %u %u", &x, &y, &z);
             x -= 1;
             y -= 1;
             z -= 1;
-            //std::cout << x << " " << y << " " << z << std::endl;
+            // std::cout << x << " " << y << " " << z << std::endl;
             i.push_back(x);
             i.push_back(y);
             i.push_back(z);
@@ -143,6 +147,6 @@ void Layer::LoadModel(const std::string &filename) {
     std::cout << "Indices: " << i.size() / 3 << std::endl;
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_IBID);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, i.size() * sizeof(unsigned int), i.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, i.size() * sizeof(unsigned int),
+                 i.data(), GL_STATIC_DRAW);
 }
-

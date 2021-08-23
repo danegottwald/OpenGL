@@ -12,5 +12,4 @@ public:
     void Begin();
     void End();
     void Detach();
-
 };

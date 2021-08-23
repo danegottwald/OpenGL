@@ -1,12 +1,12 @@
 
 #include "Shader.h"
 
-#include <GL/glew.h>
+#include <glad/gl.h>
 
-#include <iostream>
 #include <fstream>
-#include <string>
+#include <iostream>
 #include <sstream>
+#include <string>
 
 // Create a attach the Shaders within the specified file
 Shader::Shader(const std::string &file) : m_File(file) {
@@ -37,11 +37,7 @@ Shader::ShaderProgramSource Shader::ParseShader(const std::string &file) {
     // Opens the file at 'filepath'
     std::ifstream stream("./res/shaders/" + file);
 
-    enum class ShaderType {
-        NONE = -1,
-        VERTEX = 0,
-        FRAGMENT = 1
-    };
+    enum class ShaderType { NONE = -1, VERTEX = 0, FRAGMENT = 1 };
 
     std::string line;
     std::stringstream ss[2];
@@ -50,25 +46,21 @@ Shader::ShaderProgramSource Shader::ParseShader(const std::string &file) {
         if (line.find("#type") != std::string::npos) {
             if (line.find("vertex") != std::string::npos) {
                 type = ShaderType::VERTEX;
-            }
-            else if (line.find("fragment") != std::string::npos) {
+            } else if (line.find("fragment") != std::string::npos) {
                 type = ShaderType::FRAGMENT;
             }
-        }
-        else if (type != ShaderType::NONE) {
-            ss[(int) type] << line << '\n';
+        } else if (type != ShaderType::NONE) {
+            ss[(int)type] << line << '\n';
         }
     }
-    return {
-            ss[0].str(),
-            ss[1].str()
-    };
+    return {ss[0].str(), ss[1].str()};
 }
 
 // Creates a Shader program, attaches a vertex and fragment shader, then links
 // and validates the shader.
 // Returns the Shader program's id
-unsigned int Shader::CreateShader(const std::string &vertexShader, const std::string &fragmentShader) {
+unsigned int Shader::CreateShader(const std::string &vertexShader,
+                                  const std::string &fragmentShader) {
     // Creates an empty program object for which shader objects can be attached
     unsigned int program = glCreateProgram();
 
@@ -81,12 +73,13 @@ unsigned int Shader::CreateShader(const std::string &vertexShader, const std::st
     glAttachShader(program, fs);
     // Links the program object and creates executables for each of the shaders
     glLinkProgram(program);
-    // Checks/validates whether the executables contained in 'program' can execute
+    // Checks/validates whether the executables contained in 'program' can
+    // execute
     glValidateProgram(program);
 
-    // Flags the shaders for deletion, but will not be deleted until it is no longer
-    // attached to any program object.  This will happen when glDeleteProgram() is
-    // called on 'program'
+    // Flags the shaders for deletion, but will not be deleted until it is no
+    // longer attached to any program object.  This will happen when
+    // glDeleteProgram() is called on 'program'
     glDeleteShader(vs);
     glDeleteShader(fs);
 
@@ -96,7 +89,8 @@ unsigned int Shader::CreateShader(const std::string &vertexShader, const std::st
 
 // Compiles the Shader's source code
 // Returns a Shader's id for attaching to a Shader program
-unsigned int Shader::CompileShader(unsigned int type, const std::string &source) {
+unsigned int Shader::CompileShader(unsigned int type,
+                                   const std::string &source) {
     // Create an empty shader object for the shader stage give by 'type'
     unsigned int id = glCreateShader(type);
 
@@ -112,7 +106,7 @@ unsigned int Shader::CompileShader(unsigned int type, const std::string &source)
     if (result == GL_FALSE) {
         int length;
         glGetShaderiv(id, GL_INFO_LOG_LENGTH, &length);
-        char *message = (char *) alloca(length * sizeof(char));
+        char *message = (char *)alloca(length * sizeof(char));
         glGetShaderInfoLog(id, length, &length, message);
         std::cout << "Failed to compile "
                   << (type == GL_VERTEX_SHADER ? "vertex" : "fragment")
@@ -125,11 +119,10 @@ unsigned int Shader::CompileShader(unsigned int type, const std::string &source)
     return id;
 }
 
-
 /* Uniform Related Functions */
 
 // Returns the location of a uniform value within the Shader
-int Shader::GetUniformLocation(const std::string& name) {
+int Shader::GetUniformLocation(const std::string &name) {
     // Search the cache to check if the uniform variable has been hit before
     if (m_UniformLocationCache.find(name) != m_UniformLocationCache.end()) {
         return m_UniformLocationCache[name];
@@ -137,7 +130,8 @@ int Shader::GetUniformLocation(const std::string& name) {
     // Find the location of the uniform variable
     int location = glGetUniformLocation(m_RendererID, name.c_str());
     if (location == -1) {
-        std::cout << "Warning: uniform '" << name << "' doesn't exist!" << std::endl;
+        std::cout << "Warning: uniform '" << name << "' doesn't exist!"
+                  << std::endl;
     }
     // Cache variable for future references
     m_UniformLocationCache[name] = location;
@@ -145,17 +139,16 @@ int Shader::GetUniformLocation(const std::string& name) {
 }
 
 // Specifies the value of a uniform variable in the current Shader program
-void Shader::SetUniform1i(const std::string& name, int value) {
+void Shader::SetUniform1i(const std::string &name, int value) {
     glUniform1i(GetUniformLocation(name), value);
 }
 
 // Specifies the value of a uniform variable in the current Shader program
-void Shader::SetUniform4f(const std::string& name, float v0, float v1, float v2, float v3) {
+void Shader::SetUniform4f(const std::string &name, float v0, float v1, float v2,
+                          float v3) {
     glUniform4f(GetUniformLocation(name), v0, v1, v2, v3);
 }
 
-void Shader::SetUniformMat4f(const std::string& name, const glm::mat4& matrix) {
+void Shader::SetUniformMat4f(const std::string &name, const glm::mat4 &matrix) {
     glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, &matrix[0][0]);
 }
-
-
