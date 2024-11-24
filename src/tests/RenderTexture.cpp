@@ -1,7 +1,7 @@
 
 #include "RenderTexture.h"
 
-#include "imgui/imgui.h"
+#include <imgui.h>
 
 #include "glm/gtc/matrix_transform.hpp"
 
@@ -26,7 +26,7 @@ TestSpace::RenderTexture::RenderTexture()
 	// Give Vertex Array the Layout of the Vertex Buffer
 	layout.Push<float>(2);
 	layout.Push<float>(2);
-	va->AddBuffer(*vb, layout);
+	//va->AddBuffer(*vb, layout);
 	// Create Index Buffer
 	ib = new IndexBuffer(indices);
 	// Create and Bind the Shader
