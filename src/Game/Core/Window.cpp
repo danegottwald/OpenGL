@@ -1,5 +1,6 @@
 
 #include "Window.h"
+#include "../../Input/Input.h"
 
 Window::Window( const WindowData& winData ) :
    m_WindowData( winData )
@@ -149,19 +150,19 @@ void Window::SetCallbacks()
    {
       switch( event.GetKeyCode() )
       {
-         case Events::KeyCode::Escape:
+         case Input::Escape:
          {
             m_fRunning = false;
             break;
          }
-         case Events::KeyCode::P:
+         case Input::P:
          {
             static int polygonModeFlip = GL_FILL;
             polygonModeFlip            = ( polygonModeFlip == GL_FILL ) ? GL_LINE : GL_FILL;
             glPolygonMode( GL_FRONT_AND_BACK, polygonModeFlip );
             break;
          }
-         case Events::KeyCode::F1:
+         case Input::F1:
          {
             static int fFlip = GLFW_CURSOR_NORMAL;
             fFlip            = ( fFlip == GLFW_CURSOR_NORMAL ) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
@@ -243,24 +244,31 @@ void Window::SetCallbacks()
    glfwSetKeyCallback( m_Window,
                        []( GLFWwindow* window, int key, int scancode, int action, int mods )
    {
-      Events::KeyCode keyCode = static_cast< Events::KeyCode >( key );
+      Input::KeyCode keyCode = static_cast< Input::KeyCode >( key );
+      if( action != GLFW_REPEAT )
+         Input::SetKeyPressed( keyCode, static_cast< bool >( action ) ); // Update the input manager state
+
+      // Dispatch events
       switch( action )
       {
-         case GLFW_PRESS:   Events::Dispatch< Events::KeyPressedEvent >( keyCode, false /*fRepeated*/ ); break;
+         case GLFW_PRESS:   Events::Dispatch< Events::KeyPressedEvent >( keyCode, false /* fRepeated */ ); break;
          case GLFW_RELEASE: Events::Dispatch< Events::KeyReleasedEvent >( keyCode ); break;
-         case GLFW_REPEAT:  Events::Dispatch< Events::KeyPressedEvent >( keyCode, true /*fRepeated*/ ); break;
+         case GLFW_REPEAT:  Events::Dispatch< Events::KeyPressedEvent >( keyCode, true /* fRepeated */ ); break;
          default:           throw std::runtime_error( "Unknown KeyEvent" );
       }
    } );
 
    glfwSetCharCallback( m_Window, []( GLFWwindow* window, unsigned int keycode ) {
-      Events::Dispatch< Events::KeyTypedEvent >( static_cast< Events::KeyCode >( keycode ) );
+      Events::Dispatch< Events::KeyTypedEvent >( static_cast< Input::KeyCode >( keycode ) );
    } );
 
    glfwSetMouseButtonCallback( m_Window,
                                []( GLFWwindow* window, int button, int action, int mods )
    {
-      Events::MouseCode mouseCode = static_cast< Events::MouseCode >( button );
+      Input::MouseCode mouseCode = static_cast< Input::MouseCode >( button );
+      Input::SetMouseButtonPressed( mouseCode, action != GLFW_RELEASE ); // Update the input manager state
+
+      // Dispatch events
       switch( action )
       {
          case GLFW_PRESS:   Events::Dispatch< Events::MouseButtonPressedEvent >( mouseCode ); break;

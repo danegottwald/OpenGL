@@ -1,26 +1,10 @@
 #pragma once
 
 #include "Event.h"
+#include "../Input/Codes.h"
 
 namespace Events
 {
-
-enum MouseCode : uint16_t
-{
-   Button0 = GLFW_MOUSE_BUTTON_1,
-   Button1 = GLFW_MOUSE_BUTTON_2,
-   Button2 = GLFW_MOUSE_BUTTON_3,
-   Button3 = GLFW_MOUSE_BUTTON_4,
-   Button4 = GLFW_MOUSE_BUTTON_5,
-   Button5 = GLFW_MOUSE_BUTTON_6,
-   Button6 = GLFW_MOUSE_BUTTON_7,
-   Button7 = GLFW_MOUSE_BUTTON_8,
-
-   ButtonLast   = GLFW_MOUSE_BUTTON_8,
-   ButtonLeft   = GLFW_MOUSE_BUTTON_1,
-   ButtonRight  = GLFW_MOUSE_BUTTON_2,
-   ButtonMiddle = GLFW_MOUSE_BUTTON_3
-};
 
 //=========================================================================
 // MouseMovedEvent
@@ -74,16 +58,16 @@ private:
 class MouseButtonEvent : public IEvent
 {
 public:
-   MouseCode GetMouseButton() const { return m_Button; }
+   Input::MouseCode GetMouseButton() const { return m_Button; }
 
    EVENT_CLASS_CATEGORY( EventCategory::EventCategoryMouse | EventCategory::EventCategoryInput | EventCategory::EventCategoryMouseButton )
 
 protected:
-   MouseButtonEvent( const MouseCode button ) :
+   MouseButtonEvent( const Input::MouseCode button ) :
       m_Button( button )
    {}
 
-   MouseCode m_Button;
+   Input::MouseCode m_Button;
 };
 
 //=========================================================================
@@ -92,7 +76,7 @@ protected:
 class MouseButtonPressedEvent final : public MouseButtonEvent
 {
 public:
-   MouseButtonPressedEvent( const MouseCode button ) :
+   MouseButtonPressedEvent( const Input::MouseCode button ) :
       MouseButtonEvent( button )
    {}
 
@@ -107,7 +91,7 @@ public:
 class MouseButtonReleasedEvent final : public MouseButtonEvent
 {
 public:
-   MouseButtonReleasedEvent( const MouseCode button ) :
+   MouseButtonReleasedEvent( const Input::MouseCode button ) :
       MouseButtonEvent( button )
    {}
 

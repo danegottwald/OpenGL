@@ -5,17 +5,16 @@
 #include "../World.h"
 #include "../../Events/KeyEvent.h"
 #include "../../Events/MouseEvent.h"
+#include "../../Input/Input.h"
 
 Player::Player()
 {
    m_position = { 0.0f, 0.0f, 3.0f };
 
    // Subscribe to events
-   m_eventSubscriber.Subscribe< Events::KeyPressedEvent >( std::bind( &Player::KeyPressed, this, std::placeholders::_1 ) );
-   m_eventSubscriber.Subscribe< Events::KeyReleasedEvent >( std::bind( &Player::KeyReleased, this, std::placeholders::_1 ) );
+   m_eventSubscriber.Subscribe< Events::MouseMovedEvent >( std::bind( &Player::MouseMove, this, std::placeholders::_1 ) );
    m_eventSubscriber.Subscribe< Events::MouseButtonPressedEvent >( std::bind( &Player::MouseButtonPressed, this, std::placeholders::_1 ) );
    m_eventSubscriber.Subscribe< Events::MouseButtonReleasedEvent >( std::bind( &Player::MouseButtonReleased, this, std::placeholders::_1 ) );
-   m_eventSubscriber.Subscribe< Events::MouseMovedEvent >( std::bind( &Player::MouseMove, this, std::placeholders::_1 ) );
 }
 
 void Player::Update( float delta )
@@ -50,34 +49,34 @@ void Player::Tick( World& world, float delta )
 void Player::ApplyInputs()
 {
    float speed = 0.4f;
-   if( m_InputMap[ Events::LeftShift ] )
+   if( Input::IsKeyPressed( Input::LeftShift ) )
       speed *= 10;
 
-   if( m_InputMap[ Events::W ] )
+   if( Input::IsKeyPressed( Input::W ) )
    {
       m_acceleration.x -= glm::cos( glm::radians( m_rotation.y + 90 ) ) * speed;
       m_acceleration.z -= glm::sin( glm::radians( m_rotation.y + 90 ) ) * speed;
    }
-   if( m_InputMap[ Events::S ] )
+   if( Input::IsKeyPressed( Input::S ) )
    {
       m_acceleration.x += glm::cos( glm::radians( m_rotation.y + 90 ) ) * speed;
       m_acceleration.z += glm::sin( glm::radians( m_rotation.y + 90 ) ) * speed;
    }
-   if( m_InputMap[ Events::A ] )
+   if( Input::IsKeyPressed( Input::A ) )
    {
       float yaw = glm::radians( m_rotation.y );
       m_acceleration += glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) ) * speed;
    }
-   if( m_InputMap[ Events::D ] )
+   if( Input::IsKeyPressed( Input::D ) )
    {
       float yaw = glm::radians( m_rotation.y );
       m_acceleration -= glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) ) * speed;
    }
-   if( m_InputMap[ Events::Space ] )
+   if( Input::IsKeyPressed( Input::Space ) )
    {
       m_acceleration.y += speed;
    }
-   if( m_InputMap[ Events::LeftControl ] )
+   if( Input::IsKeyPressed( Input::LeftControl ) )
    {
       m_acceleration.y -= speed;
    }
@@ -107,25 +106,6 @@ void Player::UpdateState( World& world, float delta )
 // --------------------------------------------------------------------
 //      Player Event Handling
 // --------------------------------------------------------------------
-void Player::KeyPressed( const Events::KeyPressedEvent& event )
-{
-   Window& window = Window::Get(); // clean this up, so we dont need to check each call
-   if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
-      return;
-
-   if( !event.FRepeat() )
-      m_InputMap[ event.GetKeyCode() ] = true;
-}
-
-void Player::KeyReleased( const Events::KeyReleasedEvent& event )
-{
-   Window& window = Window::Get(); // clean this up, so we dont need to check each call
-   if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
-      return;
-
-   m_InputMap[ event.GetKeyCode() ] = false;
-}
-
 void Player::MouseButtonPressed( const Events::MouseButtonPressedEvent& event )
 {
    Window& window = Window::Get(); // clean this up, so we dont need to check each call

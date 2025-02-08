@@ -33,8 +33,6 @@ private:
    // Events (fix this, make it cleaner)
    Events::EventSubscriber              m_eventSubscriber;
    std::unordered_map< uint16_t, bool > m_InputMap;
-   void                                 KeyPressed( const Events::KeyPressedEvent& e );
-   void                                 KeyReleased( const Events::KeyReleasedEvent& e );
    void                                 MouseButtonPressed( const Events::MouseButtonPressedEvent& e );
    void                                 MouseButtonReleased( const Events::MouseButtonReleasedEvent& e );
    void                                 MouseMove( const Events::MouseMovedEvent& e );
