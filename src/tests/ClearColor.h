@@ -2,19 +2,21 @@
 
 #include "Test.h"
 
-namespace TestSpace {
+namespace TestSpace
+{
 
-    class ClearColor : public Test {
-    private:
-        float m_ClearColor[4];
+class ClearColor : public Test
+{
+private:
+   float m_ClearColor[ 4 ];
 
-    public:
-        ClearColor();
-        ~ClearColor();
+public:
+   ClearColor();
+   ~ClearColor();
 
-        void OnUpdate(float deltaTime) override;
-        void OnRender() override;
-        void OnImGuiRender() override;
-    };
+   void OnUpdate( float deltaTime ) override;
+   void OnRender() override;
+   void OnImGuiRender() override;
+};
 
 }

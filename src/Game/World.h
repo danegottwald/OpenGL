@@ -8,18 +8,18 @@ class Camera;
 class World
 {
 public:
-    World();
+   World();
 
-    void Setup();
-    void Tick( float delta );
-    void Render( const Camera& camera );
+   void Setup();
+   void Tick( float delta );
+   void Render( const Camera& camera );
 
 private:
-    // renderer stuff
-    GLuint m_VAID, m_VBID, m_IBID;
+   // renderer stuff
+   GLuint m_VAID, m_VBID, m_IBID;
 
-    // All relevant world data
-    //      Generate terrain on construction?
-    // Maybe list of all entities? then Tick them in Tick()?
-    // std::vector< Entity > m_EntityList;
+   // All relevant world data
+   //      Generate terrain on construction?
+   // Maybe list of all entities? then Tick them in Tick()?
+   // std::vector< Entity > m_EntityList;
 };

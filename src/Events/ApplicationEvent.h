@@ -2,69 +2,78 @@
 
 #include "Event.h"
 
+namespace Events
+{
+
+//=========================================================================
+// WindowResizeEvent
+//=========================================================================
 class WindowResizeEvent : public IEvent
 {
+public:
+   WindowResizeEvent( unsigned int width, unsigned int height ) :
+      m_Width( width ),
+      m_Height( height )
+   {}
+
+   unsigned int GetWidth() const { return m_Width; }
+   unsigned int GetHeight() const { return m_Height; }
+
+   std::string ToString() const override { return std::format( "WindowResizeEvent: {0}, {1}", m_Width, m_Height ); }
+
+   EVENT_CLASS_TYPE( EventType::WindowResize )
+   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+
 private:
-    unsigned int m_Width, m_Height;
-
-public:
-    WindowResizeEvent( unsigned int width, unsigned int height )
-        : m_Width( width ), m_Height( height )
-    {
-    }
-
-    unsigned int GetWidth() const
-    {
-        return m_Width;
-    }
-    unsigned int GetHeight() const
-    {
-        return m_Height;
-    }
-
-    std::string ToString() const override
-    {
-        std::stringstream ss;
-        ss << "WindowResizeEvent: " << m_Width << ", " << m_Height;
-        return ss.str();
-    }
-
-    EVENT_CLASS_TYPE( EventType::WindowResize )
-        EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   unsigned int m_Width, m_Height;
 };
 
-class WindowCloseEvent : public IEvent
+//=========================================================================
+// WindowCloseEvent
+//=========================================================================
+class WindowCloseEvent final : public IEvent
 {
 public:
-    WindowCloseEvent() = default;
+   WindowCloseEvent() = default;
 
-    EVENT_CLASS_TYPE( EventType::WindowClose )
-        EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_TYPE( EventType::WindowClose )
+   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
 };
 
-class AppTickEvent : public IEvent
+//=========================================================================
+// AppTickEvent
+//=========================================================================
+class AppTickEvent final : public IEvent
 {
 public:
-    AppTickEvent() = default;
+   AppTickEvent() = default;
 
-    EVENT_CLASS_TYPE( EventType::AppTick )
-        EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_TYPE( EventType::AppTick )
+   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
 };
 
-class AppUpdateEvent : public IEvent
+//=========================================================================
+// AppUpdateEvent
+//=========================================================================
+class AppUpdateEvent final : public IEvent
 {
 public:
-    AppUpdateEvent() = default;
+   AppUpdateEvent() = default;
 
-    EVENT_CLASS_TYPE( EventType::AppUpdate )
-        EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_TYPE( EventType::AppUpdate )
+   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
 };
 
-class AppRenderEvent : public IEvent
+//=========================================================================
+// AppRenderEvent
+//=========================================================================
+class AppRenderEvent final : public IEvent
 {
 public:
-    AppRenderEvent() = default;
+   AppRenderEvent() = default;
 
-    EVENT_CLASS_TYPE( EventType::AppRender )
-        EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_TYPE( EventType::AppRender )
+   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
 };
+
+} // namespace Events

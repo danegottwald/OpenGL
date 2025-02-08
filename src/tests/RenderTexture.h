@@ -13,21 +13,21 @@ namespace TestSpace
 class RenderTexture : public Test
 {
 private:
-    VertexBuffer* vb;
-    VertexArray* va;
-    VertexBufferLayout layout;
-    IndexBuffer* ib;
-    Shader* shader;
-    Texture* texture;
-    glm::vec3 translation;
+   VertexBuffer*      vb;
+   VertexArray*       va;
+   VertexBufferLayout layout;
+   IndexBuffer*       ib;
+   Shader*            shader;
+   Texture*           texture;
+   glm::vec3          translation;
 
 public:
-    RenderTexture();
-    ~RenderTexture();
+   RenderTexture();
+   ~RenderTexture();
 
-    void OnUpdate(float deltaTime) override;
-    void OnRender() override;
-    void OnImGuiRender() override;
+   void OnUpdate( float deltaTime ) override;
+   void OnRender() override;
+   void OnImGuiRender() override;
 };
 
-}  // namespace TestSpace
+} // namespace TestSpace

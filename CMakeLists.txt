@@ -1,16 +1,23 @@
 cmake_minimum_required(VERSION 3.16)
 project(OpenGL)
 
+# Use vcpkg toolchain
+set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+message(STATUS "Using vcpkg from: $ENV{VCPKG_ROOT}")
+
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Enable optimization flags for Release builds
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG")
 
 # Copy 'res' folder to output directory
 add_custom_target(RES ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/res ${CMAKE_CURRENT_BINARY_DIR}/res
 )
 
-# Find required packages
+# Find required packages using vcpkg
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -35,7 +42,7 @@ target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 add_dependencies(${PROJECT_NAME} RES)
 
 # Include directories for external libraries
-target_include_directories(${PROJECT_NAME} PRIVATE ${Stb_INCLUDE_DIR})
+target_include_directories(${PROJECT_NAME} PRIVATE ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)
 
 # Link libraries
 target_link_libraries(${PROJECT_NAME}
@@ -46,3 +53,4 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE glad::glad
     PRIVATE imgui::imgui
 )
+

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../Events/Event.h"
 #include "../../Events/KeyEvent.h"
 #include "../../Events/MouseEvent.h"
 #include "../../Events/ApplicationEvent.h"
@@ -8,14 +9,14 @@
 struct GLFWwindow;
 
 // Type Aliases
-using EventCallbackFn = std::function<void( IEvent& )>;
+using EventCallbackFn = std::function< bool( Events::IEvent& ) >;
 
 struct WindowData
 {
-    std::string Title = "OpenGL";
-    uint16_t Width = 1280;
-    uint16_t Height = 720;
-    bool VSync = true;
+   std::string Title  = "OpenGL";
+   uint16_t    Width  = 1280;
+   uint16_t    Height = 720;
+   bool        VSync  = true;
 };
 
 // --------------------------------------------------------------------
@@ -24,48 +25,42 @@ struct WindowData
 class Window
 {
 public:
-    // Singleton Related
-    static Window& Get();
-    static GLFWwindow* GetNativeWindow();
-    Window( const Window& ) = delete;
-    Window& operator=( const Window& ) = delete;
-    Window( Window&& ) = delete;
-    Window& operator=( Window&& ) = delete;
+   // Singleton Related
+   static Window&     Get();
+   static GLFWwindow* GetNativeWindow();
+   Window( const Window& )            = delete;
+   Window& operator=( const Window& ) = delete;
+   Window( Window&& )                 = delete;
+   Window& operator=( Window&& )      = delete;
 
-    ~Window();
+   ~Window();
 
-    void Init();
-    void OnUpdate() const;
-    void Close();
+   void Init();
+   void OnUpdate() const;
 
-    glm::vec2 GetMousePosition() const;
+   glm::vec2 GetMousePosition() const;
 
-    // Queries
-    bool FMinimized();
-    bool IsOpen();
+   // Queries
+   bool FMinimized();
+   bool IsOpen();
 
-    // WindowData
-    WindowData& GetWindowData();
-    void SetVSync( bool state );
-
-    // Events
-    bool OnEvent( EventDispatcher& e );
-    void SetEventCallback( const EventCallbackFn& callback );
-    EventCallbackFn& EventCallback();
+   // WindowData
+   WindowData& GetWindowData();
+   void        SetVSync( bool state );
 
 private:
-    // Disallow instantiation outside of class
-    Window( const WindowData& config );
+   // Disallow instantiation outside of class
+   Window( const WindowData& config );
 
-    GLFWwindow* m_Window = nullptr;
-    WindowData m_WindowData;
+   GLFWwindow* m_Window = nullptr;
+   WindowData  m_WindowData;
 
-    bool m_fMinimized = false;
-    bool m_fRunning = false;
+   bool m_fMinimized = false;
+   bool m_fRunning   = false;
 
-    // Events
-    EventCallbackFn m_eventCallback;
-    bool EventResize( WindowResizeEvent& e );
-    bool EventClose( WindowCloseEvent& e );
-    void SetCallbacks() const;
+   // Events
+   Events::EventSubscriber m_eventSubscriber;
+   void                    EventResize( const Events::WindowResizeEvent& e );
+   void                    EventClose( const Events::WindowCloseEvent& e );
+   void                    SetCallbacks();
 };

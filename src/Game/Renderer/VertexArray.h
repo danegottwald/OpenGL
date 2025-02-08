@@ -6,15 +6,15 @@
 class VertexArray
 {
 private:
-    unsigned int m_VertexArrayID;
-    unsigned int m_VertexBufferID;
+   unsigned int m_VertexArrayID;
+   unsigned int m_VertexBufferID;
 
 public:
-    VertexArray();
-    ~VertexArray();
+   VertexArray();
+   ~VertexArray();
 
-    void Bind() const;
-    void Unbind() const;
+   void Bind() const;
+   void Unbind() const;
 
-    void AddBuffer();
+   void AddBuffer();
 };

@@ -4,44 +4,41 @@
 #include <functional>
 #include <vector>
 
-namespace TestSpace {
+namespace TestSpace
+{
 
-    class Test {
-    private:
+class Test
+{
+private:
+public:
+   Test() {}
 
-    public:
-        Test() {
-        }
+   virtual ~Test() {}
 
-        virtual ~Test() {
-        }
+   virtual void OnUpdate( float deltaTime ) {}
 
-        virtual void OnUpdate(float deltaTime) {
-        }
+   virtual void OnRender() {}
 
-        virtual void OnRender() {
-        }
+   virtual void OnImGuiRender() {}
+};
 
-        virtual void OnImGuiRender() {
-        }
-    };
+class TestMenu : public Test
+{
+private:
+   Test*&                                                            m_CurrentTest;
+   std::vector< std::pair< std::string, std::function< Test*() > > > m_Tests;
 
-    class TestMenu : public Test {
-    private:
-        Test*& m_CurrentTest;
-        std::vector<std::pair<std::string, std::function<Test*()>>> m_Tests;
+public:
+   TestMenu( Test*& currentTestPtr );
 
-    public:
-        TestMenu(Test*& currentTestPtr);
+   void OnImGuiRender() override;
 
-        void OnImGuiRender() override;
-
-        template <typename T>
-        void RegisterTest(const std::string& name) {
-            std::cout << "Registering test: " << name << std::endl;
-            m_Tests.push_back(std::make_pair(name, []() { return new T(); }));
-        }
-
-    };
+   template< typename T >
+   void RegisterTest( const std::string& name )
+   {
+      std::cout << "Registering test: " << name << std::endl;
+      m_Tests.push_back( std::make_pair( name, []() { return new T(); } ) );
+   }
+};
 
 }
