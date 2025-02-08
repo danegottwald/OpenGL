@@ -9,7 +9,7 @@ class Renderer
 private:
    std::unique_ptr< Shader > m_Shader;
 
-   GLuint m_VA, m_VB, m_IB;
+   GLuint m_VA {}, m_VB {}, m_IB {};
 
 public:
    Renderer();

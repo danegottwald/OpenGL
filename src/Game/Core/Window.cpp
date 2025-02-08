@@ -3,17 +3,7 @@
 
 Window::Window( const WindowData& winData ) :
    m_WindowData( winData )
-{
-   // Initialize GLFW
-   uint32_t success = glfwInit();
-   _ASSERT_EXPR( success == GLFW_TRUE, L"Failed to initialize GLFW" );
-   glfwSetErrorCallback( []( int code, const char* message ) { std::cout << "[GLFW Error] (" << code << "): " << message << std::endl; } );
-
-#ifndef NDEBUG
-   std::clog << "GLFW DEBUG CONTEXT ENABLED" << std::endl;
-   glfwWindowHint( GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE );
-#endif
-}
+{}
 
 Window::~Window()
 {
@@ -36,55 +26,67 @@ void Window::Init()
 {
    _ASSERT_EXPR( !m_fRunning, L"Window is already running" );
 
-   // glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-   m_Window   = glfwCreateWindow( m_WindowData.Width, m_WindowData.Height, m_WindowData.Title.c_str(), nullptr, nullptr );
+   // Initialize GLFW
+   if( !glfwInit() )
+      throw std::runtime_error( "Failed to initialize GLFW" );
+
+   glfwSetErrorCallback( []( int code, const char* message ) { std::cout << "[GLFW Error] (" << code << "): " << message << std::endl; } );
+
+#ifndef NDEBUG
+   std::clog << "GLFW DEBUG CONTEXT ENABLED" << std::endl;
+   glfwWindowHint( GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE );
+#endif
+
+   // Set OpenGL Version and Profile
+   glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 4 );                 // OpenGL major version 4
+   glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 5 );                 // OpenGL minor version 3
+   glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE ); // Use core profile (no deprecated functions)
+   glfwWindowHint( GLFW_SAMPLES, 4 );                               // Enable Multi-Sample Anti-Aliasing (MSAA)
+
+   // Create the GLFW window
+   m_Window = glfwCreateWindow( m_WindowData.Width, m_WindowData.Height, m_WindowData.Title.c_str(), nullptr, nullptr );
+   if( !m_Window )
+      throw std::runtime_error( "Failed to create GLFW window" );
+
    m_fRunning = static_cast< bool >( m_Window );
+   glfwMakeContextCurrent( m_Window );         // Make the window's context current
+   glfwSetWindowUserPointer( m_Window, this ); // Set the user pointer to this class instance
+   glfwSwapInterval( m_WindowData.VSync );     // Enable VSync
 
-   // Set OpenGL Version
-   glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 3 );
-   glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 3 );
-   glfwMakeContextCurrent( m_Window );
-   glfwSetWindowUserPointer( m_Window, this );
-   glfwSwapInterval( m_WindowData.VSync );
+   // Initialize OpenGL functions using GLAD
+   if( !gladLoadGL() )
+      throw std::runtime_error( "Failed to initialize OpenGL context" );
 
-   { // OpenGL Related
-      // Failed to initialize OpenGL context
-      assert( gladLoadGL() );
+   {                             // ---- OpenGL State Setup ----
+      glEnable( GL_DEPTH_TEST ); // Enable depth testing
+      glDepthFunc( GL_LESS );    // Accept fragment if it closer to the camera than the former one
 
-      // Depth Test
-      glEnable( GL_DEPTH_TEST ); // learn more about what this does
-      glDepthFunc( GL_LESS );
+      //glfwWindowHint( GLFW_SAMPLES, 4 ); // Enable Multi-Sample Anti-Aliasing (MSAA)
+      //glEnable( GL_MULTISAMPLE );        // Enable MSAA
 
-      // MSAA
-      // glfwWindowHint(GLFW_SAMPLES, 4);
-      // glEnable(GL_MULTISAMPLE);
+      glEnable( GL_CULL_FACE ); // Enable face culling
+      glCullFace( GL_BACK );    // Cull back-facing polygons
+      glFrontFace( GL_CCW );    // Counter-clockwise winding is considered front-facing
 
-      // Enable Face Culling and Winding Order
-      glEnable( GL_CULL_FACE );
-      glCullFace( GL_BACK );
-      glFrontFace( GL_CCW );
+      glEnable( GL_BLEND );                                // Enable blending
+      glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA ); // Standard alpha blending
 
-      // Enable Alpha Blending
-      glEnable( GL_BLEND );
-      glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-
-      // Enable smooth shading
-      glShadeModel( GL_SMOOTH ); // GL_FLAT or GL_SMOOTH (default)
-
-      // Set clear color for the screen
-      glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ); // Set screen background color (black)
+      glShadeModel( GL_SMOOTH );              // Default shading model is smooth
+      glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ); // Default clear color is black
    }
 
-   // Set callbacks at the end
+   // Set up necessary callbacks for input handling and window events
    SetCallbacks();
 
-   // ImGui (this needs to be after setting the callbacks)
-   IMGUI_CHECKVERSION();
-   ImGui::CreateContext();
-   ImGui::GetIO().IniFilename = nullptr;
-   ImGui::StyleColorsDark();
-   ImGui_ImplGlfw_InitForOpenGL( m_Window, true );
-   ImGui_ImplOpenGL3_Init( "#version 330" );
+   {                                                  // ---- ImGui Initialization ----
+      IMGUI_CHECKVERSION();                           // Ensure correct ImGui version
+      ImGui::CreateContext();                         // Create a new ImGui context
+      ImGui::GetIO().IniFilename = nullptr;           // Disable saving ImGui settings to a file
+      ImGui::StyleColorsDark();                       // Use dark theme for ImGui
+      ImGui_ImplGlfw_InitForOpenGL( m_Window, true ); // Initialize ImGui with GLFW support
+      if( !ImGui_ImplOpenGL3_Init( "#version 330" ) )
+         throw std::runtime_error( "Failed to initialize ImGui OpenGL backend" );
+   }
 }
 
 void Window::OnUpdate() const
@@ -108,12 +110,12 @@ glm::vec2 Window::GetMousePosition() const
 // --------------------------------------------------------------------
 //      Window Queries
 // --------------------------------------------------------------------
-bool Window::FMinimized()
+bool Window::FMinimized() const noexcept
 {
    return m_fMinimized;
 }
 
-bool Window::IsOpen()
+bool Window::IsOpen() const noexcept
 {
    return m_fRunning;
 }
@@ -131,7 +133,6 @@ void Window::SetVSync( bool state )
    if( state != m_WindowData.VSync )
       glfwSwapInterval( m_WindowData.VSync = state );
 }
-
 
 void Window::SetCallbacks()
 {
@@ -172,9 +173,11 @@ void Window::SetCallbacks()
       }
    } );
 
+#ifndef NDEBUG
    // OpenGL Error Callback (API RELATED, RELOCATE)
    glEnable( GL_DEBUG_OUTPUT );
    glEnable( GL_DEBUG_OUTPUT_SYNCHRONOUS ); // enable only on debug
+   glDebugMessageControl( GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, GL_FALSE );
    glDebugMessageCallback(
       []( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char* message, const void* userParam )
    {
@@ -230,6 +233,7 @@ void Window::SetCallbacks()
       }
    },
       nullptr );
+#endif
 
    // GLFW Window Callbacks
    glfwSetWindowSizeCallback( m_Window, []( GLFWwindow* window, int width, int height ) { Events::Dispatch< Events::WindowResizeEvent >( width, height ); } );

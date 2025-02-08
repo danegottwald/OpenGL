@@ -96,8 +96,8 @@ void World::Setup()
 
             for( int face = 0; face < 6; ++face )
             {
-               glm::vec3 normal;
-               glm::vec3 vertices[ 4 ];
+               glm::vec3 normal {};
+               glm::vec3 vertices[ 4 ] {};
 
                switch( face )
                {

@@ -90,20 +90,20 @@ public:
    template< typename TEvent, typename std::enable_if< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value, int >::type = 0 >
    void Subscribe( EventCallbackFn< TEvent >&& callback )
    {
-      m_subscribedEvents[ TEvent::GetStaticType() ] = { true /*fEnabled*/, [ callback = std::move( callback ) ]( const IEvent& event ) {
+      m_events[ TEvent::GetStaticType() ] = { true /*fEnabled*/, [ callback = std::move( callback ) ]( const IEvent& event ) {
          callback( static_cast< const TEvent& >( event ) );
       } };
    }
 
-   void Unsubscribe( EventType type ) { m_subscribedEvents.erase( type ); }
+   void Unsubscribe( EventType type ) { m_events.erase( type ); }
 
    // Enables the specified event type if it has been subscribed to.
    // Can be used to resume processing a specific event after being disabled.
    template< typename TEvent, typename std::enable_if< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value, int >::type = 0 >
    void EnableEvent()
    {
-      if( m_subscribedEvents.find( TEvent::GetStaticType() ) != m_subscribedEvents.end() )
-         m_subscribedEvents[ TEvent::GetStaticType() ].fEnabled = true;
+      if( m_events.find( TEvent::GetStaticType() ) != m_events.end() )
+         m_events[ TEvent::GetStaticType() ].fEnabled = true;
    }
 
    // Disables the specified event type if it has been subscribed to.
@@ -111,15 +111,15 @@ public:
    template< typename TEvent, typename std::enable_if< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value, int >::type = 0 >
    void DisableEvent()
    {
-      if( m_subscribedEvents.find( TEvent::GetStaticType() ) != m_subscribedEvents.end() )
-         m_subscribedEvents[ TEvent::GetStaticType() ].fEnabled = false;
+      if( m_events.find( TEvent::GetStaticType() ) != m_events.end() )
+         m_events[ TEvent::GetStaticType() ].fEnabled = false;
    }
 
 private:
    void DispatchToCallbacks( std::unique_ptr< IEvent >& pEvent )
    {
-      auto it = m_subscribedEvents.find( pEvent->GetEventType() );
-      if( it != m_subscribedEvents.end() && it->second.fEnabled && it->second.callback )
+      auto it = m_events.find( pEvent->GetEventType() );
+      if( it != m_events.end() && it->second.fEnabled && it->second.callback )
          it->second.callback( *pEvent );
    }
 
@@ -128,7 +128,7 @@ private:
       bool                      fEnabled { true };
       EventCallbackFn< IEvent > callback { nullptr };
    };
-   std::unordered_map< EventType, EventData > m_subscribedEvents;
+   std::unordered_map< EventType, EventData > m_events;
 
    //=========================================================================
    // EventManager (Static Class for Managing Event Subscriptions & Dispatching)

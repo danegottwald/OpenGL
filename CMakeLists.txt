@@ -1,23 +1,24 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 project(OpenGL)
 
-# Use vcpkg toolchain
-set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
-message(STATUS "Using vcpkg from: $ENV{VCPKG_ROOT}")
-
-# Set C++ standard
+# Set C++ standard to C++23 and apply necessary compiler flags for Release builds
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG /Zi")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
 
-# Enable optimization flags for Release builds
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG")
-
-# Copy 'res' folder to output directory
-add_custom_target(RES ALL
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/res ${CMAKE_CURRENT_BINARY_DIR}/res
+# Define a list of resource dependency directories to copy
+set(RES_DIRECTORIES
+    "${CMAKE_CURRENT_SOURCE_DIR}/res"
+    # Add more directories as needed
 )
 
-# Find required packages using vcpkg
+# Copy all resource dependency directories in the list to the build directory
+add_custom_target(res ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_DIRECTORIES} ${CMAKE_CURRENT_BINARY_DIR}/res
+)
+
+# Find external dependencies using vcpkg
 find_package(OpenGL REQUIRED)
 find_package(GLEW REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -26,25 +27,16 @@ find_package(glad CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 
-# Source files
+# Collect all source files
 file(GLOB_RECURSE FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
-# Add the executable
+# Create the executable and link it with necessary libraries
 add_executable(${PROJECT_NAME} ${FILES})
-
-# Precompiled header
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
-
-# Add dependencies for the 'res' folder
-add_dependencies(${PROJECT_NAME} RES)
-
-# Include directories for external libraries
-target_include_directories(${PROJECT_NAME} PRIVATE ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)
-
-# Link libraries
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include)
 target_link_libraries(${PROJECT_NAME}
     PRIVATE OpenGL::GL
     PRIVATE GLEW::GLEW
@@ -54,3 +46,13 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE imgui::imgui
 )
 
+# Install the executable, copy resource dependency directories, and DLLs into the install directory
+foreach(dir IN LISTS RES_DIRECTORIES)
+    install(DIRECTORY ${dir} DESTINATION ${CMAKE_INSTALL_PREFIX})
+endforeach()
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/res DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
+install(FILES $<TARGET_RUNTIME_DLLS:${PROJECT_NAME}> DESTINATION ${CMAKE_INSTALL_PREFIX} OPTIONAL)
+
+# Ensure runtime DLLs are resolved at install time
+cmake_policy(SET CMP0087 NEW)

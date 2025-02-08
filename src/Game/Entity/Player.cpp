@@ -150,16 +150,16 @@ void Player::MouseMove( const Events::MouseMovedEvent& event )
    if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
       return;
 
-   float            verticalSens   = 0.5f;
-   float            horizontalSens = 0.5f;
+   constexpr float  verticalSens   = 0.5f;
+   constexpr float  horizontalSens = 0.5f;
    static glm::vec2 lastMousePos   = window.GetMousePosition();
    glm::vec2        delta          = window.GetMousePosition() - lastMousePos;
-   m_rotation.x += delta.y / 8.0f * verticalSens;
-   m_rotation.y += delta.x / 8.0f * horizontalSens;
+   m_rotation.x += ( delta.y / 8.0f ) * verticalSens;
+   m_rotation.y += ( delta.x / 8.0f ) * horizontalSens;
 
    WindowData& windowData = window.GetWindowData();
-   lastMousePos.x         = windowData.Width / 2;
-   lastMousePos.y         = windowData.Height / 2;
+   lastMousePos.x         = windowData.Width / 2.0f;
+   lastMousePos.y         = windowData.Height / 2.0f;
 
    // Reset mouse cursor to center of screen
    glfwSetCursorPos( window.GetNativeWindow(), lastMousePos.x, lastMousePos.y );

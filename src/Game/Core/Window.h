@@ -41,8 +41,8 @@ public:
    glm::vec2 GetMousePosition() const;
 
    // Queries
-   bool FMinimized();
-   bool IsOpen();
+   bool FMinimized() const noexcept;
+   bool IsOpen() const noexcept;
 
    // WindowData
    WindowData& GetWindowData();
@@ -60,7 +60,5 @@ private:
 
    // Events
    Events::EventSubscriber m_eventSubscriber;
-   void                    EventResize( const Events::WindowResizeEvent& e );
-   void                    EventClose( const Events::WindowCloseEvent& e );
    void                    SetCallbacks();
 };
