@@ -5,7 +5,7 @@ project(OpenGL)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /DNDEBUG /Zi")
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /DEBUG")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /ENTRY:mainCRTStartup")
 
 # Define a list of resource dependency directories to copy
 set(RES_DIRECTORIES
@@ -45,6 +45,11 @@ target_link_libraries(${PROJECT_NAME}
     PRIVATE glad::glad
     PRIVATE imgui::imgui
 )
+
+# Prevent console window from showing on Release build by setting the WIN32_EXECUTABLE property
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE TRUE)
+endif()
 
 # Install the executable, copy resource dependency directories, and DLLs into the install directory
 foreach(dir IN LISTS RES_DIRECTORIES)

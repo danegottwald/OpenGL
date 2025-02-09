@@ -8,9 +8,6 @@
 // Forward Declarations
 struct GLFWwindow;
 
-// Type Aliases
-using EventCallbackFn = std::function< bool( Events::IEvent& ) >;
-
 struct WindowData
 {
    std::string Title  = "OpenGL";

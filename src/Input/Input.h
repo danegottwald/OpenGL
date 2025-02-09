@@ -28,7 +28,7 @@ private:
    friend void SetMouseButtonPressed( MouseCode button, bool fPressed ) noexcept;
    static void SetMouseButtonPressed( MouseCode button, bool fPressed ) noexcept { m_keys[ button ] = fPressed; }
 
-   // Holds MouseCode + KeyCode values (these values do not overlap)
+   // Holds MouseCode + KeyCode values (safe as these values do not overlap)
    inline static std::unordered_map< uint16_t, bool > m_keys;
 };
 

@@ -58,6 +58,13 @@ void Window::Init()
    if( !gladLoadGL() )
       throw std::runtime_error( "Failed to initialize OpenGL context" );
 
+#ifndef NDEBUG
+   std::cout << "GPU Vendor: " << glGetString( GL_VENDOR ) << std::endl;
+   std::cout << "GPU Renderer: " << glGetString( GL_RENDERER ) << std::endl;
+   std::cout << "OpenGL Version: " << glGetString( GL_VERSION ) << std::endl;
+   std::cout << "GLSL Version: " << glGetString( GL_SHADING_LANGUAGE_VERSION ) << std::endl;
+#endif
+
    {                             // ---- OpenGL State Setup ----
       glEnable( GL_DEPTH_TEST ); // Enable depth testing
       glDepthFunc( GL_LESS );    // Accept fragment if it closer to the camera than the former one

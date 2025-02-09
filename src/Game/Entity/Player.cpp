@@ -72,21 +72,14 @@ void Player::ApplyInputs()
       float yaw = glm::radians( m_rotation.y );
       m_acceleration -= glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) ) * speed;
    }
-   if( Input::IsKeyPressed( Input::Space ) )
-   {
-      m_acceleration.y += speed;
-   }
-   if( Input::IsKeyPressed( Input::LeftControl ) )
-   {
-      m_acceleration.y -= speed;
-   }
 
-   // Account for gimbal lock
-   if( m_rotation.x < -89.9f )
-      m_rotation.x = -89.9f;
-   if( m_rotation.x > 89.9f )
-      m_rotation.x = 89.9f;
-   //std::cout << m_Position.x << " " << m_Position.y << " " << m_Position.z << std::endl;
+   // Up and Down
+   if( Input::IsKeyPressed( Input::Space ) )
+      m_acceleration.y += speed;
+   if( Input::IsKeyPressed( Input::LeftControl ) )
+      m_acceleration.y -= speed;
+
+   //std::cout << m_position.x << " " << m_position.y << " " << m_position.z << std::endl;
 }
 
 void Player::UpdateState( World& world, float delta )
@@ -126,21 +119,23 @@ void Player::MouseButtonReleased( const Events::MouseButtonReleasedEvent& event 
 
 void Player::MouseMove( const Events::MouseMovedEvent& event )
 {
-   Window& window = Window::Get(); // clean this up, so we dont need to check each call
-   if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
+   static Window& window       = Window::Get();
+   GLFWwindow*    nativeWindow = window.GetNativeWindow();
+   if( glfwGetInputMode( nativeWindow, GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
       return;
 
-   constexpr float  verticalSens   = 0.5f;
-   constexpr float  horizontalSens = 0.5f;
-   static glm::vec2 lastMousePos   = window.GetMousePosition();
-   glm::vec2        delta          = window.GetMousePosition() - lastMousePos;
-   m_rotation.x += ( delta.y / 8.0f ) * verticalSens;
-   m_rotation.y += ( delta.x / 8.0f ) * horizontalSens;
+   constexpr float  sensitivity     = 1.0f / 16.0f;
+   static glm::vec2 lastMousePos    = window.GetMousePosition();
+   glm::vec2        currentMousePos = window.GetMousePosition();
+   glm::vec2        delta           = currentMousePos - lastMousePos;
 
-   WindowData& windowData = window.GetWindowData();
-   lastMousePos.x         = windowData.Width / 2.0f;
-   lastMousePos.y         = windowData.Height / 2.0f;
+   // Update m_rotation based on mouse movement, applying sensitivity and clamping/wrapping
+   // Vertical rotation (m_rotation.x) is clamped to prevent flipping of the camera (within -89.9° to 89.9°).
+   // Horizontal rotation (m_rotation.y) is wrapped to keep it within 0° to 360° for continuous rotation.
+   m_rotation.x = glm::clamp( m_rotation.x + ( delta.y * sensitivity ), -89.9f, 89.9f );
+   m_rotation.y = glm::mod( m_rotation.y + ( delta.x * sensitivity ) + 360.0f, 360.0f );
 
-   // Reset mouse cursor to center of screen
-   glfwSetCursorPos( window.GetNativeWindow(), lastMousePos.x, lastMousePos.y );
+   const WindowData& windowData = window.GetWindowData();
+   lastMousePos                 = { windowData.Width * 0.5f, windowData.Height * 0.5f };
+   glfwSetCursorPos( nativeWindow, lastMousePos.x, lastMousePos.y ); // Reset mouse to center of screen
 }

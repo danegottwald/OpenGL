@@ -21,6 +21,8 @@ void Application::Run()
    // TODO:
    // Write a RenderQueue, IGameObjects will be submitted to the RenderQueue
    //      After, the RenderQueue will be rendered
+   // Write a logging library (log to file)
+   //    Get rid of console window, pipe output to a imgui window
 
    World world;
    world.Setup();
@@ -92,6 +94,19 @@ void Application::Run()
                   AddKeyBinding( "P", "Toggle Wireframe" );
                   ImGui::EndTable();
                }
+               ImGui::End();
+            }
+
+            { // ImGui Bottom Left
+               ImGui::SetNextWindowPos( ImVec2( 10, Window::Get().GetWindowData().Height - 10 ), ImGuiCond_Always, ImVec2( 0.0f, 1.0f ) );
+               ImGui::Begin( "Debug",
+                             nullptr,
+                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                                /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
+               ImGui::Text( "Player Position: %.2f, %.2f, %.2f", player.GetPosition().x, player.GetPosition().y, player.GetPosition().z );
+               ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", player.GetRotation().x, player.GetRotation().y, player.GetRotation().z );
+               ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", player.GetVelocity().x, player.GetVelocity().y, player.GetVelocity().z );
+               ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", camera.GetPosition().x, camera.GetPosition().y, camera.GetPosition().z );
                ImGui::End();
             }
 
