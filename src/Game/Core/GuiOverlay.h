@@ -3,39 +3,32 @@
 class GuiOverlay
 {
 private:
-    bool m_Active;
+   bool m_Active;
 
 public:
-    GuiOverlay();
-    ~GuiOverlay();
+   GuiOverlay();
+   ~GuiOverlay();
 
-    void Attach();
-    void Begin();
-    void End();
-    void Detach();
+   void Attach();
+   void Begin();
+   void End();
+   void Detach();
 };
 
 class UI
 {
 private:
-    bool m_Active;
+   bool m_Active;
 
 public:
-    UI();
-    virtual ~UI() = default;
+   UI();
+   virtual ~UI() = default;
 
-    virtual void Display() = 0;
+   virtual void Display() = 0;
 
-    void EnableFlag( ImGuiConfigFlags_ flag ) const
-    {
-        ImGui::GetIO().ConfigFlags |= flag;
-    }
+   void EnableFlag( ImGuiConfigFlags_ flag ) const { ImGui::GetIO().ConfigFlags |= flag; }
 
-    void DisableFlag( ImGuiConfigFlags_ flag ) const
-    {
-        ImGui::GetIO().ConfigFlags ^= flag;
-    };
-
+   void DisableFlag( ImGuiConfigFlags_ flag ) const { ImGui::GetIO().ConfigFlags ^= flag; };
 };
 
 //void UI::Display() {
@@ -45,10 +38,10 @@ public:
 //    ImGui::NewFrame();
 //
 //    for (const auto& e : elements) {
-//        
+//
 //    }
 //
-//    // Adjust for possible resizing of window 
+//    // Adjust for possible resizing of window
 //    ImGuiIO& io = ImGui::GetIO();
 //    auto prop = Window::Get().GetProperties();
 //    io.DisplaySize =

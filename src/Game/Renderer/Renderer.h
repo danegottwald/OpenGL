@@ -7,22 +7,21 @@
 class Renderer
 {
 private:
-    std::unique_ptr<Shader> m_Shader;
+   std::unique_ptr< Shader > m_Shader;
 
-    GLuint m_VA, m_VB, m_IB;
+   GLuint m_VA {}, m_VB {}, m_IB {};
 
 public:
-    Renderer();
-    ~Renderer();
+   Renderer();
+   ~Renderer();
 
-    // Member Functions
-    void Attach();
-    void Detach();
-    void Draw();
-    void DrawGui();
+   // Member Functions
+   void Attach();
+   void Detach();
+   void Draw();
+   void DrawGui();
 
-    void SwapShader( const std::string& file );
+   void SwapShader( const std::string& file );
 
-    void UpdateViewport( unsigned int x, unsigned int y, unsigned int width,
-        unsigned int height );
+   void UpdateViewport( unsigned int x, unsigned int y, unsigned int width, unsigned int height );
 };

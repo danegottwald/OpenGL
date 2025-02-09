@@ -2,53 +2,45 @@
 
 Renderer::Renderer()
 {
-    glEnable( GL_BLEND );
-    glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+   glEnable( GL_BLEND );
+   glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
-    glEnable( GL_DEPTH_TEST );
-    glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
+   glEnable( GL_DEPTH_TEST );
+   glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
 
-    // glMatrixMode(GL_MODELVIEW);
+   //glMatrixMode( GL_MODELVIEW );
 
-    m_Shader.reset( new Shader( "Basic.glsl" ) );
-    m_Shader->Bind();
+   m_Shader.reset( new Shader() );
+   m_Shader->Bind();
 }
 
-Renderer::~Renderer()
-{
-}
+Renderer::~Renderer() {}
 
-void Renderer::Attach()
-{
-}
+void Renderer::Attach() {}
 
-void Renderer::Detach()
-{
-}
+void Renderer::Detach() {}
 
 // Binds the Shader, Vertex Array, and the Index Buffer, then issues a Draw Call
 void Renderer::Draw()
 {
-// update camera
-    glClearColor( 0.1f, 0.1f, 0.1f, 1.0f );
-    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
+   // update camera
+   glClearColor( 0.1f, 0.1f, 0.1f, 1.0f );
+   glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 }
 
 void Renderer::DrawGui()
 {
-    ImGui::BeginMainMenuBar();
-    ImGui::Text( "FPS: %d (%.1f ms)", static_cast< int >( ImGui::GetIO().Framerate ),
-        1000.0f / ImGui::GetIO().Framerate );
-    ImGui::EndMainMenuBar();
+   ImGui::BeginMainMenuBar();
+   ImGui::Text( "FPS: %d (%.1f ms)", static_cast< int >( ImGui::GetIO().Framerate ), 1000.0f / ImGui::GetIO().Framerate );
+   ImGui::EndMainMenuBar();
 }
 
-void Renderer::SwapShader( const std::string& file )
+void Renderer::SwapShader( const std::string& /*file*/ )
 {
-    m_Shader.reset( new Shader( file ) );
+   m_Shader.reset( new Shader() );
 }
 
-void Renderer::UpdateViewport( unsigned int x, unsigned int y,
-    unsigned int width, unsigned int height )
+void Renderer::UpdateViewport( unsigned int x, unsigned int y, unsigned int width, unsigned int height )
 {
-    glViewport( x, y, width, height );
+   glViewport( x, y, width, height );
 }

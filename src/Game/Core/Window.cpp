@@ -1,108 +1,131 @@
+
 #include "Window.h"
+#include "../../Input/Input.h"
 
-Window::Window( const WindowData& winData ) : m_WindowData( winData )
-{
-    // Initialize GLFW
-    uint32_t success = glfwInit();
-    _ASSERT_EXPR( success == GLFW_TRUE, L"Failed to initialize GLFW" );
-    glfwSetErrorCallback( []( int code, const char* message )
-        {
-            std::cout << "[GLFW Error] (" << code << "): " << message << std::endl;
-        } );
-
-#ifndef NDEBUG
-    std::clog << "GLFW DEBUG CONTEXT ENABLED" << std::endl;
-    glfwWindowHint( GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE );
-#endif
-}
+Window::Window( const WindowData& winData ) :
+   m_WindowData( winData )
+{}
 
 Window::~Window()
 {
-    glfwDestroyWindow( m_Window );
-    glfwTerminate();
+   glfwDestroyWindow( m_Window );
+   glfwTerminate();
 }
 
 Window& Window::Get()
 {
-    static Window instance = Window( WindowData{ "OpenGL" } );
-    return instance;
+   static Window instance = Window( WindowData { "OpenGL" } );
+   return instance;
 }
 
 GLFWwindow* Window::GetNativeWindow()
 {
-    return Window::Get().m_Window;
+   return Window::Get().m_Window;
 }
 
 void Window::Init()
 {
-    _ASSERT_EXPR( !m_fRunning, L"Window is already running" );
+   _ASSERT_EXPR( !m_fRunning, L"Window is already running" );
 
-    // glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-    m_Window = glfwCreateWindow( m_WindowData.Width, m_WindowData.Height, m_WindowData.Title.c_str(), nullptr, nullptr );
-    m_fRunning = ( bool )m_Window;
+   // Initialize GLFW
+   if( !glfwInit() )
+      throw std::runtime_error( "Failed to initialize GLFW" );
 
-    glfwMakeContextCurrent( m_Window );
-    glfwSetWindowUserPointer( m_Window, this );
+   glfwSetErrorCallback( []( int code, const char* message ) { std::cout << "[GLFW Error] (" << code << "): " << message << std::endl; } );
 
-    glfwSwapInterval( m_WindowData.VSync );
+#ifndef NDEBUG
+   std::clog << "GLFW DEBUG CONTEXT ENABLED" << std::endl;
+   glfwWindowHint( GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE );
+#endif
 
-    // API related
-    // Load OpenGL Functions, returns OpenGL Version
+   // Set OpenGL Version and Profile
+   glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 4 );                 // OpenGL major version 4
+   glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 5 );                 // OpenGL minor version 3
+   glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE ); // Use core profile (no deprecated functions)
+   glfwWindowHint( GLFW_SAMPLES, 4 );                               // Enable Multi-Sample Anti-Aliasing (MSAA)
 
-    //uint32_t success = gladLoadGL( ( GLADloadfunc )glfwGetProcAddress );
-    uint32_t success = gladLoadGL();
-    _ASSERT_EXPR( success, L"Failed to initialize OpenGL context" );
+   // Create the GLFW window
+   m_Window = glfwCreateWindow( m_WindowData.Width, m_WindowData.Height, m_WindowData.Title.c_str(), nullptr, nullptr );
+   if( !m_Window )
+      throw std::runtime_error( "Failed to create GLFW window" );
 
-    // MSAA
-    // glfwWindowHint(GLFW_SAMPLES, 4);
-    // glEnable(GL_MULTISAMPLE);
+   m_fRunning = static_cast< bool >( m_Window );
+   glfwMakeContextCurrent( m_Window );         // Make the window's context current
+   glfwSetWindowUserPointer( m_Window, this ); // Set the user pointer to this class instance
+   glfwSwapInterval( m_WindowData.VSync );     // Enable VSync
 
-    // Enable Face Culling and Winding Order
-    // glEnable(GL_CULL_FACE);
-    // glCullFace(GL_BACK);
-    // glFrontFace(GL_CCW);
-    // End API related
+   // Initialize OpenGL functions using GLAD
+   if( !gladLoadGL() )
+      throw std::runtime_error( "Failed to initialize OpenGL context" );
 
-    // glfwSetInputMode(m_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+#ifndef NDEBUG
+   std::cout << "GPU Vendor: " << glGetString( GL_VENDOR ) << std::endl;
+   std::cout << "GPU Renderer: " << glGetString( GL_RENDERER ) << std::endl;
+   std::cout << "OpenGL Version: " << glGetString( GL_VERSION ) << std::endl;
+   std::cout << "GLSL Version: " << glGetString( GL_SHADING_LANGUAGE_VERSION ) << std::endl;
+#endif
 
-    if( m_eventCallback )
-        SetCallbacks();
+   {                             // ---- OpenGL State Setup ----
+      glEnable( GL_DEPTH_TEST ); // Enable depth testing
+      glDepthFunc( GL_LESS );    // Accept fragment if it closer to the camera than the former one
+
+      //glfwWindowHint( GLFW_SAMPLES, 4 ); // Enable Multi-Sample Anti-Aliasing (MSAA)
+      //glEnable( GL_MULTISAMPLE );        // Enable MSAA
+
+      glEnable( GL_CULL_FACE ); // Enable face culling
+      glCullFace( GL_BACK );    // Cull back-facing polygons
+      glFrontFace( GL_CCW );    // Counter-clockwise winding is considered front-facing
+
+      glEnable( GL_BLEND );                                // Enable blending
+      glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA ); // Standard alpha blending
+
+      glShadeModel( GL_SMOOTH );              // Default shading model is smooth
+      glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ); // Default clear color is black
+   }
+
+   // Set up necessary callbacks for input handling and window events
+   SetCallbacks();
+
+   {                                                  // ---- ImGui Initialization ----
+      IMGUI_CHECKVERSION();                           // Ensure correct ImGui version
+      ImGui::CreateContext();                         // Create a new ImGui context
+      ImGui::GetIO().IniFilename = nullptr;           // Disable saving ImGui settings to a file
+      ImGui::StyleColorsDark();                       // Use dark theme for ImGui
+      ImGui_ImplGlfw_InitForOpenGL( m_Window, true ); // Initialize ImGui with GLFW support
+      if( !ImGui_ImplOpenGL3_Init( "#version 330" ) )
+         throw std::runtime_error( "Failed to initialize ImGui OpenGL backend" );
+   }
 }
 
 void Window::OnUpdate() const
 {
-    //Renderer::Get().Draw();
+   //Renderer::Get().Draw();
 
-    // Poll for and process events
-    glfwPollEvents();
+   // Poll for and process events
+   glfwPollEvents();
 
-    // Swap front and back buffers
-    glfwSwapBuffers( m_Window );
-}
-
-void Window::Close()
-{
-    m_fRunning = false;
+   // Swap front and back buffers
+   glfwSwapBuffers( m_Window );
 }
 
 glm::vec2 Window::GetMousePosition() const
 {
-    double xPos, yPos;
-    glfwGetCursorPos( Window::GetNativeWindow(), &xPos, &yPos );
-    return glm::vec2( xPos, yPos );
+   double xPos, yPos;
+   glfwGetCursorPos( Window::GetNativeWindow(), &xPos, &yPos );
+   return glm::vec2( xPos, yPos );
 }
 
 // --------------------------------------------------------------------
 //      Window Queries
 // --------------------------------------------------------------------
-bool Window::FMinimized()
+bool Window::FMinimized() const noexcept
 {
-    return m_fMinimized;
+   return m_fMinimized;
 }
 
-bool Window::IsOpen()
+bool Window::IsOpen() const noexcept
 {
-    return m_fRunning;
+   return m_fRunning;
 }
 
 // --------------------------------------------------------------------
@@ -110,201 +133,162 @@ bool Window::IsOpen()
 // --------------------------------------------------------------------
 WindowData& Window::GetWindowData()
 {
-    return m_WindowData;
+   return m_WindowData;
 }
 
 void Window::SetVSync( bool state )
 {
-    if( state != m_WindowData.VSync )
-        glfwSwapInterval( m_WindowData.VSync = state );
+   if( state != m_WindowData.VSync )
+      glfwSwapInterval( m_WindowData.VSync = state );
 }
 
-// --------------------------------------------------------------------
-//      Window Events
-// --------------------------------------------------------------------
-void Window::SetEventCallback( const EventCallbackFn& callback )
+void Window::SetCallbacks()
 {
-    m_eventCallback = callback;
-}
+   m_eventSubscriber.Subscribe< Events::WindowCloseEvent >( [ & ]( const Events::WindowCloseEvent& /*event*/ ) { m_fRunning = false; } );
 
-EventCallbackFn& Window::EventCallback()
-{
-    return m_eventCallback;
-}
+   m_eventSubscriber.Subscribe< Events::WindowResizeEvent >( [ & ]( const Events::WindowResizeEvent& event )
+   {
+      m_WindowData.Width  = event.GetWidth();
+      m_WindowData.Height = event.GetHeight();
+      glViewport( 0, 0, m_WindowData.Width, m_WindowData.Height );
+   } );
 
-bool Window::OnEvent( EventDispatcher& dispatcher )
-{
-    IEvent& event = dispatcher.GetEvent();
-    switch( event.GetEventType() )
-    {
-        case EventType::WindowClose:
-            return dispatcher.Dispatch<WindowCloseEvent>(
-                std::bind( &Window::EventClose, this, std::placeholders::_1 ) );
-        case EventType::WindowResize:
-            return dispatcher.Dispatch<WindowResizeEvent>(
-                std::bind( &Window::EventResize, this, std::placeholders::_1 ) );
-        case EventType::WindowFocus:
-            // Possibly move to Game? make focus grab mouse?
-            return false;
-        case EventType::WindowLostFocus:
-            return false;
-        case EventType::WindowMoved:
-            return false;
-        case EventType::KeyPressed:
-        {
-            switch( static_cast< KeyEvent& >( event ).GetKeyCode() )
-            {
-                case KeyCode::P:
-                {
-                    static int polygonModeFlip = GL_FILL;
-                    polygonModeFlip = ( polygonModeFlip == GL_FILL ) ? GL_LINE : GL_FILL;
-                    glPolygonMode( GL_FRONT_AND_BACK, polygonModeFlip );
-                    return true;
-                }
-                case KeyCode::Escape:
-                    Close();
-                    return true;
-                case KeyCode::F1:
-                    static int fFlip = GLFW_CURSOR_NORMAL;
-                    fFlip = fFlip == GLFW_CURSOR_NORMAL ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
-                    glfwSetInputMode( m_Window, GLFW_CURSOR, fFlip );
-                    return true;
-            }
-            return false;
-        }
-        default:
-            return false;
-    }
-}
+   m_eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& event )
+   {
+      switch( event.GetKeyCode() )
+      {
+         case Input::Escape:
+         {
+            m_fRunning = false;
+            break;
+         }
+         case Input::P:
+         {
+            static int polygonModeFlip = GL_FILL;
+            polygonModeFlip            = ( polygonModeFlip == GL_FILL ) ? GL_LINE : GL_FILL;
+            glPolygonMode( GL_FRONT_AND_BACK, polygonModeFlip );
+            break;
+         }
+         case Input::F1:
+         {
+            static int fFlip = GLFW_CURSOR_NORMAL;
+            fFlip            = ( fFlip == GLFW_CURSOR_NORMAL ) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
+            glfwSetInputMode( m_Window, GLFW_CURSOR, fFlip );
+            break;
+         }
 
+         default: break;
+      }
+   } );
 
-bool Window::EventResize( WindowResizeEvent& e )
-{
-    m_WindowData.Width = e.GetWidth();
-    m_WindowData.Height = e.GetHeight();
+#ifndef NDEBUG
+   // OpenGL Error Callback (API RELATED, RELOCATE)
+   glEnable( GL_DEBUG_OUTPUT );
+   glEnable( GL_DEBUG_OUTPUT_SYNCHRONOUS ); // enable only on debug
+   glDebugMessageControl( GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, GL_FALSE );
+   glDebugMessageCallback(
+      []( GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char* message, const void* userParam )
+   {
+      // Determine the source
+      const char* sourceStr = nullptr;
+      switch( source )
+      {
+         case GL_DEBUG_SOURCE_API:             sourceStr = "API"; break;
+         case GL_DEBUG_SOURCE_WINDOW_SYSTEM:   sourceStr = "Window System"; break;
+         case GL_DEBUG_SOURCE_SHADER_COMPILER: sourceStr = "Shader Compiler"; break;
+         case GL_DEBUG_SOURCE_THIRD_PARTY:     sourceStr = "Third Party"; break;
+         case GL_DEBUG_SOURCE_APPLICATION:     sourceStr = "Application"; break;
+         case GL_DEBUG_SOURCE_OTHER:           sourceStr = "Other"; break;
+         default:                              sourceStr = "Unknown"; break;
+      }
 
-    glViewport( 0, 0, m_WindowData.Width, m_WindowData.Height );
+      // Determine the type
+      const char* typeStr = nullptr;
+      switch( type )
+      {
+         case GL_DEBUG_TYPE_ERROR:               typeStr = "Error"; break;
+         case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR: typeStr = "Deprecated Behavior"; break;
+         case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  typeStr = "Undefined Behavior"; break;
+         case GL_DEBUG_TYPE_PORTABILITY:         typeStr = "Portability"; break;
+         case GL_DEBUG_TYPE_PERFORMANCE:         typeStr = "Performance"; break;
+         case GL_DEBUG_TYPE_MARKER:              typeStr = "Marker"; break;
+         case GL_DEBUG_TYPE_PUSH_GROUP:          typeStr = "Push Group"; break;
+         case GL_DEBUG_TYPE_POP_GROUP:           typeStr = "Pop Group"; break;
+         default:                                typeStr = "Unknown"; break;
+      }
 
-    return ( m_fMinimized = ( m_WindowData.Width == 0 || m_WindowData.Height == 0 ) );
-}
+      // Determine the severity
+      const char* severityStr = nullptr;
+      switch( severity )
+      {
+         case GL_DEBUG_SEVERITY_HIGH:         severityStr = "High"; break;
+         case GL_DEBUG_SEVERITY_MEDIUM:       severityStr = "Medium"; break;
+         case GL_DEBUG_SEVERITY_LOW:          severityStr = "Low"; break;
+         case GL_DEBUG_SEVERITY_NOTIFICATION: severityStr = "Notification"; break;
+         default:                             severityStr = "Unknown"; break;
+      }
 
+      if( severity != GL_DEBUG_SEVERITY_NOTIFICATION )
+      {
+         // Log the message with all relevant details
+         std::cout << "[OpenGL " << sourceStr << "] "
+                   << "[" << typeStr << "] "
+                   << "[" << severityStr << "] "
+                   << "[" << id << "]: " << message << std::endl;
 
-bool Window::EventClose( WindowCloseEvent& e )
-{
-    return !( m_fRunning = false );
-}
+         if( severity == GL_DEBUG_SEVERITY_HIGH )
+            std::cerr << "CRITICAL: OpenGL error, severity HIGH!" << std::endl;
+      }
+   },
+      nullptr );
+#endif
 
-/*
-    How the callback system works
-        In Application Constructor
-            m_Window.SetEventCallback(
-                std::bind(&Application::OnEvent, this, std::placeholders::_1));
+   // GLFW Window Callbacks
+   glfwSetWindowSizeCallback( m_Window, []( GLFWwindow* window, int width, int height ) { Events::Dispatch< Events::WindowResizeEvent >( width, height ); } );
+   glfwSetWindowCloseCallback( m_Window, []( GLFWwindow* window ) { Events::Dispatch< Events::WindowCloseEvent >(); } );
 
-        In Application::OnEvent, set a dispatcher for each event
-            dispatcher.Dispatch<WindowCloseEvent>(
-                std::bind(&Window::EventClose, &m_Window,
-                    std::placeholders::_1));
+   // GLFW Key Callbacks
+   glfwSetKeyCallback( m_Window,
+                       []( GLFWwindow* window, int key, int scancode, int action, int mods )
+   {
+      Input::KeyCode keyCode = static_cast< Input::KeyCode >( key );
+      if( action != GLFW_REPEAT )
+         Input::SetKeyPressed( keyCode, static_cast< bool >( action ) ); // Update the input manager state
 
-            dispatcher.Dispatch<WindowResizeEvent>(
-                std::bind(&Window::EventResize, &m_Window,
-                    std::placeholders::_1));
+      // Dispatch events
+      switch( action )
+      {
+         case GLFW_PRESS:   Events::Dispatch< Events::KeyPressedEvent >( keyCode, false /* fRepeated */ ); break;
+         case GLFW_RELEASE: Events::Dispatch< Events::KeyReleasedEvent >( keyCode ); break;
+         case GLFW_REPEAT:  Events::Dispatch< Events::KeyPressedEvent >( keyCode, true /* fRepeated */ ); break;
+         default:           throw std::runtime_error( "Unknown KeyEvent" );
+      }
+   } );
 
-        Every event from the callback's below will send the event to the
-        Window::EventCallback() which is the bound function pointer from
-        Application's constructor
+   glfwSetCharCallback( m_Window, []( GLFWwindow* window, unsigned int keycode ) {
+      Events::Dispatch< Events::KeyTypedEvent >( static_cast< Input::KeyCode >( keycode ) );
+   } );
 
-        To keep the callbacks generic, new function pointers can be bound
-        to the dispatcher if you want to change functionality of the
-        specific event.
+   glfwSetMouseButtonCallback( m_Window,
+                               []( GLFWwindow* window, int button, int action, int mods )
+   {
+      Input::MouseCode mouseCode = static_cast< Input::MouseCode >( button );
+      Input::SetMouseButtonPressed( mouseCode, action != GLFW_RELEASE ); // Update the input manager state
 
-        Every callback must return a boolean meaning if the event has
-        been handled or not (true: handled, false: not handled)
-*/
-void Window::SetCallbacks() const
-{
-    // OpenGL Error Callback (API RELATED, RELOCATE)
-    glEnable( GL_DEBUG_OUTPUT );
-    glDebugMessageCallback(
-        []( GLenum source, GLenum type, GLuint id, GLenum severity,
-            GLsizei length, const char* message, const void* userParam )
-        {
-            // if (type != 33361)
-            //{
-            std::cout << "[ERROR](OpenGL) [" << id << "]: " << message << std::endl;
-            //}
-        },
-        nullptr );
+      // Dispatch events
+      switch( action )
+      {
+         case GLFW_PRESS:   Events::Dispatch< Events::MouseButtonPressedEvent >( mouseCode ); break;
+         case GLFW_RELEASE: Events::Dispatch< Events::MouseButtonReleasedEvent >( mouseCode ); break;
+         default:           throw std::runtime_error( "Unknown MouseButtonEvent" );
+      }
+   } );
 
-    // GLFW Window Callbacks
-    glfwSetWindowSizeCallback( m_Window,
-        []( GLFWwindow* window, int width, int height )
-        {
-            Window::Get().EventCallback()( WindowResizeEvent( width, height ) );
-        } );
+   glfwSetScrollCallback( m_Window, []( GLFWwindow* window, double xOffset, double yOffset ) {
+      Events::Dispatch< Events::MouseScrolledEvent >( static_cast< float >( xOffset ), static_cast< float >( yOffset ) );
+   } );
 
-    glfwSetWindowCloseCallback( m_Window,
-        []( GLFWwindow* window )
-        {
-            Window::Get().EventCallback()( WindowCloseEvent() );
-        } );
-
-    // GLFW Key Callbacks
-    glfwSetKeyCallback( m_Window,
-        []( GLFWwindow* window, int key, int scancode, int action, int mods )
-        {
-            KeyEvent* event = nullptr;
-            KeyCode keyCode = static_cast< KeyCode >( key );
-            switch( action )
-            {
-                case GLFW_PRESS:
-                    event = &KeyPressedEvent( keyCode, false /*fRepeated*/ );
-                    break;
-                case GLFW_RELEASE:
-                    event = &KeyReleasedEvent( keyCode );
-                    break;
-                case GLFW_REPEAT:
-                    event = &KeyPressedEvent( keyCode, true /*fRepeated*/ );
-                    break;
-                default:
-                    throw std::runtime_error( "Unknown KeyEvent" );
-            }
-            Window::Get().EventCallback()( *event );
-        } );
-
-    glfwSetCharCallback( m_Window,
-        []( GLFWwindow* window, unsigned int keycode )
-        {
-            Window::Get().EventCallback()( KeyTypedEvent( static_cast< KeyCode >( keycode ) ) );
-        } );
-
-    // GLFW Mouse Callbacks
-    glfwSetMouseButtonCallback( m_Window,
-        []( GLFWwindow* window, int button, int action, int mods )
-        {
-            MouseButtonEvent* event = nullptr;
-            MouseCode mouseCode = static_cast< MouseCode >( button );
-            switch( action )
-            {
-                case GLFW_PRESS:
-                    event = &MouseButtonPressedEvent( mouseCode );
-                    break;
-                case GLFW_RELEASE:
-                    event = &MouseButtonReleasedEvent( mouseCode );
-                    break;
-                default:
-                    throw std::runtime_error( "Unknown MouseButtonEvent" );
-            }
-            Window::Get().EventCallback()( *event );
-        } );
-
-    glfwSetScrollCallback( m_Window,
-        []( GLFWwindow* window, double xOffset, double yOffset )
-        {
-            Window::Get().EventCallback()( MouseScrolledEvent( xOffset, yOffset ) );
-        } );
-
-    glfwSetCursorPosCallback( m_Window, []( GLFWwindow* window, double xPos, double yPos )
-        {
-            Window::Get().EventCallback()( MouseMovedEvent( xPos, yPos ) );
-        } );
+   glfwSetCursorPosCallback( m_Window, []( GLFWwindow* window, double xPos, double yPos ) {
+      Events::Dispatch< Events::MouseMovedEvent >( static_cast< float >( xPos ), static_cast< float >( yPos ) );
+   } );
 }
