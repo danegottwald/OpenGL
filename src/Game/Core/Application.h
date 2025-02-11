@@ -13,19 +13,22 @@ enum ApplicationState
 class Application
 {
 public:
-   ~Application()                               = default;
-   Application( const Application& )            = delete;
-   Application& operator=( const Application& ) = delete;
-   Application( Application&& )                 = delete;
-   Application& operator=( Application&& )      = delete;
+   static Application& Get() noexcept
+   {
+      static Application app;
+      return app;
+   }
 
    void Run();
 
-   static Application& Get() noexcept;
-
 private:
-   Application() noexcept = default;
+   Application()                                = default;
+   ~Application()                               = default;
+   Application( const Application& )            = delete;
+   Application& operator=( const Application& ) = delete;
 
-private:
+   void Init();
+   void Reset();
+
    ApplicationState m_state { APP_STATE_NONE };
 };

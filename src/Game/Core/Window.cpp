@@ -2,6 +2,8 @@
 #include "Window.h"
 #include "../../Input/Input.h"
 
+#include "GUIManager.h"
+
 Window::Window( const WindowData& winData ) :
    m_WindowData( winData )
 {}
@@ -25,7 +27,7 @@ GLFWwindow* Window::GetNativeWindow()
 
 void Window::Init()
 {
-   _ASSERT_EXPR( !m_fRunning, L"Window is already running" );
+   assert( !m_fRunning && L"Window is already running" );
 
    // Initialize GLFW
    if( !glfwInit() )
@@ -49,7 +51,7 @@ void Window::Init()
    if( !m_Window )
       throw std::runtime_error( "Failed to create GLFW window" );
 
-   m_fRunning = static_cast< bool >( m_Window );
+   // Set the window's context and user pointer
    glfwMakeContextCurrent( m_Window );         // Make the window's context current
    glfwSetWindowUserPointer( m_Window, this ); // Set the user pointer to this class instance
    glfwSwapInterval( m_WindowData.VSync );     // Enable VSync
@@ -86,15 +88,7 @@ void Window::Init()
    // Set up necessary callbacks for input handling and window events
    SetCallbacks();
 
-   {                                                  // ---- ImGui Initialization ----
-      IMGUI_CHECKVERSION();                           // Ensure correct ImGui version
-      ImGui::CreateContext();                         // Create a new ImGui context
-      ImGui::GetIO().IniFilename = nullptr;           // Disable saving ImGui settings to a file
-      ImGui::StyleColorsDark();                       // Use dark theme for ImGui
-      ImGui_ImplGlfw_InitForOpenGL( m_Window, true ); // Initialize ImGui with GLFW support
-      if( !ImGui_ImplOpenGL3_Init( "#version 330" ) )
-         throw std::runtime_error( "Failed to initialize ImGui OpenGL backend" );
-   }
+   m_fRunning = true; // Window is now running and fully initialized
 }
 
 void Window::OnUpdate() const

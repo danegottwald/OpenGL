@@ -19,6 +19,8 @@ Player::Player()
 
 void Player::Update( float delta )
 {
+   // should move to polling mouse input here for perf reasons
+
    // Update the player's state
    //Tick( *m_World, delta );
 

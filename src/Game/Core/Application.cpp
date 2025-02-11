@@ -6,17 +6,24 @@
 #include "../Entity/Player.h"
 #include "../Camera.h"
 
-/*static*/ Application& Application::Get() noexcept
+#include "GUIManager.h"
+
+// Ordering of initialization is critical
+void Application::Init()
 {
-   static Application app;
-   return app;
+   Window::Get().Init(); // Initialize the window
+   GUIManager::Init();   // Initialize the GUI Manager
 }
 
+// Cleanup should occur in reverse order of initialization
+void Application::Reset()
+{
+   GUIManager::Reset();
+}
 
 void Application::Run()
 {
-   Window& window = Window::Get();
-   window.Init();
+   Init(); // Initialize the application
 
    // TODO:
    // Write a RenderQueue, IGameObjects will be submitted to the RenderQueue
@@ -24,12 +31,19 @@ void Application::Run()
    // Write a logging library (log to file)
    //    Get rid of console window, pipe output to a imgui window
 
+   // PlayerManager::GetPlayer() - returns the player
+   //    only one player should theoretically exist at a time
+
+   // Attach Debug GUI
+   GUIManager::Attach( std::make_shared< DebugGUI >() );
+
    World world;
    world.Setup();
    Player player;
    Camera camera;
 
    Timestep timestep;
+   Window&  window = Window::Get();
    while( window.IsOpen() )
    {
       timestep.Step(); // Compute delta
@@ -49,71 +63,11 @@ void Application::Run()
          // Render
          world.Render( camera );
 
-         // Start ImGui Frame (only render when not minimized)
-         {
-            ImGui_ImplOpenGL3_NewFrame();
-            ImGui_ImplGlfw_NewFrame();
-            ImGui::NewFrame();
+         // Render
+         //RenderManager::Render();
 
-            { // ImGui Top Left
-               ImGui::SetNextWindowPos( ImVec2( 10, 10 ), ImGuiCond_Always );
-               ImGui::Begin( "Performance",
-                             nullptr,
-                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                                /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
-               ImGui::Text( "FPS: %.1f (%.1fms)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate );
-               static bool fVSync = Window::Get().GetWindowData().VSync;
-               if( ImGui::Checkbox( "VSync", &fVSync ) )
-                  window.SetVSync( fVSync );
-               ImGui::End();
-            }
-
-            { // ImGui Top Right
-               ImGui::SetNextWindowPos( ImVec2( Window::Get().GetWindowData().Width - 10, 10 ), ImGuiCond_Always, ImVec2( 1.0f, 0.0f ) );
-               ImGui::Begin( "Key Bindings",
-                             nullptr,
-                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                                /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
-               if( ImGui::BeginTable( "KeyBindingsTable", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg ) )
-               {
-                  // Set up column headers
-                  ImGui::TableSetupColumn( "Key", ImGuiTableColumnFlags_WidthFixed, 100.0f );
-                  ImGui::TableSetupColumn( "Action", ImGuiTableColumnFlags_WidthStretch );
-                  ImGui::TableHeadersRow();
-                  auto AddKeyBinding = []( const char* key, const char* action )
-                  {
-                     ImGui::TableNextRow();
-                     ImGui::TableSetColumnIndex( 0 );
-                     ImGui::TextUnformatted( key );
-                     ImGui::TableSetColumnIndex( 1 );
-                     ImGui::TextUnformatted( action );
-                  };
-
-                  AddKeyBinding( "Escape", "Quit" );
-                  AddKeyBinding( "F1", "Toggle Mouse" );
-                  AddKeyBinding( "P", "Toggle Wireframe" );
-                  ImGui::EndTable();
-               }
-               ImGui::End();
-            }
-
-            { // ImGui Bottom Left
-               ImGui::SetNextWindowPos( ImVec2( 10, Window::Get().GetWindowData().Height - 10 ), ImGuiCond_Always, ImVec2( 0.0f, 1.0f ) );
-               ImGui::Begin( "Debug",
-                             nullptr,
-                             ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                                /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
-               ImGui::Text( "Player Position: %.2f, %.2f, %.2f", player.GetPosition().x, player.GetPosition().y, player.GetPosition().z );
-               ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", player.GetRotation().x, player.GetRotation().y, player.GetRotation().z );
-               ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", player.GetVelocity().x, player.GetVelocity().y, player.GetVelocity().z );
-               ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", camera.GetPosition().x, camera.GetPosition().y, camera.GetPosition().z );
-               ImGui::End();
-            }
-
-            // Render ImGui
-            ImGui::Render();
-            ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
-         }
+         // Draw GUI
+         GUIManager::Draw();
       }
 
       window.OnUpdate(); // Poll events and swap buffers
@@ -152,13 +106,8 @@ void Application::Run()
       // glDisable(GL_BLEND);
    }
 
-   { // cleanup ImGui
-      ImGui_ImplOpenGL3_Shutdown();
-      ImGui_ImplGlfw_Shutdown();
-      ImGui::DestroyContext();
-   }
+   Reset(); // Cleanup the application
 }
-
 
 // NOTES
 // https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
