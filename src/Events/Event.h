@@ -3,6 +3,14 @@
 namespace Events
 {
 
+#define EVENT_CLASS_TYPE( type )                                                \
+    static EventType GetStaticType() { return type; }                           \
+    virtual EventType GetEventType() const override { return GetStaticType(); } \
+    virtual const char* GetName() const override { return #type; }
+
+#define EVENT_CLASS_CATEGORY( category ) \
+    virtual int GetCategoryFlags() const override { return static_cast<int>(category); }
+
 enum EventType
 {
    NoType = 0,
@@ -33,33 +41,16 @@ enum EventCategory
    EventCategoryMouseButton = 1 << 4
 };
 
-#define EVENT_CLASS_TYPE( type )       \
-    static EventType GetStaticType() \
-    {                                \
-        return type;                 \
-    }                                \
-    virtual EventType GetEventType() const override \
-    {                                               \
-        return GetStaticType();                     \
-    }                                               \
-    virtual const char* GetName() const override    \
-    {                                               \
-        return #type;                               \
-    }
-
-#define EVENT_CLASS_CATEGORY( category )            \
-    virtual int GetCategoryFlags() const override \
-    {                                             \
-        return static_cast<int>(category);        \
-    }
-
 //=========================================================================
 // IEvent Interface
 //=========================================================================
 class IEvent
 {
 public:
-   virtual ~IEvent() = default;
+   IEvent()                           = default;
+   virtual ~IEvent()                  = default;
+   IEvent( const IEvent& )            = delete;
+   IEvent& operator=( const IEvent& ) = delete;
 
    // Interface Methods
    virtual const char* GetName() const          = 0;
@@ -81,79 +72,86 @@ using EventCallbackFn = std::function< void( const TEvent& ) >;
 //=========================================================================
 // EventSubscriber (Manages Subscriptions & Dispatching)
 //=========================================================================
-class EventSubscriber
+class EventSubscriber final
 {
 public:
-   EventSubscriber() { EventManager::AddSubscriber( this ); }
-   ~EventSubscriber() { EventManager::RemoveSubscriber( this ); }
+   EventSubscriber()  = default;
+   ~EventSubscriber() = default;
 
-   template< typename TEvent, typename std::enable_if< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value, int >::type = 0 >
+   // You shouldn't be copying or moving subscribers, relationship with callbacks will be lost
+   EventSubscriber( const EventSubscriber& )            = delete;
+   EventSubscriber& operator=( const EventSubscriber& ) = delete;
+
+   // Subscribe to an event type with callback (will overwrite any existing callback if same type)
+   template< typename TEvent, typename = std::enable_if_t< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value > >
    void Subscribe( EventCallbackFn< TEvent >&& callback )
    {
-      m_events[ TEvent::GetStaticType() ] = { true /*fEnabled*/, [ callback = std::move( callback ) ]( const IEvent& event ) {
+      EventManager::RegisterSubscriber( TEvent::GetStaticType(), this );
+      m_events[ TEvent::GetStaticType() ] = { true, [ callback = std::move( callback ) ]( const IEvent& event ) noexcept {
          callback( static_cast< const TEvent& >( event ) );
       } };
    }
 
-   void Unsubscribe( EventType type ) { m_events.erase( type ); }
-
-   // Enables the specified event type if it has been subscribed to.
-   // Can be used to resume processing a specific event after being disabled.
-   template< typename TEvent, typename std::enable_if< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value, int >::type = 0 >
-   void EnableEvent()
+   template< typename TEvent, typename = std::enable_if_t< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value > >
+   void Unsubscribe()
    {
-      if( m_events.find( TEvent::GetStaticType() ) != m_events.end() )
-         m_events[ TEvent::GetStaticType() ].fEnabled = true;
+      EventManager::UnregisterSubscriber( TEvent::GetStaticType(), this );
+      m_events.erase( TEvent::GetStaticType() );
    }
 
-   // Disables the specified event type if it has been subscribed to.
-   // Useful for temporarily suspending processing of specific events (e.g., during a pause).
-   template< typename TEvent, typename std::enable_if< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value, int >::type = 0 >
-   void DisableEvent()
+   // Enable or disable a subscribed event type
+   template< typename TEvent, typename = std::enable_if_t< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value > >
+   void SetEventState( bool enabled )
    {
-      if( m_events.find( TEvent::GetStaticType() ) != m_events.end() )
-         m_events[ TEvent::GetStaticType() ].fEnabled = false;
+      if( auto it = m_events.find( TEvent::GetStaticType() ); it != m_events.end() )
+         it->second.fEnabled = enabled;
    }
 
 private:
-   void DispatchToCallbacks( std::unique_ptr< IEvent >& pEvent )
+   void DispatchToCallbacks( const IEvent& event )
    {
-      auto it = m_events.find( pEvent->GetEventType() );
-      if( it != m_events.end() && it->second.fEnabled && it->second.callback )
-         it->second.callback( *pEvent );
+      if( auto it = m_events.find( event.GetEventType() ); it != m_events.end() && it->second.fEnabled )
+         it->second.callback( event );
    }
 
    struct EventData
    {
-      bool                      fEnabled { true };
-      EventCallbackFn< IEvent > callback { nullptr };
+      bool                      fEnabled = true;
+      EventCallbackFn< IEvent > callback;
    };
    std::unordered_map< EventType, EventData > m_events;
 
    //=========================================================================
    // EventManager (Static Class for Managing Event Subscriptions & Dispatching)
    //=========================================================================
-   class EventManager
+   class EventManager final
    {
    public:
-      // Static methods for managing subscribers and dispatching events
-      static void AddSubscriber( EventSubscriber* subscriber )
+      static void RegisterSubscriber( EventType type, EventSubscriber* subscriber )
       {
          std::lock_guard< std::mutex > lock( m_mutex );
-         m_subscribers.push_back( subscriber );
+
+         // Only add the subscriber if it's not already in the list
+         auto& subscribers = m_eventSubscribers[ type ];
+         if( std::find( subscribers.begin(), subscribers.end(), subscriber ) == subscribers.end() )
+            subscribers.push_back( subscriber );
       }
 
-      static void RemoveSubscriber( EventSubscriber* subscriber )
+      static void UnregisterSubscriber( EventType type, EventSubscriber* subscriber )
       {
          std::lock_guard< std::mutex > lock( m_mutex );
-         m_subscribers.erase( std::remove( m_subscribers.begin(), m_subscribers.end(), subscriber ), m_subscribers.end() );
+         auto&                         subscribers = m_eventSubscribers[ type ];
+         subscribers.erase( std::remove( subscribers.begin(), subscribers.end(), subscriber ), subscribers.end() );
       }
 
-      static void DispatchToSubscribers( std::unique_ptr< IEvent >& pEvent )
+      static void DispatchToSubscribers( IEvent&& event )
       {
          std::lock_guard< std::mutex > lock( m_mutex );
-         for( EventSubscriber* subscriber : m_subscribers )
-            subscriber->DispatchToCallbacks( pEvent );
+         if( auto it = m_eventSubscribers.find( event.GetEventType() ); it != m_eventSubscribers.end() )
+         {
+            for( EventSubscriber* subscriber : it->second )
+               subscriber->DispatchToCallbacks( event );
+         }
       }
 
    private:
@@ -162,13 +160,13 @@ private:
       EventManager( const EventManager& )            = delete;
       EventManager& operator=( const EventManager& ) = delete;
 
-      inline static std::vector< EventSubscriber* > m_subscribers;
-      inline static std::mutex                      m_mutex; // Mutex to protect m_subscribers from concurrent access
+      inline static std::mutex                                                       m_mutex;
+      inline static std::unordered_map< EventType, std::vector< EventSubscriber* > > m_eventSubscribers;
    };
 
    template< typename TEvent, typename... Args >
    friend void Dispatch( Args&&... args );
-   friend void Dispatch( std::unique_ptr< IEvent >& pEvent );
+   friend void Dispatch( IEvent&& pEvent );
 };
 
 //=========================================================================
@@ -177,13 +175,12 @@ private:
 template< typename TEvent, typename... Args >
 inline void Dispatch( Args&&... args )
 {
-   std::unique_ptr< IEvent > pEvent = std::make_unique< TEvent >( std::forward< Args >( args )... );
-   EventSubscriber::EventManager::DispatchToSubscribers( pEvent );
+   EventSubscriber::EventManager::DispatchToSubscribers( std::move( TEvent( std::forward< Args >( args )... ) ) );
 }
 
-inline void Dispatch( std::unique_ptr< IEvent >& pEvent )
+inline void Dispatch( IEvent&& event )
 {
-   EventSubscriber::EventManager::DispatchToSubscribers( pEvent );
+   EventSubscriber::EventManager::DispatchToSubscribers( std::move( event ) );
 }
 
 } // namespace Events
