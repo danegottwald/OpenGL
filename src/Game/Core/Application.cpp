@@ -5,6 +5,7 @@
 #include "../World.h"
 #include "../Entity/Player.h"
 #include "../Camera.h"
+#include "../../Network/Network.h"
 
 #include "GUIManager.h"
 
@@ -16,9 +17,9 @@ void Application::Init()
 }
 
 // Cleanup should occur in reverse order of initialization
-void Application::Reset()
+void Application::Shutdown()
 {
-   GUIManager::Reset();
+   GUIManager::Shutdown();
 }
 
 void Application::Run()
@@ -34,28 +35,46 @@ void Application::Run()
    // PlayerManager::GetPlayer() - returns the player
    //    only one player should theoretically exist at a time
 
-   // Attach Debug GUI
-   GUIManager::Attach( std::make_shared< DebugGUI >() );
+   // https://github.com/htmlboss/OpenGL-Renderer
 
    World world;
    world.Setup();
+
+   Events::EventSubscriber eventSubscriber;
+   eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& e )
+   {
+      if( e.GetKeyCode() == Input::R ) // Reload world
+         world.Setup();
+   } );
+
    Player player;
    Camera camera;
 
-   Timestep timestep;
+   // Attach debug UI to track player/camera
+   GUIManager::Attach( std::make_shared< DebugGUI >( player, camera ) );
+
+   // Attach Network GUI
+   INetwork::RegisterGUI();
+
+   float    time = 0;
+   Timestep timestep( 20.0f /*tickrate*/ );
    Window&  window = Window::Get();
    while( window.IsOpen() )
    {
-      timestep.Step(); // Compute delta
-
       // Game Ticks
-      float delta = timestep.GetDelta();
-      world.Tick( delta );         // Update world
-      player.Tick( world, delta ); // Tick Player, use m_World to check collisions
+      float delta = timestep.Step(); // Compute delta
+      world.Tick( delta, camera );   // Update world
+      player.Tick( world, delta );   // Tick Player, use m_World to check collisions
 
       // Game Updates
       player.Update( delta );  // Update Player
       camera.Update( player ); // Update Camera to match Player
+
+      if( timestep.FTick() )
+      {
+         if( INetwork* pNetwork = INetwork::Get() )
+            pNetwork->Poll( world, player ); // Poll network events
+      }
 
       // Render only if not minimized
       if( !window.FMinimized() )
@@ -71,42 +90,9 @@ void Application::Run()
       }
 
       window.OnUpdate(); // Poll events and swap buffers
-
-      // RENDER() from MAIN LOOP
-      // glEnable(GL_DEPTH_TEST);
-      //
-      //// World
-      // m_worldRenderTarget.bind();
-      // glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
-      // m_game.render();
-      //
-      //// GUI
-      // m_guiRenderTarget.bind();
-      // glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
-      // m_gui.render(m_guiRenderer);
-      //
-      //// Buffer to window
-      // gl::unbindFramebuffers(ClientConfig::get().windowWidth,
-      //                         ClientConfig::get().windowHeight);
-      // glDisable(GL_DEPTH_TEST);
-      // glClear(GL_COLOR_BUFFER_BIT);
-      // auto drawable = m_screenBuffer.getDrawable();
-      // drawable.bind();
-      // m_screenShader.bind();
-      //
-      // m_worldRenderTarget.bindTexture();
-      // drawable.draw();
-      //
-      // glEnable(GL_BLEND);
-      //
-      // m_guiRenderTarget.bindTexture();
-      // drawable.draw();
-      //
-      // mp_window->display();
-      // glDisable(GL_BLEND);
    }
 
-   Reset(); // Cleanup the application
+   Shutdown(); // Cleanup the application
 }
 
 // NOTES

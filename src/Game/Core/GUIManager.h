@@ -1,13 +1,13 @@
 #pragma once
 
 // ========================================================================
-//      IGuiElement
+//      IGUIElement
 // ========================================================================
-class IGuiElement
+class IGUIElement
 {
 public:
-   IGuiElement()  = default;
-   ~IGuiElement() = default;
+   IGUIElement()  = default;
+   ~IGUIElement() = default;
 
    virtual void Draw() = 0;
 };
@@ -19,10 +19,10 @@ class GUIManager final
 {
 public:
    static void Init();
-   static void Reset();
+   static void Shutdown();
 
-   static void Attach( std::shared_ptr< IGuiElement > element );
-   static void Detach( std::shared_ptr< IGuiElement > element );
+   static void Attach( std::shared_ptr< IGUIElement > element );
+   static void Detach( const std::shared_ptr< IGUIElement >& element );
    static void Draw();
 
 private:
@@ -31,18 +31,22 @@ private:
    GUIManager( const GUIManager& )            = delete;
    GUIManager& operator=( const GUIManager& ) = delete;
 
-   static bool                                          m_fInitialized;
-   static std::vector< std::shared_ptr< IGuiElement > > m_elements;
+   static inline bool                                          m_fInitialized { false };
+   static inline std::vector< std::shared_ptr< IGUIElement > > m_elements;
 };
 
 // ========================================================================
 //      DebugGUI
 // ========================================================================
-class DebugGUI final : public IGuiElement
+class DebugGUI final : public IGUIElement
 {
 public:
-   DebugGUI()  = default;
+   DebugGUI( class Player& player, class Camera& camera );
    ~DebugGUI() = default;
 
    void Draw() override;
+
+private:
+   class Player& m_player;
+   class Camera& m_camera;
 };

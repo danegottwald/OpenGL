@@ -2,38 +2,36 @@
 
 class IndexBuffer
 {
-private:
-   // Member Variables
-   unsigned int m_RendererID;
-   unsigned int m_Count;
-
 public:
-   // Constructors
-   IndexBuffer( const unsigned int* data, unsigned int count );
-   // Overload for std::array use
-   template< size_t N >
-   explicit IndexBuffer( const std::array< unsigned int, N >& ib );
+   IndexBuffer() = default;
+   ~IndexBuffer()
+   {
+      if( m_bufferID )
+         glDeleteBuffers( 1, &m_bufferID );
+   }
 
-   // Destructor
-   ~IndexBuffer();
+   // Initialize method to create and populate the index buffer
+   template< typename TContainer >
+   void SetBufferData( const TContainer& indexData )
+   {
+      m_size = indexData.size();
 
-   // Member Functions
-   void Bind() const;
-   void Unbind() const;
+      // Delete previous buffer if exists
+      if( m_bufferID )
+         glDeleteBuffers( 1, &m_bufferID );
 
-   inline unsigned int GetCount() const { return m_Count; }
+      glGenBuffers( 1, &m_bufferID );
+      glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_bufferID );
+      glBufferData( GL_ELEMENT_ARRAY_BUFFER, m_size * sizeof( unsigned int ), indexData.data(), GL_STATIC_DRAW );
+      glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 ); // Unbind after setup
+   }
+
+   void Bind() const { glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_bufferID ); }
+   void Unbind() const { glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, 0 ); }
+
+   inline unsigned int GetSize() const { return m_size; }
+
+private:
+   unsigned int m_bufferID { 0 };
+   unsigned int m_size { 0 };
 };
-
-// Constructor template for std::array
-template< size_t N >
-IndexBuffer::IndexBuffer( const std::array< unsigned int, N >& ib ) :
-   m_Count( ib.size() )
-{
-   // Generates 1 buffer object name (ID) into m_RendererID
-   glGenBuffers( 1, &m_RendererID );
-   // Binds the Index Buffer (ID/m_RendererID) to the OpenGL state
-   glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_RendererID );
-   // Creates/initializes the bound Index Buffer with 'count' indices provided
-   // in 'data'
-   glBufferData( GL_ELEMENT_ARRAY_BUFFER, ib.size() * sizeof( unsigned int ), ib.data(), GL_STATIC_DRAW );
-}

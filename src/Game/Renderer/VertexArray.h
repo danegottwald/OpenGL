@@ -1,20 +1,26 @@
 #pragma once
 
-#include "VertexBuffer.h"
-#include "VertexBufferLayout.h"
+//#include "VertexBuffer.h"
+//#include "VertexBufferLayout.h"
 
 class VertexArray
 {
-private:
-   unsigned int m_VertexArrayID;
-   unsigned int m_VertexBufferID;
-
 public:
-   VertexArray();
-   ~VertexArray();
+   VertexArray() = default;
+   ~VertexArray()
+   {
+      if( m_vertexArrayID )
+         glDeleteVertexArrays( 1, &m_vertexArrayID );
+   }
 
-   void Bind() const;
-   void Unbind() const;
+   void Initialize() { glCreateVertexArrays( 1, &m_vertexArrayID ); }
+   void Bind() const { glBindVertexArray( m_vertexArrayID ); }
+   void Unbind() const { glBindVertexArray( 0 ); }
 
-   void AddBuffer();
+   // Delete Copy and Move Constructors
+   VertexArray( const VertexArray& )            = delete;
+   VertexArray& operator=( const VertexArray& ) = delete;
+
+private:
+   unsigned int m_vertexArrayID { 0 };
 };

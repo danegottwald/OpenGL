@@ -37,6 +37,8 @@ private:
    void                                 MouseButtonReleased( const Events::MouseButtonReleasedEvent& e );
    void                                 MouseMove( const Events::MouseMovedEvent& e );
    //  EntityState m_State inherited from Entity
+
+   bool m_fInAir { false };
 };
 
 

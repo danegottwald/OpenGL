@@ -11,8 +11,15 @@ int main( int argc, char* argv[] )
    // https://gamedev.stackexchange.com/a/59627
 
    // Run application
-   Application& app = Application::Get();
-   app.Run();
-
+   try
+   {
+      Application& app = Application::Get();
+      app.Run();
+   }
+   catch( const std::exception& e )
+   {
+      std::cerr << "Exception: " << e.what() << std::endl;
+      return -1;
+   }
    return 0;
 }

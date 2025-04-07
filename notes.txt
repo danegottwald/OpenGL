@@ -1,0 +1,5 @@
+This is needed for the C++ redistributable
+    https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170
+
+When a client terminates connection to server, it should clear all clients itself
+

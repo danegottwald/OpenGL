@@ -1,34 +1,58 @@
 #pragma once
 
+#include "VertexBufferLayout.h"
+
 class VertexBuffer
 {
-private:
-   // Member Variables
-   unsigned int m_RendererID;
-
 public:
-   // Constructors
-   VertexBuffer( const void* data, unsigned int size );
-   // Overload for std::array use
-   template< typename T, size_t N >
-   explicit VertexBuffer( const std::array< T, N >& vb );
+   VertexBuffer() = default;
+   ~VertexBuffer()
+   {
+      if( m_bufferID )
+         glDeleteBuffers( 1, &m_bufferID );
+   }
 
-   // Destructor
-   ~VertexBuffer();
+   // Initialize method to set up buffer
+   template< typename TContainer >
+   void SetBufferData( const TContainer& vertexData, VertexBufferLayout&& layout );
+   void Bind() const { glBindBuffer( GL_ARRAY_BUFFER, m_bufferID ); }
+   void Unbind() const { glBindBuffer( GL_ARRAY_BUFFER, 0 ); }
 
-   // Member Functions
-   void Bind() const;
-   void Unbind() const;
+   const std::vector< float >& GetVertices() const { return m_vertexData; }
+
+   // Delete Copy and Move Constructors
+   VertexBuffer( const VertexBuffer& )            = delete;
+   VertexBuffer& operator=( const VertexBuffer& ) = delete;
+
+private:
+   unsigned int         m_bufferID { 0 };
+   VertexBufferLayout   m_layout;
+   std::vector< float > m_vertexData; // Store vertices for ray intersection
 };
 
-// Constructor template for std::array
-template< typename T, size_t N >
-VertexBuffer::VertexBuffer( const std::array< T, N >& vb )
+template< typename TContainer >
+void VertexBuffer::SetBufferData( const TContainer& vertexData, VertexBufferLayout&& layout )
 {
-   // Generates 1 buffer object name (ID) into m_RendererID
-   glGenBuffers( 1, &m_RendererID );
-   // Binds the Vertex Buffer (ID/m_RendererID) to the OpenGL state
-   glBindBuffer( GL_ARRAY_BUFFER, m_RendererID );
-   // Creates/initializes the bound Vertex Buffer with data of size 'size'
-   glBufferData( GL_ARRAY_BUFFER, vb.size() * sizeof( vb.front() ), vb.data(), GL_STATIC_DRAW );
+   m_layout = std::move( layout );
+   m_vertexData.assign( vertexData.begin(), vertexData.end() ); // Store data for ray casting
+
+   // Delete previous buffer if exists
+   if( m_bufferID )
+      glDeleteBuffers( 1, &m_bufferID );
+
+   // Generate and bind buffer
+   glGenBuffers( 1, &m_bufferID );
+   glBindBuffer( GL_ARRAY_BUFFER, m_bufferID );
+   glBufferData( GL_ARRAY_BUFFER, vertexData.size() * sizeof( TContainer::value_type ), vertexData.data(), GL_STATIC_DRAW );
+
+   // Apply layout
+   const std::vector< VertexBufferElement >& elements = m_layout.GetElements();
+   for( unsigned int i = 0; i < elements.size(); i++ )
+   {
+      glEnableVertexAttribArray( i );
+      const VertexBufferElement& element = elements[ i ];
+      glVertexAttribPointer( i, element.m_count, element.m_type, element.m_normalized, m_layout.GetStride(), ( const void* )element.m_offset );
+   }
+
+   glBindBuffer( GL_ARRAY_BUFFER, 0 ); // Unbind after setup
 }

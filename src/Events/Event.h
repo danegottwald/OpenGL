@@ -28,7 +28,10 @@ enum EventType
    MouseButtonPressed,
    MouseButtonReleased,
    MouseMoved,
-   MouseScrolled
+   MouseScrolled,
+   NetworkClientConnect,
+   NetworkClientDisconnect,
+   NetworkClientTimeout,
 };
 
 enum EventCategory
@@ -38,7 +41,8 @@ enum EventCategory
    EventCategoryInput       = 1 << 1,
    EventCategoryKeyboard    = 1 << 2,
    EventCategoryMouse       = 1 << 3,
-   EventCategoryMouseButton = 1 << 4
+   EventCategoryMouseButton = 1 << 4,
+   EventCategoryNetwork     = 1 << 5,
 };
 
 //=========================================================================
@@ -78,7 +82,7 @@ public:
    EventSubscriber()  = default;
    ~EventSubscriber() = default;
 
-   // You shouldn't be copying or moving subscribers, relationship with callbacks will be lost
+   // Shouldn't be copying or moving subscribers, relationship with callbacks will be lost
    EventSubscriber( const EventSubscriber& )            = delete;
    EventSubscriber& operator=( const EventSubscriber& ) = delete;
 
@@ -87,9 +91,9 @@ public:
    void Subscribe( EventCallbackFn< TEvent >&& callback )
    {
       EventManager::RegisterSubscriber( TEvent::GetStaticType(), this );
-      m_events[ TEvent::GetStaticType() ] = { true, [ callback = std::move( callback ) ]( const IEvent& event ) noexcept {
-         callback( static_cast< const TEvent& >( event ) );
-      } };
+      m_events[ TEvent::GetStaticType() ] = { true,
+                                              [ callback = std::move( callback ) ]( const IEvent& event ) noexcept
+      { callback( static_cast< const TEvent& >( event ) ); } };
    }
 
    template< typename TEvent, typename = std::enable_if_t< std::is_base_of< IEvent, TEvent >::value && !std::is_same< IEvent, TEvent >::value > >

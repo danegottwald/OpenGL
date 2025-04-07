@@ -2,13 +2,12 @@
 #include "GUIManager.h"
 
 #include "Window.h"
+#include "../Entity/Player.h"
+#include "../Camera.h"
 
 // ========================================================================
 //      GUIManager
 // ========================================================================
-bool                                          GUIManager::m_fInitialized = false;
-std::vector< std::shared_ptr< IGuiElement > > GUIManager::m_elements;
-
 void GUIManager::Init()
 {
    assert( m_fInitialized == false && L"GUIManager is already initialized" );
@@ -27,7 +26,7 @@ void GUIManager::Init()
    m_fInitialized = true; // GUIManager is now initialized
 }
 
-void GUIManager::Reset()
+void GUIManager::Shutdown()
 {
    assert( m_fInitialized == true && L"GUIManager is not initialized" );
    m_elements.clear(); // Clear all GUI elements
@@ -36,12 +35,12 @@ void GUIManager::Reset()
    ImGui::DestroyContext();
 }
 
-void GUIManager::Attach( std::shared_ptr< IGuiElement > element )
+void GUIManager::Attach( std::shared_ptr< IGUIElement > element )
 {
-   m_elements.push_back( element );
+   m_elements.push_back( std::move( element ) );
 }
 
-void GUIManager::Detach( std::shared_ptr< IGuiElement > element )
+void GUIManager::Detach( const std::shared_ptr< IGUIElement >& element )
 {
    m_elements.erase( std::remove( m_elements.begin(), m_elements.end(), element ), m_elements.end() );
 }
@@ -54,7 +53,7 @@ void GUIManager::Draw()
       ImGui_ImplGlfw_NewFrame();
       ImGui::NewFrame();
 
-      for( const std::shared_ptr< IGuiElement >& e : m_elements )
+      for( const std::shared_ptr< IGUIElement >& e : m_elements )
          e->Draw();
 
       ImGui::Render();
@@ -65,6 +64,11 @@ void GUIManager::Draw()
 // ========================================================================
 //      DebugGUI
 // ========================================================================
+DebugGUI::DebugGUI( Player& player, Camera& camera ) :
+   m_player( player ),
+   m_camera( camera )
+{}
+
 void DebugGUI::Draw()
 {
    { // ImGui Top Left
@@ -109,16 +113,17 @@ void DebugGUI::Draw()
       ImGui::End();
    }
 
-   //{ // ImGui Bottom Left
-   //   ImGui::SetNextWindowPos( ImVec2( 10, Window::Get().GetWindowData().Height - 10 ), ImGuiCond_Always, ImVec2( 0.0f, 1.0f ) );
-   //   ImGui::Begin( "Debug",
-   //                 nullptr,
-   //                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-   //                    /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
-   //   ImGui::Text( "Player Position: %.2f, %.2f, %.2f", player.GetPosition().x, player.GetPosition().y, player.GetPosition().z );
-   //   ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", player.GetRotation().x, player.GetRotation().y, player.GetRotation().z );
-   //   ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", player.GetVelocity().x, player.GetVelocity().y, player.GetVelocity().z );
-   //   ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", camera.GetPosition().x, camera.GetPosition().y, camera.GetPosition().z );
-   //   ImGui::End();
-   //}
+   { // ImGui Bottom Left
+      ImGui::SetNextWindowPos( ImVec2( 10, Window::Get().GetWindowData().Height - 10 ), ImGuiCond_Always, ImVec2( 0.0f, 1.0f ) );
+      ImGui::Begin( "Debug",
+                    nullptr,
+                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
+                       /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
+      ImGui::Text( "Player Position: %.2f, %.2f, %.2f", m_player.GetPosition().x, m_player.GetPosition().y, m_player.GetPosition().z );
+      ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", m_player.GetRotation().x, m_player.GetRotation().y, m_player.GetRotation().z );
+      ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", m_player.GetVelocity().x, m_player.GetVelocity().y, m_player.GetVelocity().z );
+      //ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
+      ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", m_camera.GetPosition().x, m_camera.GetPosition().y, m_camera.GetPosition().z );
+      ImGui::End();
+   }
 }

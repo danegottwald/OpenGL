@@ -1,218 +1,352 @@
-#include "World.h"
+﻿#include "World.h"
 
 #include "Camera.h"
+#include "Mesh.h"
 #include "Renderer/Shader.h"
 
-std::vector< float >        vertexData;
-std::vector< unsigned int > indexData;
-std::unique_ptr< Shader >   pShader;
 
-World::World() :
-   m_VAID( 0 ),
-   m_VBID( 0 ),
-   m_IBID( 0 )
+std::unique_ptr< Shader > pShader;
+Events::EventSubscriber   m_eventSubscriber;
+
+World::World()
 {
    pShader = std::make_unique< Shader >();
+
+   m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ & ]( const Events::NetworkClientConnectEvent& e )
+   {
+      uint64_t clientID = e.GetClientID();
+      if( auto it = m_otherPlayers.find( clientID ); it != m_otherPlayers.end() )
+         throw std::runtime_error( "Player already exists" );
+
+      m_otherPlayers[ clientID ] = std::make_shared< CubeMesh >();
+      m_otherPlayers[ clientID ]->SetColor( glm::vec3( 0.0f, 0.0f, 1.0f ) );
+   } );
+   m_eventSubscriber.Subscribe< Events::NetworkClientDisconnectEvent >( [ & ]( const Events::NetworkClientDisconnectEvent& e )
+   {
+      if( auto it = m_otherPlayers.find( e.GetClientID() ); it != m_otherPlayers.end() )
+         m_otherPlayers.erase( it );
+   } );
 }
 
-// clang-format off
-   //size_t vertexDataLength = 6; // (3 position, 3 normal)
-   //vertexData = {
-   //    // Positions          // Normals
-   //    // Front face
-   //    -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  // v1
-   //     0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  // v2
-   //     0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  // v3
-   //    -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  // v4
-   //
-   //    // Back face
-   //    -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  // v5
-   //    -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  // v6
-   //     0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  // v7
-   //     0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  // v8
-   //
-   //    // Left face
-   //    -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  // v9
-   //    -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  // v10
-   //    -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  // v11
-   //    -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  // v12
-   //
-   //    // Right face
-   //     0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  // v13
-   //     0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  // v14
-   //     0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  // v15
-   //     0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  // v16
-   //
-   //    // Top face
-   //    -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  // v17
-   //    -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  // v18
-   //     0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  // v19
-   //     0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  // v20
-   //
-   //    // Bottom face
-   //    -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  // v21
-   //     0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  // v22
-   //     0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  // v23
-   //    -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f   // v24
-   //};
-   //
-   //indexData = { // Front face
-   //              0, 1, 2, 2, 3, 0,
-   //              // Back face
-   //              4, 5, 6, 6, 7, 4,
-   //              // Left face
-   //              8, 9, 10, 10, 11, 8,
-   //              // Right face
-   //              12, 13, 14, 14, 15, 12,
-   //              // Top face
-   //              16, 17, 18, 18, 19, 16,
-   //              // Bottom face
-   //              20, 21, 22, 22, 23, 20
-   //};
-// clang-format on
+World ::~World()
+{
+   m_fChunkThreadTerminate.store( true );
+   if( m_chunkThread.joinable() )
+      m_chunkThread.join();
+}
 
-//struct Vertex
-//{
-//   glm::vec3 position; // Position of the vertex
-//   glm::vec3 normal;   // Normal for the vertex
-//};
+class Chunk
+{
+public:
+   Chunk( const glm::vec3& position ) noexcept :
+      m_position( position )
+   {}
 
+   static constexpr uint8_t GetSize() noexcept { return 16; }
+
+private:
+   // Chunks only are positioned on the XZ plane (Y is always 0)
+   glm::vec3 m_position { 0.0f };
+};
+
+enum class BlockFace
+{
+   North,
+   South,
+   East,
+   West,
+   Up,
+   Down
+};
+
+class ChunkMesh : public IMesh
+{
+public:
+   ChunkMesh( const glm::vec3& position = glm::vec3( 0.0f ) )
+   {
+      m_position = position;
+      SetPosition( position );
+   }
+
+   void SetPosition( const glm::vec3& /*position*/ ) override {}
+
+   void AddCube( const glm::vec3& cubePos )
+   {
+      // clang-format off
+      std::array<Vertex, 24> cubeVertices = {{
+         // Front Face
+         Vertex({cubePos.x - 0.5f, cubePos.y - 0.5f, cubePos.z + 0.5f}, {0.0f, 0.0f, 1.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y - 0.5f, cubePos.z + 0.5f}, {0.0f, 0.0f, 1.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y + 0.5f, cubePos.z + 0.5f}, {0.0f, 0.0f, 1.0f}),
+         Vertex({cubePos.x - 0.5f, cubePos.y + 0.5f, cubePos.z + 0.5f}, {0.0f, 0.0f, 1.0f}),
+
+         // Back Face
+         Vertex({cubePos.x - 0.5f, cubePos.y - 0.5f, cubePos.z - 0.5f}, {0.0f, 0.0f, -1.0f}),
+         Vertex({cubePos.x - 0.5f, cubePos.y + 0.5f, cubePos.z - 0.5f}, {0.0f, 0.0f, -1.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y + 0.5f, cubePos.z - 0.5f}, {0.0f, 0.0f, -1.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y - 0.5f, cubePos.z - 0.5f}, {0.0f, 0.0f, -1.0f}),
+
+         // Left Face
+         Vertex({cubePos.x - 0.5f, cubePos.y - 0.5f, cubePos.z - 0.5f}, {-1.0f, 0.0f, 0.0f}),
+         Vertex({cubePos.x - 0.5f, cubePos.y - 0.5f, cubePos.z + 0.5f}, {-1.0f, 0.0f, 0.0f}),
+         Vertex({cubePos.x - 0.5f, cubePos.y + 0.5f, cubePos.z + 0.5f}, {-1.0f, 0.0f, 0.0f}),
+         Vertex({cubePos.x - 0.5f, cubePos.y + 0.5f, cubePos.z - 0.5f}, {-1.0f, 0.0f, 0.0f}),
+
+         // Right Face
+         Vertex({cubePos.x + 0.5f, cubePos.y - 0.5f, cubePos.z - 0.5f}, {1.0f, 0.0f, 0.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y + 0.5f, cubePos.z - 0.5f}, {1.0f, 0.0f, 0.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y + 0.5f, cubePos.z + 0.5f}, {1.0f, 0.0f, 0.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y - 0.5f, cubePos.z + 0.5f}, {1.0f, 0.0f, 0.0f}),
+
+         // Top Face
+         Vertex({cubePos.x - 0.5f, cubePos.y + 0.5f, cubePos.z - 0.5f}, {0.0f, 1.0f, 0.0f}),
+         Vertex({cubePos.x - 0.5f, cubePos.y + 0.5f, cubePos.z + 0.5f}, {0.0f, 1.0f, 0.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y + 0.5f, cubePos.z + 0.5f}, {0.0f, 1.0f, 0.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y + 0.5f, cubePos.z - 0.5f}, {0.0f, 1.0f, 0.0f}),
+
+         // Bottom Face
+         Vertex({cubePos.x - 0.5f, cubePos.y - 0.5f, cubePos.z - 0.5f}, {0.0f, -1.0f, 0.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y - 0.5f, cubePos.z - 0.5f}, {0.0f, -1.0f, 0.0f}),
+         Vertex({cubePos.x + 0.5f, cubePos.y - 0.5f, cubePos.z + 0.5f}, {0.0f, -1.0f, 0.0f}),
+         Vertex({cubePos.x - 0.5f, cubePos.y - 0.5f, cubePos.z + 0.5f}, {0.0f, -1.0f, 0.0f})
+      }};
+
+      // Adjust vertex count based on the existing mesh data
+      unsigned int offset = vertices.size() / 6; // 6 floats per vertex (pos + normal)
+      unsigned int cubeIndices[] = {
+          // Front
+          offset + 0, offset + 1, offset + 2, offset + 2, offset + 3, offset + 0,
+          // Back
+          offset + 4, offset + 5, offset + 6, offset + 6, offset + 7, offset + 4,
+          // Left
+          offset + 8, offset + 9, offset + 10, offset + 10, offset + 11, offset + 8,
+          // Right
+          offset + 12, offset + 13, offset + 14, offset + 14, offset + 15, offset + 12,
+          // Top
+          offset + 16, offset + 17, offset + 18, offset + 18, offset + 19, offset + 16,
+          // Bottom
+          offset + 20, offset + 21, offset + 22, offset + 22, offset + 23, offset + 20,
+      };
+      // clang-format on
+
+      // Add vertex data
+      for( const Vertex& vertex : cubeVertices )
+      {
+         vertices.push_back( vertex.position.x );
+         vertices.push_back( vertex.position.y );
+         vertices.push_back( vertex.position.z );
+         vertices.push_back( vertex.normal.x );
+         vertices.push_back( vertex.normal.y );
+         vertices.push_back( vertex.normal.z );
+      }
+
+      indices.insert( indices.end(), std::begin( cubeIndices ), std::end( cubeIndices ) );
+   }
+
+   void AddFace( const glm::vec3& cubePos, BlockFace face )
+   {
+      const std::array< Vertex, 4 >* faceVertices = nullptr;
+      switch( face )
+      {
+         case BlockFace::North: faceVertices = &m_faceNorth; break;
+         case BlockFace::South: faceVertices = &m_faceSouth; break;
+         case BlockFace::East:  faceVertices = &m_faceWest; break;
+         case BlockFace::West:  faceVertices = &m_faceEast; break;
+         case BlockFace::Up:    faceVertices = &m_faceUp; break;
+         case BlockFace::Down:  faceVertices = &m_faceDown; break;
+         default:               throw std::runtime_error( "Unexpected block face" );
+      }
+
+      for( const Vertex& vertex : *faceVertices )
+      {
+         vertices.push_back( vertex.position.x + cubePos.x );
+         vertices.push_back( vertex.position.y + cubePos.y );
+         vertices.push_back( vertex.position.z + cubePos.z );
+         vertices.push_back( vertex.normal.x );
+         vertices.push_back( vertex.normal.y );
+         vertices.push_back( vertex.normal.z );
+      }
+
+      unsigned int offset = vertices.size() / 6 - 4; // 6 floats per vertex (pos + normal)
+      indices.insert( indices.end(), { offset, offset + 1, offset + 2, offset + 2, offset + 3, offset } );
+   }
+
+   bool FIsFinalized() const noexcept { return m_fFinalized; }
+   void Finalize()
+   {
+      if( m_fFinalized )
+         return;
+
+      m_fFinalized = true;
+      m_meshBuffer.Initialize();
+      m_meshBuffer.Bind();
+      VertexBufferLayout layout;
+      layout.Push< float >( 3 ); // Position
+      layout.Push< float >( 3 ); // Normal
+      m_meshBuffer.SetVertexData( vertices, std::move( layout ) );
+      m_meshBuffer.SetIndexData( indices );
+      m_meshBuffer.Unbind();
+   }
+
+private:
+   std::vector< float >        vertices; // Store vertex data for all cubes in the chunk
+   std::vector< unsigned int > indices;
+
+   bool m_fFinalized = false;
+
+   struct Vertex
+   {
+      Vertex( const glm::vec3& pos, const glm::vec3& norm ) :
+         position( pos ),
+         normal( norm )
+      {}
+      glm::vec3 position;
+      glm::vec3 normal;
+   };
+   static inline const std::array< Vertex, 4 > m_faceNorth = {
+      { Vertex( { -0.5f, -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } ),
+       Vertex( { 0.5f, -0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } ),
+       Vertex( { 0.5f, 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } ),
+       Vertex( { -0.5f, 0.5f, 0.5f }, { 0.0f, 0.0f, 1.0f } ) }
+   };
+   static inline const std::array< Vertex, 4 > m_faceSouth = {
+      { Vertex( { -0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } ),
+       Vertex( { -0.5f, 0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } ),
+       Vertex( { 0.5f, 0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } ),
+       Vertex( { 0.5f, -0.5f, -0.5f }, { 0.0f, 0.0f, -1.0f } ) }
+   };
+   static inline const std::array< Vertex, 4 > m_faceEast = {
+      { Vertex( { -0.5f, -0.5f, -0.5f }, { -1.0f, 0.0f, 0.0f } ),
+       Vertex( { -0.5f, -0.5f, 0.5f }, { -1.0f, 0.0f, 0.0f } ),
+       Vertex( { -0.5f, 0.5f, 0.5f }, { -1.0f, 0.0f, 0.0f } ),
+       Vertex( { -0.5f, 0.5f, -0.5f }, { -1.0f, 0.0f, 0.0f } ) }
+   };
+   static inline const std::array< Vertex, 4 > m_faceWest = {
+      { Vertex( { 0.5f, -0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } ),
+       Vertex( { 0.5f, 0.5f, -0.5f }, { 1.0f, 0.0f, 0.0f } ),
+       Vertex( { 0.5f, 0.5f, 0.5f }, { 1.0f, 0.0f, 0.0f } ),
+       Vertex( { 0.5f, -0.5f, 0.5f }, { 1.0f, 0.0f, 0.0f } ) }
+   };
+   static inline const std::array< Vertex, 4 > m_faceUp = {
+      { Vertex( { -0.5f, 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } ),
+       Vertex( { -0.5f, 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f } ),
+       Vertex( { 0.5f, 0.5f, 0.5f }, { 0.0f, 1.0f, 0.0f } ),
+       Vertex( { 0.5f, 0.5f, -0.5f }, { 0.0f, 1.0f, 0.0f } ) }
+   };
+   static inline const std::array< Vertex, 4 > m_faceDown = {
+      { Vertex( { -0.5f, -0.5f, -0.5f }, { 0.0f, -1.0f, 0.0f } ),
+       Vertex( { 0.5f, -0.5f, -0.5f }, { 0.0f, -1.0f, 0.0f } ),
+       Vertex( { 0.5f, -0.5f, 0.5f }, { 0.0f, -1.0f, 0.0f } ),
+       Vertex( { -0.5f, -0.5f, 0.5f }, { 0.0f, -1.0f, 0.0f } ) }
+   };
+};
 
 void World::Setup()
 {
-   vertexData.clear();
-   indexData.clear();
+   std::random_device                       rd;          // Non-deterministic seed generator
+   std::mt19937                             gen( rd() ); // Mersenne Twister PRNG
+   std::uniform_int_distribution< int32_t > dist;
+   //m_mapNoise.SetSeed( dist( gen ) );                           // Set the seed for reproducibility
+   m_mapNoise.SetSeed( 5 );                                     // Set the seed for reproducibility
+   m_mapNoise.SetNoiseType( FastNoiseLite::NoiseType_Perlin );  // Use Perlin noise for smooth terrain
+   m_mapNoise.SetFrequency( 0.005f );                           // Lower frequency = larger features (mountains, valleys)
+   m_mapNoise.SetFractalType( FastNoiseLite::FractalType_FBm ); // Use fractal Brownian motion for more realistic terrain
+   m_mapNoise.SetFractalOctaves( 5 );                           // Controls the detail level (higher = more detail)
 
-   const float cubeSize = 1.0f; // Each cube is 1x1x1 in size
-
-   // Loop through the 6x6x6 chunk grid
-   for( int x = 0; x < 6; ++x ) // length
+   if( m_chunkThread.joinable() )
    {
-      for( int y = 0; y < 1; ++y ) // height
+      if( m_fChunkThreadActive.load() )
+         m_fChunkThreadTerminate.store( true );
+
+      m_chunkThread.join();
+   }
+
+   //std::future< void > chunkFuture = std::async( std::launch::async, [ this, noise ]() {} );
+   m_chunkThread = std::thread( [ noise = m_mapNoise, this ]()
+   {
+      m_fChunkThreadActive.store( true );
+
+      { // Lock the mutex and initialize pChunkMeshes (this clears existing chunk data)
+         std::lock_guard< std::mutex > lock( m_chunkMutex );
+         m_chunkMeshes.clear();
+      }
+
+      constexpr int chunkSize   = Chunk::GetSize(); // 16x16 chunks
+      constexpr int mapSize     = 64 * chunkSize;
+      constexpr int halfMapSize = mapSize / 2;
+      for( int chunkX = -halfMapSize; chunkX < halfMapSize; chunkX += chunkSize )
       {
-         for( int z = 0; z < 6; ++z ) // width
+         for( int chunkZ = -halfMapSize; chunkZ < halfMapSize; chunkZ += chunkSize )
          {
-            glm::vec3 offset( x * cubeSize, y * cubeSize, z * cubeSize ); // Corrected offset
-
-            for( int face = 0; face < 6; ++face )
+            if( m_fChunkThreadTerminate.load() )
             {
-               glm::vec3 normal {};
-               glm::vec3 vertices[ 4 ] {};
-
-               switch( face )
+               m_fChunkThreadTerminate.store( false );
+               return;
+            }
+            std::shared_ptr< ChunkMesh > chunk = std::make_shared< ChunkMesh >( glm::vec3( chunkX, 0, chunkZ ) );
+            for( int x = chunkX; x < chunkX + chunkSize; x++ )
+            {
+               for( int z = chunkZ; z < chunkZ + chunkSize; z++ )
                {
-                  case 0: // Front face
-                     normal        = glm::vec3( 0.0f, 0.0f, 1.0f );
-                     vertices[ 0 ] = glm::vec3( -0.5f, -0.5f, 0.5f );
-                     vertices[ 1 ] = glm::vec3( 0.5f, -0.5f, 0.5f );
-                     vertices[ 2 ] = glm::vec3( 0.5f, 0.5f, 0.5f );
-                     vertices[ 3 ] = glm::vec3( -0.5f, 0.5f, 0.5f );
-                     break;
+                  if( m_fChunkThreadTerminate.load() )
+                  {
+                     m_fChunkThreadTerminate.store( false );
+                     return;
+                  }
+                  //auto getNoise = [ &noise ]( int x, int z ) -> float { return 1; };
+                  auto getNoise    = [ &noise ]( int x, int z ) -> float { return noise.GetNoise( static_cast< float >( x ), static_cast< float >( z ) ) + 1; };
+                  const int height = static_cast< int >( getNoise( x, z ) * 127.5f ) - 64;
+                  //chunk->AddCube( glm::vec3( x, height, z ) );
+                  //continue;
 
-                  case 1: // Back face
-                     normal        = glm::vec3( 0.0f, 0.0f, -1.0f );
-                     vertices[ 0 ] = glm::vec3( -0.5f, -0.5f, -0.5f );
-                     vertices[ 1 ] = glm::vec3( -0.5f, 0.5f, -0.5f );
-                     vertices[ 2 ] = glm::vec3( 0.5f, 0.5f, -0.5f );
-                     vertices[ 3 ] = glm::vec3( 0.5f, -0.5f, -0.5f );
-                     break;
+                  const int adjHeightNorth = static_cast< int >( getNoise( x, z + 1 ) * 127.5f ) - 64;
+                  const int adjHeightSouth = static_cast< int >( getNoise( x, z - 1 ) * 127.5f ) - 64;
+                  const int adjHeightEast  = static_cast< int >( getNoise( x + 1, z ) * 127.5f ) - 64;
+                  const int adjHeightWest  = static_cast< int >( getNoise( x - 1, z ) * 127.5f ) - 64;
 
-                  case 2: // Left face
-                     normal        = glm::vec3( -1.0f, 0.0f, 0.0f );
-                     vertices[ 0 ] = glm::vec3( -0.5f, -0.5f, -0.5f );
-                     vertices[ 1 ] = glm::vec3( -0.5f, -0.5f, 0.5f );
-                     vertices[ 2 ] = glm::vec3( -0.5f, 0.5f, 0.5f );
-                     vertices[ 3 ] = glm::vec3( -0.5f, 0.5f, -0.5f );
-                     break;
+                  glm::vec3 cubePos( x, height, z );
+                  // Add faces if not adjacent to another block
+                  if( height > adjHeightNorth )
+                     chunk->AddFace( cubePos, BlockFace::North );
+                  if( height > adjHeightSouth )
+                     chunk->AddFace( cubePos, BlockFace::South );
+                  if( height > adjHeightEast )
+                     chunk->AddFace( cubePos, BlockFace::East );
+                  if( height > adjHeightWest )
+                     chunk->AddFace( cubePos, BlockFace::West );
 
-                  case 3: // Right face
-                     normal        = glm::vec3( 1.0f, 0.0f, 0.0f );
-                     vertices[ 0 ] = glm::vec3( 0.5f, -0.5f, -0.5f );
-                     vertices[ 1 ] = glm::vec3( 0.5f, 0.5f, -0.5f );
-                     vertices[ 2 ] = glm::vec3( 0.5f, 0.5f, 0.5f );
-                     vertices[ 3 ] = glm::vec3( 0.5f, -0.5f, 0.5f );
-                     break;
-
-                  case 4: // Top face
-                     normal        = glm::vec3( 0.0f, 1.0f, 0.0f );
-                     vertices[ 0 ] = glm::vec3( -0.5f, 0.5f, -0.5f );
-                     vertices[ 1 ] = glm::vec3( -0.5f, 0.5f, 0.5f );
-                     vertices[ 2 ] = glm::vec3( 0.5f, 0.5f, 0.5f );
-                     vertices[ 3 ] = glm::vec3( 0.5f, 0.5f, -0.5f );
-                     break;
-
-                  case 5: // Bottom face
-                     normal        = glm::vec3( 0.0f, -1.0f, 0.0f );
-                     vertices[ 0 ] = glm::vec3( -0.5f, -0.5f, -0.5f );
-                     vertices[ 1 ] = glm::vec3( 0.5f, -0.5f, -0.5f );
-                     vertices[ 2 ] = glm::vec3( 0.5f, -0.5f, 0.5f );
-                     vertices[ 3 ] = glm::vec3( -0.5f, -0.5f, 0.5f );
-                     break;
+                  chunk->AddFace( cubePos, BlockFace::Up );
+                  //chunk->AddFace( cubePos, BlockFace::Down );
                }
+            }
 
-               // Add each face's vertices to the vertex data (with offset applied)
-               for( int i = 0; i < 4; ++i )
-               {
-                  vertexData.push_back( vertices[ i ].x + offset.x );
-                  vertexData.push_back( vertices[ i ].y + offset.y );
-                  vertexData.push_back( vertices[ i ].z + offset.z );
-                  vertexData.push_back( normal.x );
-                  vertexData.push_back( normal.y );
-                  vertexData.push_back( normal.z );
-               }
-
-               // Add the indices (using a counter for the current vertex base)
-               unsigned int baseIndex = vertexData.size() / 6 - 4; // Adjusted index calculation
-               indexData.push_back( baseIndex + 0 );
-               indexData.push_back( baseIndex + 1 );
-               indexData.push_back( baseIndex + 2 );
-               indexData.push_back( baseIndex + 2 );
-               indexData.push_back( baseIndex + 3 );
-               indexData.push_back( baseIndex + 0 );
+            {
+               std::lock_guard< std::mutex > lock( m_chunkMutex );
+               m_chunkMeshes.push_back( chunk );
             }
          }
       }
-   }
+      m_fChunkThreadActive.store( false );
+   } );
 
-   std::cout << "Vertex Data Size: " << vertexData.size() << std::endl;
-   std::cout << "Index Data Size: " << indexData.size() << std::endl;
-
-   // Create and bind Vertex Array Object (VAO)
-   glCreateVertexArrays( 1, &m_VAID );
-   glBindVertexArray( m_VAID );
-
-   // Create and bind Vertex Buffer Object (VBO)
-   glCreateBuffers( 1, &m_VBID );
-   glBindBuffer( GL_ARRAY_BUFFER, m_VBID );
-   glBufferData( GL_ARRAY_BUFFER, vertexData.size() * sizeof( float ), vertexData.data(), GL_STATIC_DRAW );
-
-   // Create and bind Index Buffer Object (IBO)
-   glGenBuffers( 1, &m_IBID );
-   glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_IBID );
-   glBufferData( GL_ELEMENT_ARRAY_BUFFER, indexData.size() * sizeof( unsigned int ), indexData.data(), GL_STATIC_DRAW );
-
-   // Define Vertex Attributes (Position)
-   glEnableVertexAttribArray( 0 );
-   glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof( float ), ( const void* )0 );
-
-   // Define Vertex Attributes (Normals)
-   glEnableVertexAttribArray( 1 );
-   glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof( float ), ( const void* )( 3 * sizeof( float ) ) );
+   m_cubeMeshes.clear();
+   m_pSun = std::make_shared< CubeMesh >( glm::vec3( 0.0f ) );
+   m_cubeMeshes.push_back( m_pSun );
 }
 
 glm::vec3 lightPos;
-void      World::Tick( float delta )
+void      World::Tick( float delta, Camera& camera )
 {
-   // Update time by the delta, loop back every 5 seconds
-   static float time = 0.0f; // Accumulates time passed
-   time += delta;
-   if( time > 5.0f )
-      time -= 5.0f; // Reset time after 5 seconds for continuous orbit
+   { // sun orbits player
+      //static float time = 0.0f;
+      //time              = std::fmod( time + delta, 20.0f ); // Loop back every 5 seconds
 
-   // Angle based on the elapsed time and duration of the orbit (5 seconds)
-   // Set the light position to orbit around (0, 0, 0) in the X-Z plane
-   float angle = glm::two_pi< float >() * ( time / 5.0f ); // 360 degrees in radians (two_pi)
-   lightPos    = glm::vec3( glm::cos( angle ) * 5.0f, 2.0f, glm::sin( angle ) * 5.0f );
+      //float angle = glm::two_pi< float >() * ( time / 20.0f ); // 360 degrees in radians (two_pi)
+      //lightPos    = camera.GetPosition() + glm::vec3( ( glm::cos( angle ) * 10.0f ), ( glm::sin( angle ) * 10.0f ), 0.0f );
+   }
+
+   lightPos = camera.GetPosition() + glm::vec3( 0.0f, 5.0f, 0.0 );
+   m_pSun->SetPosition( lightPos );
 }
 
 // Render the world from provided perspective
@@ -229,20 +363,50 @@ void World::Render( const Camera& camera )
    pShader->Bind();                                            // Bind the shader program
    pShader->SetUniform( "u_MVP", camera.GetProjectionView() ); // Set Model-View-Projection matrix
    pShader->SetUniform( "u_viewPos", camera.GetPosition() );   // Set camera position
-   pShader->SetUniform( "u_color", 0.5f, 0.0f, 0.0f );         // Set color (example: red)
-   pShader->SetUniform( "u_lightPos", lightPos );              // Set light position
+   //pShader->SetUniform( "u_color", 0.5f, 0.0f, 0.0f );         // Set color (example: red)
+   pShader->SetUniform( "u_lightPos", lightPos ); // Set light position
 
    // 4. Optional: Bind texture (if any)
    // m_Texture->Bind(0); // Bind texture (if using one)
    // pShader->SetUniform1i("u_Texture", 0); // Set texture unit in shader
+   ViewFrustum frustum( camera );
+   if( !m_chunkMeshes.empty() )
+   {
+      std::unique_lock< std::mutex > lock( m_chunkMutex );
+      for( const std::shared_ptr< IMesh >& mesh : m_chunkMeshes )
+      {
+         //if( !frustum.FInFrustum( mesh->GetPosition(), Chunk::GetSize() ) )
+         //   continue; // Skip rendering this chunk
 
-   // 5. Bind Vertex Array Object (VAO) and draw elements
-   glBindVertexArray( m_VAID );                                                // Bind the Vertex Array Object (VAO)
-   glDrawElements( GL_TRIANGLES, indexData.size(), GL_UNSIGNED_INT, nullptr ); // Draw the elements using indices from IBO
+         std::shared_ptr< ChunkMesh > chunk = std::static_pointer_cast< ChunkMesh >( mesh );
+         if( !chunk->FIsFinalized() )
+            chunk->Finalize();
 
-   // 6. Unbind VAO and shader program (clean up)
-   glBindVertexArray( 0 ); // Unbind VAO
-   pShader->Unbind();      // Unbind shader program
+         // TODO implemente frustum culling for chunks
+         pShader->SetUniform( "u_color", mesh->GetColor() );
+         mesh->Render();
+      }
+   }
+
+   for( const std::shared_ptr< IMesh >& mesh : m_cubeMeshes )
+   {
+      if( !frustum.FInFrustum( mesh->GetPosition(), 0.5f /*padding (half cube size)*/ ) )
+         continue; // Skip rendering this mesh
+
+      pShader->SetUniform( "u_color", mesh->GetColor() );
+      mesh->Render();
+   }
+
+   for( const auto& [ _, pPlayerMesh ] : m_otherPlayers )
+   {
+      if( !frustum.FInFrustum( pPlayerMesh->GetPosition(), 0.5f /*padding (half cube size)*/ ) )
+         continue; // Skip rendering this mesh
+
+      pShader->SetUniform( "u_color", pPlayerMesh->GetColor() );
+      pPlayerMesh->Render();
+   }
+
+   pShader->Unbind(); // Unbind shader program
 
    // 7. Optional: Unbind texture (if any)
    // glBindTexture(GL_TEXTURE_2D, 0); // Unbind texture (if using one)
@@ -250,4 +414,12 @@ void World::Render( const Camera& camera )
    // 8. Render additional objects (optional, e.g., chunks or entities)
    // renderChunks(); // Example: render chunks
    // renderEntities(); // Example: render entities
+}
+
+void World::ReceivePlayerPosition( uint64_t clientID, const glm::vec3& position )
+{
+   if( m_otherPlayers.find( clientID ) == m_otherPlayers.end() )
+      throw std::runtime_error( "Player does not exist" );
+
+   m_otherPlayers[ clientID ]->SetPosition( position - glm::vec3( 0.0f, 1.0f, 0.0f ) ); // set position, adjust for head level
 }

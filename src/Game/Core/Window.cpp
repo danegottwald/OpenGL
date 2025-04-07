@@ -44,7 +44,9 @@ void Window::Init()
    glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 4 );                 // OpenGL major version 4
    glfwWindowHint( GLFW_CONTEXT_VERSION_MINOR, 5 );                 // OpenGL minor version 3
    glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE ); // Use core profile (no deprecated functions)
-   glfwWindowHint( GLFW_SAMPLES, 4 );                               // Enable Multi-Sample Anti-Aliasing (MSAA)
+
+   glfwWindowHint( GLFW_DEPTH_BITS, 24 ); // Set the depth buffer to 24 bits
+   glfwWindowHint( GLFW_SAMPLES, 4 );     // Enable Multi-Sample Anti-Aliasing (MSAA)
 
    // Create the GLFW window
    m_Window = glfwCreateWindow( m_WindowData.Width, m_WindowData.Height, m_WindowData.Title.c_str(), nullptr, nullptr );
@@ -247,7 +249,7 @@ void Window::SetCallbacks()
    {
       Input::KeyCode keyCode = static_cast< Input::KeyCode >( key );
       if( action != GLFW_REPEAT )
-         Input::SetKeyPressed( keyCode, static_cast< bool >( action ) ); // Update the input manager state
+         Input::SetKeyPressed( keyCode, static_cast< bool >( action ) ); // Update input manager state
 
       // Dispatch events
       switch( action )
@@ -259,15 +261,15 @@ void Window::SetCallbacks()
       }
    } );
 
-   glfwSetCharCallback( m_Window, []( GLFWwindow* window, unsigned int keycode ) {
-      Events::Dispatch< Events::KeyTypedEvent >( static_cast< Input::KeyCode >( keycode ) );
-   } );
+   glfwSetCharCallback( m_Window,
+                        []( GLFWwindow* window, unsigned int keycode )
+   { Events::Dispatch< Events::KeyTypedEvent >( static_cast< Input::KeyCode >( keycode ) ); } );
 
    glfwSetMouseButtonCallback( m_Window,
                                []( GLFWwindow* window, int button, int action, int mods )
    {
       Input::MouseCode mouseCode = static_cast< Input::MouseCode >( button );
-      Input::SetMouseButtonPressed( mouseCode, action != GLFW_RELEASE ); // Update the input manager state
+      Input::SetMouseButtonPressed( mouseCode, action != GLFW_RELEASE ); // Update input manager state
 
       // Dispatch events
       switch( action )
@@ -278,11 +280,11 @@ void Window::SetCallbacks()
       }
    } );
 
-   glfwSetScrollCallback( m_Window, []( GLFWwindow* window, double xOffset, double yOffset ) {
-      Events::Dispatch< Events::MouseScrolledEvent >( static_cast< float >( xOffset ), static_cast< float >( yOffset ) );
-   } );
+   glfwSetScrollCallback( m_Window,
+                          []( GLFWwindow* window, double xOffset, double yOffset )
+   { Events::Dispatch< Events::MouseScrolledEvent >( static_cast< float >( xOffset ), static_cast< float >( yOffset ) ); } );
 
-   glfwSetCursorPosCallback( m_Window, []( GLFWwindow* window, double xPos, double yPos ) {
-      Events::Dispatch< Events::MouseMovedEvent >( static_cast< float >( xPos ), static_cast< float >( yPos ) );
-   } );
+   glfwSetCursorPosCallback( m_Window,
+                             []( GLFWwindow* window, double xPos, double yPos )
+   { Events::Dispatch< Events::MouseMovedEvent >( static_cast< float >( xPos ), static_cast< float >( yPos ) ); } );
 }

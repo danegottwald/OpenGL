@@ -73,7 +73,7 @@ unsigned int Shader::CreateShader( const std::string& vertexShader, const std::s
 
       std::vector< char > message( length );
       glGetProgramInfoLog( programID, length, &length, message.data() );
-      std::cerr << std::format( "Failed to link shader program id {}!", programID );
+      std::cerr << std::format( "Failed to link shader program id {}!", programID ) << std::endl;
       std::cerr << message.data() << std::endl;
       glDeleteProgram( programID );
       return 0;
@@ -89,7 +89,7 @@ unsigned int Shader::CreateShader( const std::string& vertexShader, const std::s
       glGetProgramiv( programID, GL_INFO_LOG_LENGTH, &length );
       std::vector< char > message( length );
       glGetProgramInfoLog( programID, length, &length, message.data() );
-      std::cerr << std::format( "Failed to validate shader program id {}!", programID );
+      std::cerr << std::format( "Failed to validate shader program id {}!", programID ) << std::endl;
       std::cerr << message.data() << std::endl;
       glDeleteProgram( programID );
       return 0;
@@ -124,7 +124,7 @@ unsigned int Shader::CompileShader( unsigned int type, const std::string& source
       glGetShaderiv( shaderID, GL_INFO_LOG_LENGTH, &length );
       std::vector< char > message( length );
       glGetShaderInfoLog( shaderID, length, &length, message.data() );
-      std::cerr << std::format( "Failed to compile {} shader id {}", ( type == GL_VERTEX_SHADER ? "vertex" : "fragment" ), shaderID );
+      std::cerr << std::format( "Failed to compile {} shader id {}", ( type == GL_VERTEX_SHADER ? "vertex" : "fragment" ), shaderID ) << std::endl;
       std::cerr << message.data() << std::endl;
       glDeleteShader( shaderID );
       return 0;

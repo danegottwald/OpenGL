@@ -1,14 +1,17 @@
 {
   "dependencies": [
-    "opengl",
+    "glad",
     "glew",
     "glfw3",
     "glm",
-    "glad",
     {
       "name": "imgui",
-      "features": [ "glfw-binding", "opengl3-binding" ]
+      "features": [
+        "glfw-binding",
+        "opengl3-binding"
+      ]
     },
+    "opengl",
     "stb"
   ]
 }
