@@ -1,15 +1,20 @@
 
 #include "Network.h"
 
-#include <ws2tcpip.h>
-#include <winsock2.h>
-#pragma comment( lib, "ws2_32.lib" )
+// Local dependencies
+#include "Packet.h"
 
+// Relative dependencies
 #include "../Events/NetworkEvent.h"
 #include "../Game/Entity/Player.h"
 #include "../Game/World.h"
 #include "../Game/Core/GUIManager.h"
 #include "../Input/Input.h"
+
+// External dependencies
+#include <ws2tcpip.h>
+#include <winsock2.h>
+#pragma comment( lib, "ws2_32.lib" )
 
 // TODO
 //    need to define schema/design for every packet type
@@ -18,77 +23,81 @@
 
 // every packet should have a clientid!!!!!!!!!!
 
-enum class NetworkCode : uint8_t
+
+// ===================================================
+//      INetwork
+// ===================================================
+INetwork::INetwork()
 {
-   // Control Messages
-   Invalid    = 0x00, // Invalid packet
-   Handshake  = 0x01,
-   Relay      = 0x02, // Relay message to other clients
-   Heartbeat  = 0x03,
-   NewClient  = 0x04,
-   Disconnect = 0x05,
+   WSADATA wsaData;
+   WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
+}
 
-   // Game Messages
-   Chat           = 0x20,
-   PositionUpdate = 0x21,
-};
-
-struct Packet
+INetwork::~INetwork()
 {
-   NetworkCode                 m_code { NetworkCode::Invalid };
-   uint16_t                    m_bufferLength {};
-   std::array< uint8_t, 1024 > m_buffer;
+   if( m_socket != INVALID_SOCKET )
+      closesocket( m_socket );
 
-   size_t Size() const noexcept { return sizeof( m_code ) + sizeof( m_bufferLength ) + m_bufferLength; }
+   WSACleanup();
+}
 
-   std::vector< uint8_t > Serialize() const
+/*static*/ void INetwork::Shutdown() noexcept
+{
+   if( s_pInstance )
    {
-      std::vector< uint8_t > data( sizeof( m_code ) + sizeof( m_bufferLength ) + m_bufferLength );
-      std::memcpy( data.data(), &m_code, sizeof( m_code ) );
-      std::memcpy( data.data() + sizeof( m_code ), &m_bufferLength, sizeof( m_bufferLength ) );
-      std::memcpy( data.data() + sizeof( m_code ) + sizeof( m_bufferLength ), m_buffer.data(), m_bufferLength );
-      return data;
+      delete s_pInstance;
+      s_pInstance = nullptr;
+   }
+}
+
+/*static*/ const char* INetwork::GetHostAddress() noexcept
+{
+   static char s_address[ INET_ADDRSTRLEN ] = { 0 };
+   if( s_address[ 0 ] != '\0' ) // already set
+      return s_address;
+
+   if( !INetwork::Get() )
+   {
+      WSADATA wsaData;
+      WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
+
+      char hostname[ 256 ];
+      if( gethostname( hostname, sizeof( hostname ) ) == 0 )
+      {
+         addrinfo hints = {}, *pInfo = nullptr;
+         hints.ai_family = AF_INET;
+         if( getaddrinfo( hostname, nullptr, &hints, &pInfo ) == 0 )
+         {
+            for( addrinfo* p = pInfo; p != nullptr; p = p->ai_next )
+            {
+               if( const char* addr = inet_ntoa( reinterpret_cast< sockaddr_in* >( p->ai_addr )->sin_addr ) )
+               {
+                  strcpy_s( s_address, sizeof( s_address ), addr );
+                  break;
+               }
+            }
+            freeaddrinfo( pInfo );
+         }
+      }
+
+      WSACleanup();
    }
 
-   //static Packet Deserialize( const std::vector< uint8_t >& data )
-   //{
-   //   Packet packet;
-   //   std::memcpy( &packet.m_code, data.data(), sizeof( packet.m_code ) );
-   //   std::memcpy( &packet.m_bufferLength, data.data() + sizeof( packet.m_code ), sizeof( packet.m_bufferLength ) );
-   //   std::memcpy( packet.m_buffer.data(), data.data() + sizeof( packet.m_code ) + sizeof( packet.m_bufferLength ), packet.m_bufferLength );
-   //   return packet;
-   //}
-
-   static Packet Deserialize( const std::vector< uint8_t >& data, size_t offset )
-   {
-      Packet packet;
-      std::memcpy( &packet.m_code, data.data() + offset, sizeof( packet.m_code ) );
-      std::memcpy( &packet.m_bufferLength, data.data() + sizeof( packet.m_code ) + offset, sizeof( packet.m_bufferLength ) );
-      std::memcpy( packet.m_buffer.data(), data.data() + sizeof( packet.m_code ) + sizeof( packet.m_bufferLength ) + offset, packet.m_bufferLength );
-      return packet;
-   }
-};
+   return s_address;
+}
 
 // ===================================================
 //      NetworkHost
 // ===================================================
 NetworkHost::NetworkHost()
 {
-   WSADATA wsaData;
-   WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
+   //Packet                 packet = PacketMaker< NetworkCode::Chat >( 0, "Hello World this is a long string of text!" );
+   Packet                 packet = PacketMaker< NetworkCode::Chat >( 0, { 1, 1, 1, 1 } );
+   std::vector< uint8_t > buffer = Packet::Serialize( packet );
 
-   u_long mode = 1; // non-blocking mode
-   m_socket    = socket( AF_INET, SOCK_STREAM /*tcp*/, 0 );
-   ioctlsocket( m_socket, FIONBIO, &mode );
-
-   m_socketAddressIn.sin_family      = AF_INET;
-   m_socketAddressIn.sin_addr.s_addr = INADDR_ANY;
-   m_socketAddressIn.sin_port        = htons( DEFAULT_PORT );
-   m_port                            = m_socketAddressIn.sin_port;
-
-   bind( m_socket, ( struct sockaddr* )&m_socketAddressIn, sizeof( m_socketAddressIn ) );
-   //listen( m_socket, SOMAXCONN );
-   listen( m_socket, SOMAXCONN );
+   Packet deserializedPacket = Packet::Deserialize( buffer );
+   //std::string packetData         = PacketParseBuffer< NetworkCode::Chat >( packet );
+   std::string packetData = PacketParseBuffer< NetworkCode::Chat >( packet );
 
    char hostname[ 256 ];
    if( gethostname( hostname, sizeof( hostname ) ) == 0 )
@@ -115,9 +124,22 @@ NetworkHost::~NetworkHost()
       closesocket( client.m_socket );
       Events::Dispatch< Events::NetworkClientDisconnectEvent >( client.m_socket );
    }
+}
 
-   closesocket( m_socket ); // close server socket last
-   WSACleanup();
+void NetworkHost::Listen()
+{
+   u_long mode = 1; // non-blocking mode
+   m_socket    = socket( AF_INET, SOCK_STREAM /*tcp*/, 0 );
+   ioctlsocket( m_socket, FIONBIO, &mode );
+
+   m_socketAddressIn.sin_family      = AF_INET;
+   m_socketAddressIn.sin_addr.s_addr = INADDR_ANY;
+   m_socketAddressIn.sin_port        = htons( m_port ); //htons( DEFAULT_PORT );
+
+   bind( m_socket, ( struct sockaddr* )&m_socketAddressIn, sizeof( m_socketAddressIn ) );
+
+   // check if returns SOCKET_ERROR, handle
+   listen( m_socket, SOMAXCONN );
 }
 
 void NetworkHost::ConnectClient( SOCKET clientSocket, const sockaddr_in& clientAddr )
@@ -153,48 +175,28 @@ void NetworkHost::Poll( World& world, Player& player )
          newClient.m_ipAddress = ipBuffer;
       }
 
+      s_logs.push_back( std::format( "New client connected: {}:{}", newClient.m_ipAddress, ntohs( newClient.m_socketAddressIn.sin_port ) ) );
+
       // Inform other clients about the new client
       m_clients[ newClient.m_socket ] = newClient; // keep here and handle in loop, change socket to server socket
       for( const auto& [ _, otherClient ] : m_clients )
       {
-         Packet outPacket;
-         outPacket.m_code         = NetworkCode::NewClient;
-         outPacket.m_bufferLength = sizeof( otherClient.m_socket );
-
-         if( otherClient.m_socket == newClient.m_socket )
+         // Inform other clients about the new client
+         if( otherClient.m_socket != newClient.m_socket )
          {
-            // just send this for now since its stable
-            uint64_t stableID = 0;
-            std::memcpy( outPacket.m_buffer.data(), &stableID, sizeof( stableID ) ); // send this server socket to the new client
+            Packet                 outPacketToOthers = PacketMaker< NetworkCode::ClientConnect >( otherClient.m_socket, newClient.m_socket );
+            std::vector< uint8_t > outBufferToOthers = Packet::Serialize( outPacketToOthers );
+            send( otherClient.m_socket, reinterpret_cast< char* >( outBufferToOthers.data() ), outBufferToOthers.size(), 0 );
          }
-         else
-            std::memcpy( outPacket.m_buffer.data(), &newClient.m_socket, sizeof( newClient.m_socket ) );
 
-         std::vector< uint8_t > outBuffer = outPacket.Serialize();
-         send( otherClient.m_socket, reinterpret_cast< char* >( outBuffer.data() ), outBuffer.size(), 0 );
+         // Inform the new client about all other clients
+         if( otherClient.m_socket != newClient.m_socket )
+         {
+            Packet                 outPacketToNewClient = PacketMaker< NetworkCode::ClientConnect >( newClient.m_socket, otherClient.m_socket );
+            std::vector< uint8_t > outBufferToNewClient = Packet::Serialize( outPacketToNewClient );
+            send( newClient.m_socket, reinterpret_cast< char* >( outBufferToNewClient.data() ), outBufferToNewClient.size(), 0 );
+         }
       }
-
-      // Inform the new client about all other clients
-      for( const auto& [ _, otherClient ] : m_clients )
-      {
-         if( otherClient.m_socket == newClient.m_socket )
-            continue; // don't send to self
-
-         Packet outPacket;
-         outPacket.m_code         = NetworkCode::NewClient;
-         outPacket.m_bufferLength = sizeof( otherClient.m_socket );
-         std::memcpy( outPacket.m_buffer.data(), &otherClient.m_socket, sizeof( otherClient.m_socket ) );
-         std::vector< uint8_t > outBuffer = outPacket.Serialize();
-         send( newClient.m_socket, reinterpret_cast< char* >( outBuffer.data() ), outBuffer.size(), 0 );
-      }
-
-      // Inform the new client about the server
-      //Packet outPacket;
-      //outPacket.m_code = NetworkCode::NewClient;
-      //outPacket.m_bufferLength = sizeof( m_socket );
-      //std::memcpy( outPacket.m_buffer.data(), &m_socket, sizeof( m_socket ) );
-      //std::vector< uint8_t > outBuffer = outPacket.Serialize();
-      //send( newClient.m_socket, reinterpret_cast< char* >( outBuffer.data() ), outBuffer.size(), 0 );
 
       Events::Dispatch< Events::NetworkClientConnectEvent >( newClient.m_socket );
    }
@@ -213,15 +215,30 @@ void NetworkHost::Poll( World& world, Player& player )
          if( !FD_ISSET( client.m_socket, &m_readfds ) )
             continue; // client has no data to read
 
-         std::vector< uint8_t > buffer( 1024 );
+         std::vector< uint8_t > buffer( PACKET_BUFFER_SIZE );
          int                    bytesReceived = recv( client.m_socket, reinterpret_cast< char* >( buffer.data() ), buffer.size(), 0 );
          if( bytesReceived > 0 )
          {
+            //   OnReceive( buffer.data(), bytes ); // Handle received data
+            // Append received data to the client's persistent buffer
+            client.m_receiveBuffer.insert( client.m_receiveBuffer.end(), buffer.begin(), buffer.begin() + bytesReceived );
+
             size_t offset = 0;
-            while( offset < bytesReceived )
+            while( offset < client.m_receiveBuffer.size() )
             {
+               if( client.m_receiveBuffer.size() - offset < Packet::HeaderSize() )
+                  break; // not enough data for a complete packet header
+
+               // Peek at the fixed fields to determine the total packet size
+               uint16_t bufferLength;
+               std::memcpy( &bufferLength, client.m_receiveBuffer.data() + offset + sizeof( uint16_t ) + sizeof( NetworkCode ), sizeof( uint16_t ) );
+               size_t totalPacketSize = Packet::HeaderSize() + bufferLength;
+               if( client.m_receiveBuffer.size() - offset < totalPacketSize ) // Check if we have the full packet
+                  break;                                                      // Wait for more data
+
                Packet inPacket = Packet::Deserialize( buffer, offset );
                offset += inPacket.Size();
+
                switch( inPacket.m_code )
                {
                   case NetworkCode::Chat: break;
@@ -232,53 +249,53 @@ void NetworkHost::Poll( World& world, Player& player )
                      world.ReceivePlayerPosition( client.m_socket, receivedVec3 );
                      break;
                   }
-                  case NetworkCode::Disconnect: break;
-                  case NetworkCode::Relay:      break; // a client should never send a relay message, only receive
-                  default:                      std::cout << "Unhandled network code" << std::endl;
+                  case NetworkCode::ClientDisconnect: break;
+                  default:                            std::cout << "Unhandled network code" << std::endl;
                }
 
-               // Relay the packet to other clients
-               // we probably want to select which packets we relay (define some list of codes we want to relay)
-               Packet relayPacket;
-               relayPacket.m_code         = NetworkCode::Relay;
-               relayPacket.m_bufferLength = inPacket.m_bufferLength;
-               std::memcpy( relayPacket.m_buffer.data(), &client.m_socket, sizeof( SOCKET ) );
-               std::memcpy( relayPacket.m_buffer.data() + sizeof( SOCKET ), inPacket.m_buffer.data(), inPacket.m_bufferLength );
-               relayPacket.m_bufferLength += sizeof( SOCKET );
-
-               std::vector< uint8_t > relayBuffer = relayPacket.Serialize();
-               for( const auto& [ _, otherClient ] : m_clients )
+               // only support relaying position updates for now, TODO CHANGE
+               if( inPacket.m_code == NetworkCode::PositionUpdate )
                {
-                  if( inPacket.m_code != NetworkCode::PositionUpdate )
-                     continue; // only support relaying position updates for now, TODO CHANGE
+                  inPacket.m_clientID = client.m_socket; // set the clientID to the sender's socket
 
-                  if( otherClient.m_socket != client.m_socket )
+                  std::vector< uint8_t > relayBuffer = Packet::Serialize( inPacket );
+                  for( const auto& [ _, otherClient ] : m_clients )
+                  {
+                     if( otherClient.m_socket == client.m_socket )
+                        continue; // don't send to self
+
                      send( otherClient.m_socket, reinterpret_cast< char* >( relayBuffer.data() ), relayBuffer.size(), 0 );
+                  }
                }
             }
+
+            // Remove processed data from the buffer
+            client.m_receiveBuffer.erase( client.m_receiveBuffer.begin(), client.m_receiveBuffer.begin() + offset );
          }
-         else if( bytesReceived == 0 || WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAECONNABORTED )
+         else if( bytesReceived <= 0 )
          {
-            std::cout << "Client disconnected." << std::endl;
-            disconnectSockets.push_back( client.m_socket );
-            closesocket( client.m_socket );
-            Events::Dispatch< Events::NetworkClientDisconnectEvent >( client.m_socket );
-         }
-         else if( WSAGetLastError() != WSAEWOULDBLOCK )
-         {
-            std::cerr << "recv error: " << WSAGetLastError() << std::endl;
+            int lastError = WSAGetLastError();
+            switch( lastError )
+            {
+               case WSAEWOULDBLOCK: break; // No data available, this is expected for non-blocking sockets
+
+               case WSAENOTCONN:     // Socket is not connected
+               case WSAESHUTDOWN:    // Socket has been shut down
+               case WSAECONNRESET:   // Connection reset by peer
+               case WSAECONNABORTED: // Connection aborted
+                  s_logs.push_back( std::format( "Client disconnected: {}:{}", client.m_ipAddress, ntohs( client.m_socketAddressIn.sin_port ) ) );
+                  disconnectSockets.push_back( client.m_socket );
+                  closesocket( client.m_socket );
+                  Events::Dispatch< Events::NetworkClientDisconnectEvent >( client.m_socket );
+                  continue;
+
+               default: std::cerr << "RECV Error on socket " << client.m_socket << ": " << lastError << std::endl; break;
+            }
          }
 
-         if( client.m_socket != INVALID_SOCKET )
-         {
-            Packet outPacket;
-            outPacket.m_code         = NetworkCode::PositionUpdate;
-            outPacket.m_bufferLength = sizeof( glm::vec3 );
-            std::memcpy( outPacket.m_buffer.data(), &player.GetPosition(), sizeof( glm::vec3 ) );
-
-            std::vector< uint8_t > outBuffer = outPacket.Serialize();
-            send( client.m_socket, reinterpret_cast< char* >( outBuffer.data() ), outBuffer.size(), 0 );
-         }
+         Packet                 positionUpdatePacket = PacketMaker< NetworkCode::PositionUpdate >( client.m_socket, player.GetPosition() );
+         std::vector< uint8_t > outBuffer            = Packet::Serialize( positionUpdatePacket );
+         send( client.m_socket, reinterpret_cast< char* >( outBuffer.data() ), outBuffer.size(), 0 );
       }
 
       // Cleanup disconnected clients
@@ -292,9 +309,6 @@ void NetworkHost::Poll( World& world, Player& player )
 // ====================================================
 NetworkClient::NetworkClient()
 {
-   WSADATA wsaData;
-   WSAStartup( MAKEWORD( 2, 2 ), &wsaData );
-
    u_long mode = 1; // non-blocking mode
    m_socket    = socket( AF_INET, SOCK_STREAM, 0 );
    ioctlsocket( m_socket, FIONBIO, &mode );
@@ -308,16 +322,13 @@ NetworkClient::NetworkClient()
 
 NetworkClient::~NetworkClient()
 {
-   sockaddr_in clientAddr;
+   sockaddr_in clientAddr {};
    char        ipAddress[ INET_ADDRSTRLEN ];
    int         addrLen = sizeof( clientAddr );
    if( getpeername( m_socket, ( sockaddr* )&clientAddr, &addrLen ) == 0 )
       inet_ntop( AF_INET, &clientAddr.sin_addr, ipAddress, sizeof( ipAddress ) );
 
    Events::Dispatch< Events::NetworkClientDisconnectEvent >( m_socket );
-
-   closesocket( m_socket );
-   WSACleanup();
 }
 
 void NetworkClient::Connect( const char* ipAddress, uint16_t port )
@@ -345,97 +356,63 @@ void NetworkClient::Poll( World& world, Player& player )
    select( 0, &m_readfds, &m_writefds, nullptr, &timeout );
    if( FD_ISSET( m_socket, &m_writefds ) )
    {
-      Packet outPacket;
-      outPacket.m_code         = NetworkCode::PositionUpdate;
-      outPacket.m_bufferLength = sizeof( glm::vec3 );
-      std::memcpy( outPacket.m_buffer.data(), &player.GetPosition(), sizeof( glm::vec3 ) );
-
-      std::vector< uint8_t > outBuffer = outPacket.Serialize();
+      Packet                 outPacket = PacketMaker< NetworkCode::PositionUpdate >( m_socket, player.GetPosition() );
+      std::vector< uint8_t > outBuffer = Packet::Serialize( outPacket );
       send( m_socket, reinterpret_cast< char* >( outBuffer.data() ), outBuffer.size(), 0 );
    }
 
    if( FD_ISSET( m_socket, &m_readfds ) )
    {
-      std::vector< uint8_t > buffer( 1024 );
+      std::vector< uint8_t > buffer( PACKET_BUFFER_SIZE );
       int                    bytesReceived = recv( m_socket, reinterpret_cast< char* >( buffer.data() ), buffer.size(), 0 );
       if( bytesReceived > 0 )
       {
-         sockaddr_in clientAddr;
-         char        ipAddress[ INET_ADDRSTRLEN ];
-         int         addrLen = sizeof( clientAddr );
-         if( getpeername( m_socket, ( sockaddr* )&clientAddr, &addrLen ) == 0 )
-            inet_ntop( AF_INET, &clientAddr.sin_addr, ipAddress, sizeof( ipAddress ) );
-
-         if( m_fFirstPoll )
-         {
-            // Handle connections through this event
-            //Events::Dispatch< Events::NetworkClientConnectEvent >( m_socket );
-            m_fFirstPoll = false;
-         }
-
          size_t offset = 0;
          while( offset < bytesReceived )
          {
             Packet inPacket = Packet::Deserialize( buffer, offset );
             offset += inPacket.Size();
+
             switch( inPacket.m_code )
             {
-               case NetworkCode::NewClient:
-               {
-                  SOCKET clientSocket;
-                  std::memcpy( &clientSocket, inPacket.m_buffer.data(), sizeof( SOCKET ) );
-                  Events::Dispatch< Events::NetworkClientConnectEvent >( clientSocket );
-                  if( clientSocket != 0 )
-                     m_relaySockets.push_back( clientSocket );
-                  break;
-               }
+               case NetworkCode::ClientConnect: m_relaySockets.push_back( inPacket.m_clientID ); break;
+
                case NetworkCode::Chat: break;
                case NetworkCode::PositionUpdate:
                {
-                  glm::vec3 receivedVec3;
-                  std::memcpy( &receivedVec3, inPacket.m_buffer.data(), sizeof( glm::vec3 ) );
-                  //world.ReceivePlayerPosition( m_socket, receivedVec3 );
-                  world.ReceivePlayerPosition( 0 /*m_socket*/, receivedVec3 ); // use host id of 0 for now
-                  break;
-               }
-               case NetworkCode::Disconnect: break;
-               case NetworkCode::Relay:
-               {
-                  // TODO - WE NEED TO RELAY THE OP CODE AS WELL
-                  uint64_t clientID;
-                  std::memcpy( &clientID, inPacket.m_buffer.data(), sizeof( SOCKET ) );
-                  if( std::find( m_relaySockets.begin(), m_relaySockets.end(), clientID ) == m_relaySockets.end() )
-                     continue; // force connect client for now, bad bad bad
+                  if( std::find( m_relaySockets.begin(), m_relaySockets.end(), inPacket.m_clientID ) == m_relaySockets.end() )
+                     continue; // bad bad bad, we should always have the clientID if we are processing a packet from it
 
-                  //std::memcpy( &inPacket.m_buffer[ sizeof( SOCKET ) ], inPacket.m_buffer.data(), inPacket.m_bufferLength - sizeof( SOCKET ) );
-                  glm::vec3 receivedVec3;
-                  std::memcpy( &receivedVec3, inPacket.m_buffer.data() + sizeof( SOCKET ), sizeof( glm::vec3 ) );
-                  world.ReceivePlayerPosition( clientID, receivedVec3 );
+                  const glm::vec3 pos = PacketParseBuffer< NetworkCode::PositionUpdate >( inPacket );
+                  world.ReceivePlayerPosition( inPacket.m_clientID, pos );
                   break;
                }
+               case NetworkCode::ClientDisconnect: break;
+
                default: std::cout << "Unhandled network code" << std::endl;
             }
          }
       }
-      else if( bytesReceived == 0 /*graceful disconnect*/ || WSAGetLastError() == WSAECONNRESET /*forceful disconnect*/ ||
-               WSAGetLastError() == WSAECONNABORTED /*socket was killed*/ || WSAGetLastError() == WSAENOTSOCK /*socket not valid*/ )
+      else if( bytesReceived <= 0 )
       {
-         std::cout << "Server disconnected." << std::endl;
+         int lastError = WSAGetLastError();
+         switch( lastError )
+         {
+            case WSAEWOULDBLOCK: break; // No data available, this is expected for non-blocking sockets
 
-         sockaddr_in clientAddr;
-         char        ipAddress[ INET_ADDRSTRLEN ];
-         int         addrLen = sizeof( clientAddr );
-         if( getpeername( m_socket, ( sockaddr* )&clientAddr, &addrLen ) == 0 )
-            inet_ntop( AF_INET, &clientAddr.sin_addr, ipAddress, sizeof( ipAddress ) );
+            case WSAENOTCONN:     // Socket is not connected
+            case WSAESHUTDOWN:    // Socket has been shut down
+            case WSAECONNRESET:   // Connection reset by peer
+            case WSAECONNABORTED: // Connection aborted
+               s_logs.push_back( std::format( "Server closed: {}:{}", INetwork::GetHostAddress(), ntohs( m_socketAddressIn.sin_port ) ) );
+               closesocket( m_socket );
+               m_socket = INVALID_SOCKET;
+               Events::Dispatch< Events::NetworkClientDisconnectEvent >( m_socket );
+               break;
 
-         // Handle disconnects through this event
-         Events::Dispatch< Events::NetworkClientDisconnectEvent >( 0 /*m_socket*/ ); // use host id of 0 for now
-
-         closesocket( m_socket );
-         m_socket = INVALID_SOCKET;
+            default: std::cerr << "RECV Error on socket " << m_socket << ": " << lastError << std::endl; break;
+         }
       }
-      else if( WSAGetLastError() != WSAEWOULDBLOCK )
-         std::cerr << "recv error: " << WSAGetLastError() << std::endl;
    }
 }
 
@@ -445,77 +422,75 @@ void NetworkClient::Poll( World& world, Player& player )
 class NetworkGUI final : public IGUIElement
 {
 public:
-   NetworkGUI()  = default;
+   NetworkGUI( std::deque< std::string >& sharedLogs ) :
+      m_logs( sharedLogs )
+   {}
    ~NetworkGUI() = default;
 
    void Draw() override
    {
-      static bool                      fHosting         = false;
-      static bool                      fConnected       = false;
-      static const char*               hostIP           = "127.0.0.1"; // Temporary IP for Host
-      static char                      connectIP[ 128 ] = "127.0.0.1"; // Temporary IP for Connect
-      static int32_t                   port             = 8080;        // Temporary Port for Connect
-      static std::deque< std::string > logs;
-
       ImGui::SetNextWindowSize( ImVec2( 400, 120 ), ImGuiCond_FirstUseEver );
       ImGui::SetNextWindowPos( ImVec2( ImGui::GetIO().DisplaySize.x - 10, ImGui::GetIO().DisplaySize.y - 10 ), ImGuiCond_Always, ImVec2( 1.0f, 1.0f ) );
-      ImGui::Begin( "Network", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse //|
-                    /*ImGuiWindowFlags_NoBackground |*/ /*ImGuiWindowFlags_AlwaysAutoResize*/ );
+      ImGui::Begin( "Network", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse );
       if( ImGui::BeginTabBar( "Tabs" ) )
       {
-         ImGui::BeginDisabled( fConnected );
-         if( ImGui::BeginTabItem( "Host" ) ) // Host Tab
+         if( ImGui::BeginDisabled( m_fConnected ), ImGui::BeginTabItem( "Host" ) ) // Host Tab
          {
-            ImGui::Text( "IP: %s", hostIP );
-            ImGui::BeginDisabled( fHosting );
+            ImGui::Text( "IP: %s", INetwork::GetHostAddress() );
+
             ImGui::Text( "Port:" );
             ImGui::SameLine();
-            ImGui::InputInt( "##Port", &port, 0, 0, fHosting ? ImGuiInputTextFlags_ReadOnly : 0 );
+            ImGui::BeginDisabled( m_fHosting );
+            ImGui::InputScalar( "##Port", ImGuiDataType_U16, &m_port, nullptr, nullptr, "%u", m_fHosting ? ImGuiInputTextFlags_ReadOnly : 0 );
             ImGui::EndDisabled();
-            if( ImGui::Button( !fHosting ? "Host" : "Stop" ) )
+
+            if( ImGui::Button( m_fHosting ? "Stop" : "Host" ) )
             {
-               fHosting = !fHosting; // toggle hosting state
-               if( fHosting )
+               m_fHosting = !m_fHosting; // Toggle hosting state
+               if( m_fHosting )
                {
+                  m_logs.push_back( std::format( "Hosting on: {}:{}", INetwork::GetHostAddress(), m_port ) );
                   NetworkHost& network = INetwork::Create< NetworkHost >(); // Create a new network host instance
-                  network.SetListenPort( port );
-                  hostIP = network.GetListenAddress().c_str();
-                  logs.push_back( "Hosting on: " + std::string( hostIP ) + ":" + std::to_string( port ) );
+                  network.SetListenPort( m_port );
+                  network.Listen();
                }
                else
                {
-                  logs.push_back( "Stopping host..." );
+                  m_logs.push_back( "Stopping host..." );
                   INetwork::Shutdown();
                }
             }
+
             ImGui::EndTabItem();
          }
          ImGui::EndDisabled();
 
-         ImGui::BeginDisabled( fHosting );
-         if( ImGui::BeginTabItem( "Connect" ) ) // Connect Tab
+         if( ImGui::BeginDisabled( m_fHosting ), ImGui::BeginTabItem( "Connect" ) ) // Connect Tab
          {
-            ImGui::BeginDisabled( fConnected );
             ImGui::Text( "IP:" );
             ImGui::SameLine();
-            ImGui::InputText( "##IP", connectIP, sizeof( connectIP ), fConnected ? ImGuiInputTextFlags_ReadOnly : 0 );
-            ImGui::Text( "Port:" );
-            ImGui::SameLine();
-            ImGui::InputInt( "##Port", &port, 0, 0, fConnected ? ImGuiInputTextFlags_ReadOnly : 0 );
+            ImGui::BeginDisabled( m_fConnected );
+            ImGui::InputText( "##IP", m_connectAddress, sizeof( m_connectAddress ), m_fConnected ? ImGuiInputTextFlags_ReadOnly : 0 );
             ImGui::EndDisabled();
 
-            if( ImGui::Button( !fConnected ? "Connect" : "Disconnect" ) )
+            ImGui::Text( "Port:" );
+            ImGui::SameLine();
+            ImGui::BeginDisabled( m_fConnected );
+            ImGui::InputScalar( "##Port", ImGuiDataType_U16, &m_port, nullptr, nullptr, "%u", m_fConnected ? ImGuiInputTextFlags_ReadOnly : 0 );
+            ImGui::EndDisabled();
+
+            if( ImGui::Button( m_fConnected ? "Disconnect" : "Connect" ) )
             {
-               fConnected = !fConnected; // toggle connection state
-               if( fConnected )
+               m_fConnected = !m_fConnected; // Toggle connection state
+               if( m_fConnected )
                {
-                  NetworkClient& network = INetwork::Create< NetworkClient >(); // Create a new network client instance
-                  network.Connect( connectIP, port );
-                  logs.push_back( "Connecting to: " + std::string( connectIP ) + ":" + std::to_string( port ) );
+                  m_logs.push_back( std::format( "Connecting to: {}:{}", m_connectAddress, m_port ) );
+                  NetworkClient& network = INetwork::Create< NetworkClient >();
+                  network.Connect( m_connectAddress, m_port );
                }
                else
                {
-                  logs.push_back( "Disconnecting from: " + std::string( connectIP ) + ":" + std::to_string( port ) );
+                  m_logs.push_back( std::format( "Disconnecting from: {}:{}", m_connectAddress, m_port ) );
                   INetwork::Shutdown();
                }
             }
@@ -526,12 +501,22 @@ public:
 
          if( ImGui::BeginTabItem( "Log" ) ) // Log Tab
          {
-            for( const std::string& log : logs )
-               ImGui::TextWrapped( "%s", log.c_str() );
+            if( ImGui::BeginChild( "LogArea", ImVec2( 0, -ImGui::GetFrameHeightWithSpacing() ), true ) )
+            {
+               for( const std::string& log : m_logs )
+                  ImGui::TextWrapped( "%s", log.c_str() );
 
-            if( logs.size() > 10 ) // Keep only the last 10 logs
-               logs.pop_front();
+               if( m_fAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() )
+                  ImGui::SetScrollHereY( 1.0f );
 
+               ImGui::EndChild();
+            }
+
+            if( ImGui::Button( "Clear" ) )
+               m_logs.clear();
+
+            ImGui::SameLine();
+            ImGui::Checkbox( "Auto-scroll", &m_fAutoScroll );
             ImGui::EndTabItem();
          }
 
@@ -539,9 +524,20 @@ public:
       }
       ImGui::End();
    }
+
+private:
+   char     m_connectAddress[ INET_ADDRSTRLEN ] { DEFAULT_ADDRESS };
+   uint16_t m_port { DEFAULT_PORT };
+
+   bool m_fConnected { false };
+   bool m_fHosting { false };
+
+   // Logging Related
+   std::deque< std::string >& m_logs;
+   bool                       m_fAutoScroll { true };
 };
 
 /*static*/ void INetwork::RegisterGUI()
 {
-   GUIManager::Attach( std::make_shared< NetworkGUI >() );
+   GUIManager::Attach( std::make_shared< NetworkGUI >( s_logs ) );
 }

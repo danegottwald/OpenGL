@@ -3,3 +3,22 @@ This is needed for the C++ redistributable
 
 When a client terminates connection to server, it should clear all clients itself
 
+Server Packet Schema
+    Client to Server
+        PacketSize - 2 bytes
+        ClientID - 2 bytes
+            This is ignored when received by the Server, can leave 0x00, 0x00. The server has authority for assigning IDs
+        PacketType - 1 byte
+        PacketData - n bytes
+
+    Server to Client
+        PacketSize - 2 bytes
+        ClientID - 2 bytes
+            This is an ID assigned by the server to the client, useful for also relaying packets from one client to another by specifying origin
+        PacketType - 1 byte
+        PacketData - n bytes
+
+Can be used to detect if mouse over ImGui
+    ImGui::GetIO().WantCaptureMouse
+
+https://minecraft.wiki/w/Java_Edition_protocol

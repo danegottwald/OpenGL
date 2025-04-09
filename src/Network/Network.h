@@ -31,31 +31,29 @@ public:
 
    template< typename TNetwork >
    static TNetwork& Create();
-   static void      Shutdown() noexcept
-   {
-      if( s_pInstance )
-      {
-         delete s_pInstance;
-         s_pInstance = nullptr;
-      }
-   }
+   static void      Shutdown() noexcept;
 
-   static void RegisterGUI();
+   static void        RegisterGUI();
+   static const char* GetHostAddress() noexcept;
 
-   virtual void                  Poll( World& world, Player& player ) = 0;
-   virtual constexpr NetworkType GetNetworkType() const noexcept      = 0;
+   virtual void Poll( World& world, Player& player ) = 0;
+   //virtual void                  OnReceive( const uint8_t* data, size_t size ) = 0;
+   virtual constexpr NetworkType GetNetworkType() const noexcept = 0;
 
 protected:
-   INetwork()          = default;
-   virtual ~INetwork() = default;
+   INetwork();
+   virtual ~INetwork();
 
    static inline INetwork* s_pInstance = nullptr;
+   static inline char*     s_address   = nullptr;
 
    SOCKET      m_socket { INVALID_SOCKET };
    sockaddr_in m_socketAddressIn {};
    uint16_t    m_port { DEFAULT_PORT };
    fd_set      m_readfds {};
    fd_set      m_writefds {};
+
+   static inline std::deque< std::string > s_logs;
 };
 
 // ===================================================
@@ -63,9 +61,12 @@ protected:
 // ===================================================
 struct ClientConnection
 {
-   SOCKET      m_socket { INVALID_SOCKET };
-   sockaddr_in m_socketAddressIn {};
-   std::string m_ipAddress {};
+   SOCKET                 m_socket { INVALID_SOCKET };
+   sockaddr_in            m_socketAddressIn {};
+   std::string            m_ipAddress {};
+   std::vector< uint8_t > m_receiveBuffer; // Buffer for incomplete packets
+
+   // maybe add uint64_t m_clientID?
 };
 
 // ===================================================
@@ -74,6 +75,7 @@ struct ClientConnection
 class NetworkHost final : public INetwork
 {
 public:
+   void               Listen();
    const std::string& GetListenAddress() const noexcept { return m_ipAddress; }
    void               SetListenPort( uint16_t port ) noexcept
    {
@@ -114,7 +116,6 @@ private:
    constexpr NetworkType GetNetworkType() const noexcept override { return NetworkType::Client; }
 
    std::vector< uint64_t > m_relaySockets; // other clients
-   bool                    m_fFirstPoll { true };
 
    friend class INetwork;
 };

@@ -14,10 +14,7 @@ World::World()
 
    m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ & ]( const Events::NetworkClientConnectEvent& e )
    {
-      uint64_t clientID = e.GetClientID();
-      if( auto it = m_otherPlayers.find( clientID ); it != m_otherPlayers.end() )
-         throw std::runtime_error( "Player already exists" );
-
+      const uint64_t clientID    = e.GetClientID();
       m_otherPlayers[ clientID ] = std::make_shared< CubeMesh >();
       m_otherPlayers[ clientID ]->SetColor( glm::vec3( 0.0f, 0.0f, 1.0f ) );
    } );

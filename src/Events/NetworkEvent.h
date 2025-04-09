@@ -14,7 +14,10 @@ public:
    EVENT_CLASS_CATEGORY( EventCategory::EventCategoryNetwork )
 
 protected:
-   NetworkEvent() = default;
+   NetworkEvent( uint64_t clientID ) :
+      m_clientID( clientID ) {};
+
+   uint64_t m_clientID {};
 };
 
 //=========================================================================
@@ -24,17 +27,14 @@ class NetworkClientConnectEvent final : public NetworkEvent
 {
 public:
    NetworkClientConnectEvent( uint64_t clientID ) :
-      m_clientID( clientID )
+      NetworkEvent( clientID )
    {}
 
-   std::string ToString() const override { return "NetworkClientConnectEvent"; /*std::format( "KeyPressedEvent: {0}", static_cast< int >( m_keyCode ) );*/ }
+   std::string ToString() const override { return std::format( "NetworkClientConnectEvent: {}", m_clientID ); }
 
    uint64_t GetClientID() const noexcept { return m_clientID; }
 
    EVENT_CLASS_TYPE( EventType::NetworkClientConnect )
-
-private:
-   uint64_t m_clientID;
 };
 
 //=========================================================================
@@ -44,17 +44,14 @@ class NetworkClientDisconnectEvent final : public NetworkEvent
 {
 public:
    NetworkClientDisconnectEvent( uint64_t clientID ) :
-      m_clientID( clientID )
+      NetworkEvent( clientID )
    {}
 
-   std::string ToString() const override { return "NetworkClientDisconnectEvent"; /*std::format( "KeyReleasedEvent: {0}", static_cast< int >( m_keyCode ) );*/ }
+   std::string ToString() const override { return std::format( "NetworkClientDisconnectEvent: {}", m_clientID ); }
 
    uint64_t GetClientID() const noexcept { return m_clientID; }
 
    EVENT_CLASS_TYPE( EventType::NetworkClientDisconnect )
-
-private:
-   uint64_t m_clientID;
 };
 
 //=========================================================================
@@ -63,9 +60,11 @@ private:
 class NetworkClientTimeoutEvent final : public NetworkEvent
 {
 public:
-   NetworkClientTimeoutEvent() {}
+   NetworkClientTimeoutEvent( uint64_t clientID ) :
+      NetworkEvent( clientID )
+   {}
 
-   std::string ToString() const override { return "NetworkClientTimeoutEvent"; /*std::format( "KeyTypedEvent: {0}", static_cast< int >( m_keyCode ) );*/ }
+   std::string ToString() const override { return std::format( "NetworkClientTimeoutEvent: {}", m_clientID ); }
 
    EVENT_CLASS_TYPE( EventType::NetworkClientTimeout )
 };
