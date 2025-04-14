@@ -17,8 +17,6 @@
 //
 //                  game.Update(timestep.GetDelta()); // Called every frame
 //              }
-
-
 class Timestep
 {
 public:

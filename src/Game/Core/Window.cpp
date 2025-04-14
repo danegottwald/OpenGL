@@ -153,7 +153,7 @@ void Window::SetCallbacks()
    {
       switch( event.GetKeyCode() )
       {
-         case Input::Escape:
+         case Input::F1:
          {
             m_fRunning = false;
             break;
@@ -165,7 +165,7 @@ void Window::SetCallbacks()
             glPolygonMode( GL_FRONT_AND_BACK, polygonModeFlip );
             break;
          }
-         case Input::F1:
+         case Input::Escape:
          {
             static int fFlip = GLFW_CURSOR_NORMAL;
             fFlip            = ( fFlip == GLFW_CURSOR_NORMAL ) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
@@ -247,6 +247,9 @@ void Window::SetCallbacks()
    glfwSetKeyCallback( m_Window,
                        []( GLFWwindow* window, int key, int scancode, int action, int mods )
    {
+      if( ImGui::GetIO().WantTextInput ) // Block input if ImGui has text input active
+         return;
+
       Input::KeyCode keyCode = static_cast< Input::KeyCode >( key );
       if( action != GLFW_REPEAT )
          Input::SetKeyPressed( keyCode, static_cast< bool >( action ) ); // Update input manager state
@@ -268,6 +271,9 @@ void Window::SetCallbacks()
    glfwSetMouseButtonCallback( m_Window,
                                []( GLFWwindow* window, int button, int action, int mods )
    {
+      if( ImGui::GetIO().WantCaptureMouse ) // Block mouse if ImGui has mouse capture active
+         return;
+
       Input::MouseCode mouseCode = static_cast< Input::MouseCode >( button );
       Input::SetMouseButtonPressed( mouseCode, action != GLFW_RELEASE ); // Update input manager state
 
@@ -282,7 +288,12 @@ void Window::SetCallbacks()
 
    glfwSetScrollCallback( m_Window,
                           []( GLFWwindow* window, double xOffset, double yOffset )
-   { Events::Dispatch< Events::MouseScrolledEvent >( static_cast< float >( xOffset ), static_cast< float >( yOffset ) ); } );
+   {
+      if( ImGui::GetIO().WantCaptureMouse ) // Block scroll if ImGui has mouse capture active
+         return;
+
+      Events::Dispatch< Events::MouseScrolledEvent >( static_cast< float >( xOffset ), static_cast< float >( yOffset ) );
+   } );
 
    glfwSetCursorPosCallback( m_Window,
                              []( GLFWwindow* window, double xPos, double yPos )

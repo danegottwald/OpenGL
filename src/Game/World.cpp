@@ -263,7 +263,7 @@ void World::Setup()
    {
       m_fChunkThreadActive.store( true );
 
-      { // Lock the mutex and initialize pChunkMeshes (this clears existing chunk data)
+      { // Lock the mutex and clear existing chunks
          std::lock_guard< std::mutex > lock( m_chunkMutex );
          m_chunkMeshes.clear();
       }

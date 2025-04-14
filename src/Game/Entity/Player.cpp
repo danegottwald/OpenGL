@@ -7,6 +7,9 @@
 #include "../../Events/MouseEvent.h"
 #include "../../Input/Input.h"
 
+constexpr glm::vec3 GRAVITY( 0.0f, -9.8f, 0.0f ); // Gravity in meters per second squared
+constexpr float     JUMP_VELOCITY = 0.7f;         // Initial jump velocity to reach 1 meter
+
 Player::Player()
 {
    m_position = { 0.0f, 128.0f, 0 };
@@ -81,21 +84,22 @@ void Player::ApplyInputs()
       m_acceleration -= glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) ) * speed;
    }
 
-   // Up and Down
-   if( Input::IsKeyPressed( Input::Space ) && !m_fInAir ) // Jump only if not in air
+   // Jump
+   if( !m_fInAir && Input::IsKeyPressed( Input::Space ) ) // Jump only if not in air
    {
-      m_acceleration.y += 1.5f;
-      m_velocity.y += 1.5f;
+      m_acceleration.y = JUMP_VELOCITY; // Set upward velocity
+      m_fInAir         = true;          // Player is now in the air
    }
-   if( Input::IsKeyPressed( Input::LeftControl ) )
-      m_acceleration.y -= speed;
-
-   //std::cout << m_position.x << " " << m_position.y << " " << m_position.z << std::endl;
 }
 
 void Player::UpdateState( World& world, float delta )
 {
-   // Check if player is on the ground (collision check)
+   m_acceleration.y += -9.8f * ( delta * 0.33f );
+   m_acceleration.y = glm::clamp( m_acceleration.y, -9.8f, 9.8f ); // Clamp vertical acceleration
+   m_velocity += m_acceleration * delta;
+   m_position += m_velocity * delta; // Update position based on velocity
+
+   // Check if player has landed
    float edgeHeight   = std::max( { world.GetHeightAtPos( m_position.x + 0.5f, m_position.z ),
                                     world.GetHeightAtPos( m_position.x - 0.5f, m_position.z ),
                                     world.GetHeightAtPos( m_position.x, m_position.z + 0.5f ),
@@ -104,32 +108,14 @@ void Player::UpdateState( World& world, float delta )
                                     world.GetHeightAtPos( m_position.x - 0.25f, m_position.z + 0.25f ),
                                     world.GetHeightAtPos( m_position.x + 0.25f, m_position.z - 0.25f ),
                                     world.GetHeightAtPos( m_position.x - 0.25f, m_position.z - 0.25f ) } );
-   float groundHeight = std::max( { edgeHeight, cornerHeight } ) + 2;
+   float groundHeight = std::max( { edgeHeight, cornerHeight } ) + 2.0f; // Add buffer for ground height
    m_fInAir           = m_position.y > groundHeight;
-
-   const glm::vec3 gravity( 0.0f, 9.81f, 0.0f );
-   if( m_fInAir ) // apply gravity if player in the air
+   if( !m_fInAir )
    {
-      m_acceleration.y -= gravity.y * delta;        // Apply gravity to vertical acceleration
-      m_velocity += m_acceleration * delta * 0.03f; // Apply general acceleration (movement)
+      m_position.y = groundHeight; // Snap to ground height
+      m_velocity.y = 0.0f;         // Stop vertical velocity
    }
-   else
-      m_velocity += m_acceleration * delta; // Apply general acceleration (movement)
-
-   m_position += m_velocity * delta; // Apply velocity to update position
-
-   if( m_position.y <= groundHeight )
-   {
-      m_position.y     = groundHeight; // Correct player's position to the ground level
-      m_velocity.y     = 0.0f;         // Stop downward movement (velocity)
-      m_acceleration.y = 0.0f;         // Reset vertical acceleration
-      m_fInAir         = false;        // Player is now on the ground
-   }
-
-   // Handle collision detection and response (optional, depending on your game logic)
-   // collide(world, m_velocity * delta);
 }
-
 
 // --------------------------------------------------------------------
 //      Player Event Handling

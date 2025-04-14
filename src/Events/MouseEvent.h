@@ -23,7 +23,7 @@ public:
    std::string ToString() const override { return std::format( "MouseMovedEvent: {0}x, {1}y", m_MouseX, m_MouseY ); }
 
    EVENT_CLASS_TYPE( EventType::MouseMoved )
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryMouse | EventCategory::EventCategoryInput )
+   EVENT_CLASS_CATEGORY( EventCategory::Input | EventCategory::Mouse )
 
 private:
    float m_MouseX, m_MouseY;
@@ -46,7 +46,7 @@ public:
    std::string ToString() const override { return std::format( "MouseScrolledEvent: {0}x, {1}y", m_XOffset, m_YOffset ); }
 
    EVENT_CLASS_TYPE( EventType::MouseScrolled )
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryMouse | EventCategory::EventCategoryInput )
+   EVENT_CLASS_CATEGORY( EventCategory::Input | EventCategory::Mouse )
 
 private:
    float m_XOffset, m_YOffset;
@@ -60,7 +60,7 @@ class MouseButtonEvent : public IEvent
 public:
    Input::MouseCode GetMouseButton() const { return m_Button; }
 
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryMouse | EventCategory::EventCategoryInput | EventCategory::EventCategoryMouseButton )
+   EVENT_CLASS_CATEGORY( EventCategory::Input | EventCategory::Mouse | EventCategory::MouseButton )
 
 protected:
    MouseButtonEvent( const Input::MouseCode button ) :

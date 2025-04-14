@@ -17,17 +17,22 @@ enum class NetworkCode : uint8_t
    PositionUpdate = 0x21,
 };
 
+template< NetworkCode TCode >
+struct NetworkCodeType;
+
 // =========================================================================
 // Packet
 // =========================================================================
 struct Packet
 {
    // Packet Header (fixed fields)
-   uint64_t    m_clientID {};
+   uint64_t    m_sourceID { 0 };
+   uint64_t    m_destinationID { 0 }; // a destination id of 0 means broadcast to all clients
    NetworkCode m_code { NetworkCode::Invalid };
-   uint16_t    m_bufferLength {};
+   uint16_t    m_bufferLength { 0 };
 
-   static inline constexpr auto FixedFields = std::make_tuple( &Packet::m_clientID, &Packet::m_code, &Packet::m_bufferLength );
+   //static inline constexpr auto FixedFields = std::make_tuple( &Packet::m_clientID, &Packet::m_code, &Packet::m_bufferLength );
+   static inline constexpr auto FixedFields = std::make_tuple( &Packet::m_sourceID, &Packet::m_destinationID, &Packet::m_code, &Packet::m_bufferLength );
 
    // Buffer Data (variable fields)
    PacketBuffer m_buffer {};
@@ -36,11 +41,17 @@ struct Packet
    static constexpr size_t HeaderSize() noexcept;
    size_t                  Size() const noexcept { return HeaderSize() + m_bufferLength; }
 
-   static std::vector< uint8_t > Serialize( const Packet& packet );
-   static Packet                 Deserialize( const std::vector< uint8_t >& data, size_t dataOffset = 0 );
+   template< NetworkCode TCode > // Creates a packet with the specified code and data
+   [[nodiscard]] static Packet Create( uint64_t srcID, uint64_t destID, const typename NetworkCodeType< TCode >::Type& data );
+
+   template< NetworkCode TCode > // Parses the buffer and returns the parsed data
+   [[nodiscard]] static typename NetworkCodeType< TCode >::Type ParseBuffer( const Packet& packet );
+
+   [[nodiscard]] static std::vector< uint8_t > Serialize( const Packet& packet );
+   [[nodiscard]] static Packet                 Deserialize( const std::vector< uint8_t >& data, size_t dataOffset = 0 );
 };
 
-constexpr size_t Packet::HeaderSize() noexcept
+inline constexpr size_t Packet::HeaderSize() noexcept
 {
    size_t size = 0;
    std::apply( [ & ]( auto... pField ) { ( ( size += sizeof( std::remove_reference_t< decltype( std::declval< Packet >().*pField ) > ) ), ... ); },
@@ -49,11 +60,11 @@ constexpr size_t Packet::HeaderSize() noexcept
 }
 
 // =========================================================================
-// Packet Helpers
+// Packet Specialization
+//    All NetworkCode's should have a PacketMaker specialization defined
+//    When adding a mapping that is not a primitive type, a specialization
+//       for ParseBuffer is required
 // =========================================================================
-template< NetworkCode TCode >
-struct NetworkCodeType;
-
 #define DEFINE_NETWORK_CODE_TYPE( code, type, fixedSize ) \
    template<> struct NetworkCodeType<code> { \
       using Type = type; \
@@ -63,8 +74,7 @@ struct NetworkCodeType;
          if constexpr (std::is_fundamental_v<Type>) { Type value; std::memcpy( &value, pBuffer, bufferLength ); return value; } \
          else if constexpr( std::is_same_v< Type, glm::vec3 > ) { return Type( *reinterpret_cast< const glm::vec3* >( pBuffer ) ); } \
          else if constexpr( std::is_same_v< Type, std::string > ) { return Type( reinterpret_cast< const char* >( pBuffer ), bufferLength ); } \
-         else if constexpr( std::is_same_v< Type, std::vector< uint8_t > > ) { return Type( pBuffer, pBuffer + bufferLength ); } \
-         else if constexpr( std::is_same_v< Type, std::vector< uint16_t > > ) { return Type( pBuffer, pBuffer + bufferLength ); } \
+         else if constexpr( std::is_same_v< Type, std::vector< type::value_type > > ) { return Type( pBuffer, pBuffer + bufferLength ); } \
          else if constexpr( std::is_same_v< Type, PacketBuffer > ) { PacketBuffer arrBuffer; std::memcpy( arrBuffer.data(), pBuffer, bufferLength ); return arrBuffer; } \
       } \
    };
@@ -78,13 +88,13 @@ DEFINE_NETWORK_CODE_TYPE( NetworkCode::ClientDisconnect, uint64_t, sizeof( uint6
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::Chat, std::string, 0 )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::PositionUpdate, glm::vec3, sizeof( glm::vec3 ) )
 
-// PacketMaker function
 template< NetworkCode TCode >
-[[nodiscard]] Packet PacketMaker( uint64_t targetClientID, const typename NetworkCodeType< TCode >::Type& data )
+inline Packet Packet::Create( uint64_t srcID, uint64_t destID, const typename NetworkCodeType< TCode >::Type& data )
 {
    Packet packet;
-   packet.m_clientID = targetClientID;
-   packet.m_code     = TCode;
+   packet.m_destinationID = destID;
+   packet.m_sourceID      = srcID; // maybe get rid of this, src should "always" be from the creator
+   packet.m_code          = TCode;
 
    if constexpr( NetworkCodeType< TCode >::BufferSize > 0 ) // Fixed-size buffer
    {
@@ -101,10 +111,10 @@ template< NetworkCode TCode >
 }
 
 template< NetworkCode TCode >
-[[nodiscard]] typename NetworkCodeType< TCode >::Type PacketParseBuffer( const Packet& packet )
+inline typename NetworkCodeType< TCode >::Type Packet::ParseBuffer( const Packet& packet )
 {
-   if( packet.m_code == TCode )
-      return NetworkCodeType< TCode >::ParseBuffer( packet.m_buffer.data(), packet.m_bufferLength );
+   if( packet.m_code != TCode )
+      throw std::runtime_error( "Attempted to parse packet with non-matching code" );
 
-   throw std::runtime_error( "Attempted to parse packet with non-matching code" );
+   return NetworkCodeType< TCode >::ParseBuffer( packet.m_buffer.data(), packet.m_bufferLength );
 }

@@ -37,6 +37,9 @@
 #include <utility>
 #include <vector>
 
+// Additional Libraries
+#include <sal.h>
+
 // OpenGL Libraries
 #include <glad/glad.h>
 #define GLFW_INCLUDE_NONE

@@ -1,24 +1,46 @@
 #pragma once
 
+#include <ws2tcpip.h>
 #include <winsock2.h>
 #pragma comment( lib, "ws2_32.lib" )
 
 #include "../Game/Core/GUIManager.h"
+#include "Packet.h"
 
 #define DEFAULT_ADDRESS "127.0.0.1"
 #define DEFAULT_PORT 8080
 
+class Packet;
 class Player;
 class World;
 
 // maybe network should be a singleton?
 //    only one network instance, you are either host or client (or none)
 
-enum NetworkType
+enum class NetworkType
 {
    None   = 0, // this may not be needed, when might we have a network instance but not be host or client?
    Host   = 1,
    Client = 2
+};
+
+// ===================================================
+//      Client
+// ===================================================
+struct Client
+{
+   SOCKET      m_socket { INVALID_SOCKET };
+   uint64_t    m_clientID { 0 }; // TODO: use this to identify clients
+   sockaddr_in m_socketAddressIn {};
+   std::string m_ipAddress {};
+
+   std::vector< uint8_t > m_receiveBuffer; // Buffer for incoming data
+
+   static inline uint64_t GenerateClientID()
+   {
+      static std::mt19937_64 rng( std::chrono::steady_clock::now().time_since_epoch().count() );
+      return rng();
+   }
 };
 
 // ===================================================
@@ -27,6 +49,11 @@ enum NetworkType
 class INetwork
 {
 public:
+   template< typename TNetwork >
+   static TNetwork* Get() noexcept
+   {
+      return dynamic_cast< TNetwork* >( s_pInstance );
+   }
    static INetwork* Get() noexcept { return s_pInstance; }
 
    template< typename TNetwork >
@@ -36,9 +63,27 @@ public:
    static void        RegisterGUI();
    static const char* GetHostAddress() noexcept;
 
+   // As long as 'client' has a valid socket, this will set the address on 'client' and return true otherwise false
+   static bool FResolvePeerAddress( Client& client );
+
+   // add single function so Host gets its hostname, client gets peer hostname (ip address of server)
+
+   uint64_t GetID() const noexcept { return m_ID; }
+   void     SetID( uint64_t id ) noexcept { m_ID = id; }
+
+   SOCKET GetHostSocket() const noexcept { return m_hostSocket; }
+
    virtual void Poll( World& world, Player& player ) = 0;
    //virtual void                  OnReceive( const uint8_t* data, size_t size ) = 0;
    virtual constexpr NetworkType GetNetworkType() const noexcept = 0;
+
+   //virtual void CheckForData( World& world, Player& player )    = 0; // check for data to read
+   //virtual void CheckForClients( World& world, Player& player ) = 0; // check for new clients to accept
+
+   // Send Helpers
+   void         Send( SOCKET targetSocket, const std::vector< uint8_t >& serializedData );
+   virtual void SendPacket( const Packet& packet )                  = 0;
+   virtual void SendPackets( const std::vector< Packet >& packets ) = 0; // send aggregated packets (single send call)
 
 protected:
    INetwork();
@@ -47,82 +92,20 @@ protected:
    static inline INetwork* s_pInstance = nullptr;
    static inline char*     s_address   = nullptr;
 
-   SOCKET      m_socket { INVALID_SOCKET };
+   SOCKET      m_hostSocket { INVALID_SOCKET };
    sockaddr_in m_socketAddressIn {};
    uint16_t    m_port { DEFAULT_PORT };
-   fd_set      m_readfds {};
-   fd_set      m_writefds {};
+
+   uint64_t              m_ID { 0 };         // ID of this instance
+   std::vector< Client > m_connectedClients; // clients that are connected
+   std::vector< Client > m_pendingClients;   // clients that are pending connection (in handshake)
 
    static inline std::deque< std::string > s_logs;
 };
 
-// ===================================================
-//      ClientConnection
-// ===================================================
-struct ClientConnection
-{
-   SOCKET                 m_socket { INVALID_SOCKET };
-   sockaddr_in            m_socketAddressIn {};
-   std::string            m_ipAddress {};
-   std::vector< uint8_t > m_receiveBuffer; // Buffer for incomplete packets
-
-   // maybe add uint64_t m_clientID?
-};
-
-// ===================================================
-//      NetworkHost
-// ===================================================
-class NetworkHost final : public INetwork
-{
-public:
-   void               Listen();
-   const std::string& GetListenAddress() const noexcept { return m_ipAddress; }
-   void               SetListenPort( uint16_t port ) noexcept
-   {
-      m_port                     = port;
-      m_socketAddressIn.sin_port = htons( port );
-   }
-
-private:
-   NetworkHost();
-   ~NetworkHost() override;
-
-   void ConnectClient( SOCKET clientSocket, const sockaddr_in& clientAddr );
-
-   void                  Poll( World& world, Player& player ) override;
-   constexpr NetworkType GetNetworkType() const noexcept override { return NetworkType::Host; }
-
-   std::string                                      m_ipAddress;
-   std::unordered_map< uint64_t, ClientConnection > m_clients;
-
-   friend class INetwork;
-};
-
-// ===================================================
-//      NetworkClient
-// ===================================================
-class NetworkClient final : public INetwork
-{
-public:
-   //std::string GetClientAddress() const noexcept;
-   //void        SetServerPort( uint16_t port ) noexcept;
-   void Connect( const char* ipAddress, uint16_t port );
-
-private:
-   NetworkClient();
-   ~NetworkClient() override;
-
-   void                  Poll( World& world, Player& player ) override;
-   constexpr NetworkType GetNetworkType() const noexcept override { return NetworkType::Client; }
-
-   std::vector< uint64_t > m_relaySockets; // other clients
-
-   friend class INetwork;
-};
-
 // INetwork static instance initialization
 template< typename TNetwork >
-static TNetwork& INetwork::Create()
+inline TNetwork& INetwork::Create()
 {
    assert( !s_pInstance && "INetwork instance already exists!" );
    if( s_pInstance )

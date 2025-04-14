@@ -22,7 +22,7 @@ public:
    std::string ToString() const override { return std::format( "WindowResizeEvent: {0}, {1}", m_Width, m_Height ); }
 
    EVENT_CLASS_TYPE( EventType::WindowResize )
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_CATEGORY( EventCategory::Application )
 
 private:
    unsigned int m_Width, m_Height;
@@ -37,7 +37,7 @@ public:
    WindowCloseEvent() = default;
 
    EVENT_CLASS_TYPE( EventType::WindowClose )
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_CATEGORY( EventCategory::Application )
 };
 
 //=========================================================================
@@ -49,7 +49,7 @@ public:
    AppTickEvent() = default;
 
    EVENT_CLASS_TYPE( EventType::AppTick )
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_CATEGORY( EventCategory::Application )
 };
 
 //=========================================================================
@@ -61,7 +61,7 @@ public:
    AppUpdateEvent() = default;
 
    EVENT_CLASS_TYPE( EventType::AppUpdate )
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_CATEGORY( EventCategory::Application )
 };
 
 //=========================================================================
@@ -73,7 +73,7 @@ public:
    AppRenderEvent() = default;
 
    EVENT_CLASS_TYPE( EventType::AppRender )
-   EVENT_CLASS_CATEGORY( EventCategory::EventCategoryApplication )
+   EVENT_CLASS_CATEGORY( EventCategory::Application )
 };
 
 } // namespace Events

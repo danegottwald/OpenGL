@@ -61,10 +61,15 @@ void Application::Run()
    Window&  window = Window::Get();
    while( window.IsOpen() )
    {
+      {
+         Events::ProcessQueuedEvents(); // Process queued events before the next frame
+         //Network::ProcessQueuedEvents(); // Process network events before the next frame
+      }
+
       // Game Ticks
-      float delta = timestep.Step(); // Compute delta
-      world.Tick( delta, camera );   // Update world
-      player.Tick( world, delta );   // Tick Player, use m_World to check collisions
+      float delta = timestep.Step();
+      world.Tick( delta, camera ); // Update world
+      player.Tick( world, delta ); // Tick Player, use m_World to check collisions
 
       // Game Updates
       player.Update( delta );  // Update Player

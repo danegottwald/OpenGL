@@ -73,7 +73,7 @@ void DebugGUI::Draw()
 {
    { // ImGui Top Left
       ImGui::SetNextWindowPos( ImVec2( 10, 10 ), ImGuiCond_Always );
-      ImGui::Begin( "Performance",
+      ImGui::Begin( "Debug",
                     nullptr,
                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                        /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
@@ -81,6 +81,13 @@ void DebugGUI::Draw()
       static bool fVSync = Window::Get().GetWindowData().VSync;
       if( ImGui::Checkbox( "VSync", &fVSync ) )
          Window::Get().SetVSync( fVSync );
+
+      ImGui::NewLine();
+      ImGui::Text( "Player Position: %.2f, %.2f, %.2f", m_player.GetPosition().x, m_player.GetPosition().y, m_player.GetPosition().z );
+      ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", m_player.GetRotation().x, m_player.GetRotation().y, m_player.GetRotation().z );
+      ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", m_player.GetVelocity().x, m_player.GetVelocity().y, m_player.GetVelocity().z );
+      ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
+      ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", m_camera.GetPosition().x, m_camera.GetPosition().y, m_camera.GetPosition().z );
       ImGui::End();
    }
 
@@ -105,25 +112,11 @@ void DebugGUI::Draw()
             ImGui::TextUnformatted( action );
          };
 
-         AddKeyBinding( "Escape", "Quit" );
-         AddKeyBinding( "F1", "Toggle Mouse" );
+         AddKeyBinding( "Escape", "Toggle Mouse" );
+         AddKeyBinding( "F1", "Quit" );
          AddKeyBinding( "P", "Toggle Wireframe" );
          ImGui::EndTable();
       }
-      ImGui::End();
-   }
-
-   { // ImGui Bottom Left
-      ImGui::SetNextWindowPos( ImVec2( 10, Window::Get().GetWindowData().Height - 10 ), ImGuiCond_Always, ImVec2( 0.0f, 1.0f ) );
-      ImGui::Begin( "Debug",
-                    nullptr,
-                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
-                       /*ImGuiWindowFlags_NoBackground |*/ ImGuiWindowFlags_AlwaysAutoResize );
-      ImGui::Text( "Player Position: %.2f, %.2f, %.2f", m_player.GetPosition().x, m_player.GetPosition().y, m_player.GetPosition().z );
-      ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", m_player.GetRotation().x, m_player.GetRotation().y, m_player.GetRotation().z );
-      ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", m_player.GetVelocity().x, m_player.GetVelocity().y, m_player.GetVelocity().z );
-      //ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
-      ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", m_camera.GetPosition().x, m_camera.GetPosition().y, m_camera.GetPosition().z );
       ImGui::End();
    }
 }
