@@ -12,20 +12,20 @@ World::World()
 {
    pShader = std::make_unique< Shader >();
 
-   m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ & ]( const Events::NetworkClientConnectEvent& e )
+   m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ & ]( const Events::NetworkClientConnectEvent& e ) noexcept
    {
       const uint64_t clientID    = e.GetClientID();
       m_otherPlayers[ clientID ] = std::make_shared< CubeMesh >();
       m_otherPlayers[ clientID ]->SetColor( glm::vec3( 0.0f, 0.0f, 1.0f ) );
    } );
-   m_eventSubscriber.Subscribe< Events::NetworkClientDisconnectEvent >( [ & ]( const Events::NetworkClientDisconnectEvent& e )
+   m_eventSubscriber.Subscribe< Events::NetworkClientDisconnectEvent >( [ & ]( const Events::NetworkClientDisconnectEvent& e ) noexcept
    {
       if( auto it = m_otherPlayers.find( e.GetClientID() ); it != m_otherPlayers.end() )
          m_otherPlayers.erase( it );
    } );
 }
 
-World ::~World()
+World::~World()
 {
    m_fChunkThreadTerminate.store( true );
    if( m_chunkThread.joinable() )

@@ -120,7 +120,7 @@ void Player::UpdateState( World& world, float delta )
 // --------------------------------------------------------------------
 //      Player Event Handling
 // --------------------------------------------------------------------
-void Player::MouseButtonPressed( const Events::MouseButtonPressedEvent& event )
+void Player::MouseButtonPressed( const Events::MouseButtonPressedEvent& event ) noexcept
 {
    Window& window = Window::Get(); // clean this up, so we dont need to check each call
    if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
@@ -129,7 +129,7 @@ void Player::MouseButtonPressed( const Events::MouseButtonPressedEvent& event )
    m_InputMap[ event.GetMouseButton() ] = true;
 }
 
-void Player::MouseButtonReleased( const Events::MouseButtonReleasedEvent& event )
+void Player::MouseButtonReleased( const Events::MouseButtonReleasedEvent& event ) noexcept
 {
    Window& window = Window::Get(); // clean this up, so we dont need to check each call
    if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
@@ -138,7 +138,7 @@ void Player::MouseButtonReleased( const Events::MouseButtonReleasedEvent& event 
    m_InputMap[ event.GetMouseButton() ] = false;
 }
 
-void Player::MouseMove( const Events::MouseMovedEvent& event )
+void Player::MouseMove( const Events::MouseMovedEvent& event ) noexcept
 {
    static Window& window       = Window::Get();
    GLFWwindow*    nativeWindow = window.GetNativeWindow();

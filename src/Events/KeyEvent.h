@@ -37,7 +37,10 @@ public:
 
    bool FRepeat() const { return m_fRepeated; }
 
-   std::string ToString() const override { return std::format( "KeyPressedEvent: {0} (repeated: {1})", static_cast< int >( m_keyCode ), m_fRepeated ); }
+   std::string ToString() const noexcept override
+   {
+      return std::format( "KeyPressedEvent: {0} (repeated: {1})", std::to_underlying( m_keyCode ), m_fRepeated );
+   }
 
    EVENT_CLASS_TYPE( EventType::KeyPressed )
 
@@ -55,7 +58,7 @@ public:
       KeyEvent( keycode )
    {}
 
-   std::string ToString() const override { return std::format( "KeyReleasedEvent: {0}", static_cast< int >( m_keyCode ) ); }
+   std::string ToString() const noexcept override { return std::format( "KeyReleasedEvent: {0}", std::to_underlying( m_keyCode ) ); }
 
    EVENT_CLASS_TYPE( EventType::KeyReleased )
 };
@@ -70,7 +73,7 @@ public:
       KeyEvent( keycode )
    {}
 
-   std::string ToString() const override { return std::format( "KeyTypedEvent: {0}", static_cast< int >( m_keyCode ) ); }
+   std::string ToString() const noexcept override { return std::format( "KeyTypedEvent: {0}", std::to_underlying( m_keyCode ) ); }
 
    EVENT_CLASS_TYPE( EventType::KeyTyped )
 };

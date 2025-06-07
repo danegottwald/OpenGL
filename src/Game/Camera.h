@@ -19,7 +19,7 @@ public:
 private:
    // Events
    Events::EventSubscriber m_eventSubscriber;
-   void                    WindowResizeEvent( const Events::WindowResizeEvent& e );
+   void                    WindowResizeEvent( const Events::WindowResizeEvent& e ) noexcept;
 
    float     m_fov { 90.0f };
    glm::mat4 m_viewMatrix { 1.0f };

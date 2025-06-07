@@ -33,9 +33,9 @@ private:
    // Events (fix this, make it cleaner)
    Events::EventSubscriber              m_eventSubscriber;
    std::unordered_map< uint16_t, bool > m_InputMap;
-   void                                 MouseButtonPressed( const Events::MouseButtonPressedEvent& e );
-   void                                 MouseButtonReleased( const Events::MouseButtonReleasedEvent& e );
-   void                                 MouseMove( const Events::MouseMovedEvent& e );
+   void                                 MouseButtonPressed( const Events::MouseButtonPressedEvent& e ) noexcept;
+   void                                 MouseButtonReleased( const Events::MouseButtonReleasedEvent& e ) noexcept;
+   void                                 MouseMove( const Events::MouseMovedEvent& e ) noexcept;
    //  EntityState m_State inherited from Entity
 
    bool m_fInAir { false };

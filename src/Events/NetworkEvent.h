@@ -32,7 +32,7 @@ public:
       NetworkEvent( clientID )
    {}
 
-   std::string ToString() const override { return std::format( "NetworkClientConnectEvent: {}", m_clientID ); }
+   std::string ToString() const noexcept override { return std::format( "NetworkClientConnectEvent: {}", m_clientID ); }
 
    EVENT_CLASS_TYPE( EventType::NetworkClientConnect )
 };
@@ -47,7 +47,7 @@ public:
       NetworkEvent( clientID )
    {}
 
-   std::string ToString() const override { return std::format( "NetworkClientDisconnectEvent: {}", m_clientID ); }
+   std::string ToString() const noexcept override { return std::format( "NetworkClientDisconnectEvent: {}", m_clientID ); }
 
    EVENT_CLASS_TYPE( EventType::NetworkClientDisconnect )
 };
@@ -62,7 +62,7 @@ public:
       NetworkEvent( clientID )
    {}
 
-   std::string ToString() const override { return std::format( "NetworkClientTimeoutEvent: {}", m_clientID ); }
+   std::string ToString() const noexcept override { return std::format( "NetworkClientTimeoutEvent: {}", m_clientID ); }
 
    EVENT_CLASS_TYPE( EventType::NetworkClientTimeout )
 };
@@ -78,7 +78,7 @@ public:
       m_message( message )
    {}
 
-   std::string ToString() const override { return std::format( "NetworkChatReceivedEvent: {}-{}", m_clientID, m_message ); }
+   std::string ToString() const noexcept override { return std::format( "NetworkChatReceivedEvent: {}-{}", m_clientID, m_message ); }
 
    const std::string& GetChatMessage() const noexcept { return m_message; }
 
@@ -98,7 +98,7 @@ public:
       NetworkEvent( hostClientID )
    {}
 
-   std::string ToString() const override { return "NetworkHostDisconnectEvent"; }
+   std::string ToString() const noexcept override { return "NetworkHostDisconnectEvent"; }
 
    EVENT_CLASS_TYPE( EventType::NetworkHostDisconnected )
 };

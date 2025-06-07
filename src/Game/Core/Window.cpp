@@ -140,16 +140,16 @@ void Window::SetVSync( bool state )
 
 void Window::SetCallbacks()
 {
-   m_eventSubscriber.Subscribe< Events::WindowCloseEvent >( [ & ]( const Events::WindowCloseEvent& /*event*/ ) { m_fRunning = false; } );
+   m_eventSubscriber.Subscribe< Events::WindowCloseEvent >( [ & ]( const Events::WindowCloseEvent& /*event*/ ) noexcept { m_fRunning = false; } );
 
-   m_eventSubscriber.Subscribe< Events::WindowResizeEvent >( [ & ]( const Events::WindowResizeEvent& event )
+   m_eventSubscriber.Subscribe< Events::WindowResizeEvent >( [ & ]( const Events::WindowResizeEvent& event ) noexcept
    {
       m_WindowData.Width  = event.GetWidth();
       m_WindowData.Height = event.GetHeight();
       glViewport( 0, 0, m_WindowData.Width, m_WindowData.Height );
    } );
 
-   m_eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& event )
+   m_eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& event ) noexcept
    {
       switch( event.GetKeyCode() )
       {

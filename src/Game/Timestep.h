@@ -20,7 +20,7 @@
 class Timestep
 {
 public:
-   Timestep( float tickrate ) :
+   Timestep( uint8_t tickrate ) :
       m_interval( 1.0f / tickrate )
    {}
 

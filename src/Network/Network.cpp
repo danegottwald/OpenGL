@@ -116,19 +116,19 @@ public:
    NetworkGUI( std::deque< std::string >& sharedLogs ) :
       m_logs( sharedLogs )
    {
-      m_eventSubscriber.Subscribe< Events::NetworkHostDisconnectEvent >( [ this ]( const Events::NetworkHostDisconnectEvent& /*e*/ )
+      m_eventSubscriber.Subscribe< Events::NetworkHostDisconnectEvent >( [ this ]( const Events::NetworkHostDisconnectEvent& /*e*/ ) noexcept
       {
          INetwork::Shutdown();
          m_fConnected = false; // Set connected state to false
       } );
 
-      m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ this ]( const Events::NetworkClientConnectEvent& e )
+      m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ this ]( const Events::NetworkClientConnectEvent& e ) noexcept
       { m_messages.push_back( std::format( "{} connected.", e.GetClientID() ) ); } );
 
-      m_eventSubscriber.Subscribe< Events::NetworkClientDisconnectEvent >( [ this ]( const Events::NetworkClientDisconnectEvent& e )
+      m_eventSubscriber.Subscribe< Events::NetworkClientDisconnectEvent >( [ this ]( const Events::NetworkClientDisconnectEvent& e ) noexcept
       { m_messages.push_back( std::format( "{} disconnected.", e.GetClientID() ) ); } );
 
-      m_eventSubscriber.Subscribe< Events::NetworkChatReceivedEvent >( [ this ]( const Events::NetworkChatReceivedEvent& e )
+      m_eventSubscriber.Subscribe< Events::NetworkChatReceivedEvent >( [ this ]( const Events::NetworkChatReceivedEvent& e ) noexcept
       { m_messages.push_back( std::format( "{}: {}", e.GetClientID(), e.GetChatMessage() ) ); } );
    }
 

@@ -41,7 +41,7 @@ void Application::Run()
    world.Setup();
 
    Events::EventSubscriber eventSubscriber;
-   eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& e )
+   eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& e ) noexcept
    {
       if( e.GetKeyCode() == Input::R ) // Reload world
          world.Setup();
@@ -57,7 +57,7 @@ void Application::Run()
    INetwork::RegisterGUI();
 
    float    time = 0;
-   Timestep timestep( 20.0f /*tickrate*/ );
+   Timestep timestep( 20 /*tickrate*/ );
    Window&  window = Window::Get();
    while( window.IsOpen() )
    {
@@ -67,7 +67,7 @@ void Application::Run()
       }
 
       // Game Ticks
-      float delta = timestep.Step();
+      const float delta = timestep.Step();
       world.Tick( delta, camera ); // Update world
       player.Tick( world, delta ); // Tick Player, use m_World to check collisions
 

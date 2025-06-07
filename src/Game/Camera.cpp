@@ -9,11 +9,11 @@ Camera::Camera()
    const WindowData& winData = Window::Get().GetWindowData();
    float             width   = winData.Width;
    float             height  = winData.Height;
-   m_projectionMatrix        = glm::perspective( glm::radians( m_fov ) /*fovy*/, width / height /*aspect*/, 0.1f /*near*/, 1000.0f /*far*/ );
+   m_projectionMatrix        = glm::perspective( glm::radians( m_fov ), width / height, 0.1f /*near*/, 1000.0f /*far*/ );
 
    // Subscribe to events
    m_eventSubscriber.Subscribe< Events::WindowResizeEvent >( std::bind( &Camera::WindowResizeEvent, this, std::placeholders::_1 ) );
-   m_eventSubscriber.Subscribe< Events::MouseScrolledEvent >( [ this ]( const Events::MouseScrolledEvent& e )
+   m_eventSubscriber.Subscribe< Events::MouseScrolledEvent >( [ this ]( const Events::MouseScrolledEvent& e ) noexcept
    {
       m_fov += -e.GetYOffset() * 5;
       m_fov              = std::clamp( m_fov, 10.0f, 90.0f );
@@ -57,7 +57,7 @@ const glm::vec3& Camera::GetPosition() const
    return m_position;
 }
 
-void Camera::WindowResizeEvent( const Events::WindowResizeEvent& e )
+void Camera::WindowResizeEvent( const Events::WindowResizeEvent& e ) noexcept
 {
    if( e.GetHeight() == 0 )
       return;

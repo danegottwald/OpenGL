@@ -16,10 +16,10 @@ public:
       m_Height( height )
    {}
 
-   unsigned int GetWidth() const { return m_Width; }
-   unsigned int GetHeight() const { return m_Height; }
+   unsigned int GetWidth() const noexcept { return m_Width; }
+   unsigned int GetHeight() const noexcept { return m_Height; }
 
-   std::string ToString() const override { return std::format( "WindowResizeEvent: {0}, {1}", m_Width, m_Height ); }
+   std::string ToString() const noexcept override { return std::format( "WindowResizeEvent: {0}, {1}", m_Width, m_Height ); }
 
    EVENT_CLASS_TYPE( EventType::WindowResize )
    EVENT_CLASS_CATEGORY( EventCategory::Application )
