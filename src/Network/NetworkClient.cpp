@@ -29,7 +29,14 @@ NetworkClient::~NetworkClient()
    if( getpeername( m_hostSocket, ( sockaddr* )&clientAddr, &addrLen ) == 0 )
       inet_ntop( AF_INET, &clientAddr.sin_addr, ipAddress, sizeof( ipAddress ) );
 
-   Events::Dispatch< Events::NetworkClientDisconnectEvent >( m_hostSocket );
+   for( const Client& client : m_clients )
+   {
+      closesocket( client.m_socket );
+      Events::Dispatch< Events::NetworkClientDisconnectEvent >( client.m_clientID );
+   }
+
+   if( m_fConnected )
+      Events::Dispatch< Events::NetworkClientDisconnectEvent >( m_serverID ); // server is a "client" for now
 }
 
 void NetworkClient::Connect( const char* ipAddress, uint16_t port )
@@ -110,7 +117,7 @@ void NetworkClient::Poll( World& world, Player& player )
                   Client newClient;
                   newClient.m_clientID = inPacket.m_sourceID;
                   newClient.m_socket   = m_hostSocket; // as a client, all other client sockets are the host socket
-                  m_connectedClients.push_back( newClient );
+                  m_clients.push_back( newClient );
                   Events::Dispatch< Events::NetworkClientConnectEvent >( inPacket.m_sourceID ); // TODO: NetworkEvents should take in Client
                   break;
                }
@@ -127,10 +134,10 @@ void NetworkClient::Poll( World& world, Player& player )
                case NetworkCode::ClientDisconnect:
                {
                   s_logs.push_back( std::format( "Client disconnected: {}", inPacket.m_sourceID ) );
-                  m_connectedClients.erase( std::remove_if( m_connectedClients.begin(),
-                                                            m_connectedClients.end(),
-                                                            [ &inPacket ]( const Client& client ) { return client.m_clientID == inPacket.m_sourceID; } ),
-                                            m_connectedClients.end() );
+                  m_clients.erase( std::remove_if( m_clients.begin(),
+                                                   m_clients.end(),
+                                                   [ &inPacket ]( const Client& client ) { return client.m_clientID == inPacket.m_sourceID; } ),
+                                   m_clients.end() );
                   Events::Dispatch< Events::NetworkClientDisconnectEvent >( inPacket.m_sourceID );
                   break;
                }
@@ -142,17 +149,19 @@ void NetworkClient::Poll( World& world, Player& player )
       else if( bytesReceived <= 0 && WSAGetLastError() != WSAEWOULDBLOCK )
       {
          s_logs.push_back( std::format( "Server closed: {}", INetwork::GetHostAddress() ) );
+         m_fConnected = false;
          m_serverIpAddress.clear();
 
-         for( const Client& client : m_connectedClients )
+         for( const Client& client : m_clients )
          {
             closesocket( client.m_socket );
             Events::Dispatch< Events::NetworkClientDisconnectEvent >( client.m_clientID );
          }
-         m_connectedClients.clear();
+         m_clients.clear();
 
-         closesocket( m_hostSocket ); // close server socket connection
-         Events::Dispatch< Events::NetworkHostDisconnectEvent >( m_hostSocket /*good enough for now*/ );
+         closesocket( m_hostSocket );                                            // close server socket connection
+         Events::Dispatch< Events::NetworkClientDisconnectEvent >( m_serverID ); // disconnect from server for now
+         Events::Dispatch< Events::NetworkHostDisconnectEvent >( m_serverID /*good enough for now*/ );
          m_hostSocket = INVALID_SOCKET;
       }
    }

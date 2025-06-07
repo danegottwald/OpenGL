@@ -96,9 +96,8 @@ protected:
    sockaddr_in m_socketAddressIn {};
    uint16_t    m_port { DEFAULT_PORT };
 
-   uint64_t              m_ID { 0 };         // ID of this instance
-   std::vector< Client > m_connectedClients; // clients that are connected
-   std::vector< Client > m_pendingClients;   // clients that are pending connection (in handshake)
+   uint64_t              m_ID { 0 }; // ID of this instance
+   std::vector< Client > m_clients;  // clients that are connected
 
    static inline std::deque< std::string > s_logs;
 };

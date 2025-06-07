@@ -158,8 +158,7 @@ public:
                {
                   m_logs.push_back( std::format( "Hosting on: {}:{}", INetwork::GetHostAddress(), m_port ) );
                   NetworkHost& network = INetwork::Create< NetworkHost >(); // Create a new network host instance
-                  network.SetListenPort( m_port );
-                  network.Listen();
+                  network.Listen( m_port );
                }
                else
                {
