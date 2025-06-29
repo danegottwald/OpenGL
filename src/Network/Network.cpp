@@ -116,7 +116,7 @@ public:
    NetworkGUI( std::deque< std::string >& sharedLogs ) :
       m_logs( sharedLogs )
    {
-      m_eventSubscriber.Subscribe< Events::NetworkHostDisconnectEvent >( [ this ]( const Events::NetworkHostDisconnectEvent& /*e*/ ) noexcept
+      m_eventSubscriber.Subscribe< Events::NetworkHostShutdownEvent >( [ this ]( const Events::NetworkHostShutdownEvent& /*e*/ ) noexcept
       {
          INetwork::Shutdown();
          m_fConnected = false; // Set connected state to false

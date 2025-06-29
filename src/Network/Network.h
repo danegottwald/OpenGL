@@ -77,6 +77,9 @@ public:
    //virtual void                  OnReceive( const uint8_t* data, size_t size ) = 0;
    virtual constexpr NetworkType GetNetworkType() const noexcept = 0;
 
+   // Packet handling
+   virtual void HandleIncomingPacket( const Packet& packet, World& world, Player& player ) = 0;
+
    //virtual void CheckForData( World& world, Player& player )    = 0; // check for data to read
    //virtual void CheckForClients( World& world, Player& player ) = 0; // check for new clients to accept
 
@@ -104,7 +107,7 @@ protected:
 
 // INetwork static instance initialization
 template< typename TNetwork >
-inline TNetwork& INetwork::Create()
+TNetwork& INetwork::Create()
 {
    assert( !s_pInstance && "INetwork instance already exists!" );
    if( s_pInstance )

@@ -6,11 +6,12 @@ using PacketBuffer = std::array< uint8_t, PACKET_BUFFER_SIZE >;
 enum class NetworkCode : uint8_t
 {
    // Control Messages
-   Invalid          = 0x00, // Invalid packet, probably dont need why would we make this
-   Handshake        = 0x01,
-   Heartbeat        = 0x02,
-   ClientConnect    = 0x03,
-   ClientDisconnect = 0x04,
+   Invalid   = 0x00, // Invalid packet, probably dont need why would we make this
+   Heartbeat = 0x01,
+
+   ClientConnect    = 0x02,
+   ClientDisconnect = 0x03,
+   HostShutdown     = 0x04,
 
    // Game Messages
    Chat           = 0x20,
@@ -81,10 +82,10 @@ inline constexpr size_t Packet::HeaderSize() noexcept
 
 // All NetworkCode's should have a PacketMaker specialization defined
 //    When adding a mapping that is not a primitive type, add a specialization for ParseBuffer above
-DEFINE_NETWORK_CODE_TYPE( NetworkCode::Handshake, uint64_t, sizeof( uint64_t ) )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::Heartbeat, uint8_t, sizeof( uint8_t ) )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::ClientConnect, uint64_t, sizeof( uint64_t ) )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::ClientDisconnect, uint64_t, sizeof( uint64_t ) )
+DEFINE_NETWORK_CODE_TYPE( NetworkCode::HostShutdown, uint64_t, sizeof( uint64_t ) )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::Chat, std::string, 0 )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::PositionUpdate, glm::vec3, sizeof( glm::vec3 ) )
 

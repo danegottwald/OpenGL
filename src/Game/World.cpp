@@ -1,4 +1,5 @@
 ﻿#include "World.h"
+#include "../Events/NetworkEvent.h"
 
 #include "Camera.h"
 #include "Mesh.h"
@@ -23,6 +24,8 @@ World::World()
       if( auto it = m_otherPlayers.find( e.GetClientID() ); it != m_otherPlayers.end() )
          m_otherPlayers.erase( it );
    } );
+   m_eventSubscriber.Subscribe< Events::NetworkPositionUpdateEvent >( [ this ]( const Events::NetworkPositionUpdateEvent& e ) noexcept
+   { this->ReceivePlayerPosition( e.GetClientID(), e.GetPosition() ); } );
 }
 
 World::~World()

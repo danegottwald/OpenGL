@@ -47,6 +47,7 @@ enum EventType
    NetworkClientConnect,
    NetworkClientDisconnect,
    NetworkClientTimeout,
+   NetworkPositionUpdate,
    NetworkChatReceived,
    NetworkHostDisconnected
 };
@@ -141,21 +142,23 @@ private:
    //=====================================================================
    // Static management of event subscriptions
    //=====================================================================
+   inline static std::mutex                                                       s_eventMutex;
    inline static std::queue< std::shared_ptr< IEvent > >                          s_eventQueue;
-   inline static std::mutex                                                       s_eventQueueMutex;
    inline static std::condition_variable                                          s_eventQueueCV;
    inline static std::unordered_map< EventType, std::vector< EventSubscriber* > > s_eventSubscribers;
 
    static void RegisterSubscriber( EventType type, EventSubscriber* subscriber )
    {
-      auto& subscribers = s_eventSubscribers[ type ];
+      std::lock_guard< std::mutex > lock( s_eventMutex );
+      auto&                         subscribers = s_eventSubscribers[ type ];
       if( std::find( subscribers.begin(), subscribers.end(), subscriber ) == subscribers.end() )
          subscribers.push_back( subscriber );
    }
 
    static void UnregisterSubscriber( EventType type, EventSubscriber* subscriber )
    {
-      auto& subscribers = s_eventSubscribers[ type ];
+      std::lock_guard< std::mutex > lock( s_eventMutex );
+      auto&                         subscribers = s_eventSubscribers[ type ];
       subscribers.erase( std::remove( subscribers.begin(), subscribers.end(), subscriber ), subscribers.end() );
    }
 
@@ -171,7 +174,7 @@ private:
       }
       else
       {
-         std::lock_guard< std::mutex > lock( s_eventQueueMutex );
+         std::lock_guard< std::mutex > lock( s_eventMutex );
          s_eventQueue.push( psEvent );
          s_eventQueueCV.notify_one();
       }
@@ -205,7 +208,7 @@ inline void ProcessQueuedEvents()
 
    std::queue< std::shared_ptr< IEvent > > localQueue;
    {
-      std::lock_guard< std::mutex > lock( EventSubscriber::s_eventQueueMutex );
+      std::lock_guard< std::mutex > lock( EventSubscriber::s_eventMutex );
       if( EventSubscriber::s_eventQueue.empty() )
          return;
 

@@ -8,24 +8,34 @@
 class NetworkClient final : public INetwork
 {
 public:
-   //std::string GetClientAddress() const noexcept;
-   //void        SetServerPort( uint16_t port ) noexcept;
-   void Connect( const char* ipAddress, uint16_t port );
-
-   // SendPacket Overrides
-   void SendPacket( const Packet& packet ) override;
-   void SendPackets( const std::vector< Packet >& packets ) override;
-
-private:
    NetworkClient();
    ~NetworkClient() override;
 
+   void Connect( const char* ipAddress, uint16_t port );
+   void SendPacket( const Packet& packet ) override;
+   void SendPackets( const std::vector< Packet >& packets ) override;
+
+   void HandleIncomingPacket( const Packet& packet, World& world, Player& player ) override;
+
+private:
    void                  Poll( World& world, Player& player ) override;
    constexpr NetworkType GetNetworkType() const noexcept override { return NetworkType::Client; }
+
+   // Threaded receive logic
+   void StartRecvThread();
+   void StopRecvThread();
+   void RecvThread();
+   bool PollPacket( Packet& packet );
 
    uint64_t    m_serverID { 0 }; // ID of the server
    std::string m_serverIpAddress { DEFAULT_ADDRESS };
    bool        m_fConnected { false };
+
+   // Threading and queue
+   std::atomic< bool >  m_running { false };
+   std::thread          m_recvThread;
+   std::queue< Packet > m_incomingPackets;
+   std::mutex           m_queueMutex;
 
    friend class INetwork;
 };

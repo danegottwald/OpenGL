@@ -1,4 +1,3 @@
-
 #include "Player.h"
 
 #include "../Core/Window.h"
@@ -6,9 +5,16 @@
 #include "../../Events/KeyEvent.h"
 #include "../../Events/MouseEvent.h"
 #include "../../Input/Input.h"
+#include <algorithm>
 
-constexpr glm::vec3 GRAVITY( 0.0f, -9.8f, 0.0f ); // Gravity in meters per second squared
-constexpr float     JUMP_VELOCITY = 0.7f;         // Initial jump velocity to reach 1 meter
+constexpr float GRAVITY           = -32.0f; // units/sec^2
+constexpr float TERMINAL_VELOCITY = -48.0f; // units/sec
+constexpr float JUMP_VELOCITY     = 9.0f;   // units/sec
+constexpr float PLAYER_HEIGHT     = 1.9f;   // just under 2 cubes
+constexpr float GROUND_MAXSPEED   = 12.0f;  // units/sec
+constexpr float AIR_MAXSPEED      = 10.0f;  // units/sec
+constexpr float AIR_CONTROL       = 0.3f;   // 0=no air control, 1=full
+constexpr float SPRINT_MODIFIER   = 1.5f;   // Sprint speed multiplier
 
 Player::Player()
 {
@@ -22,27 +28,7 @@ Player::Player()
 
 void Player::Update( float delta )
 {
-   // should move to polling mouse input here for perf reasons
-
-   // Update the player's state
-   //Tick( *m_World, delta );
-
-   // Set Player Velocity
-   m_velocity += m_acceleration;
-   if( m_fInAir )
-   {
-      m_acceleration.x = 0;
-      m_acceleration.z = 0;
-   }
-   else
-      m_acceleration = glm::vec3( 0.0f );
-
-   // Update position based on velocity
-   m_position += m_velocity * delta;
-   m_velocity *= 0.9f;
-
-   // Handle collision detection and response
-   // collide(world, m_velocity * delta);
+   // No longer directly update velocity/position here; handled in Tick
 }
 
 void Player::Render() const
@@ -59,47 +45,67 @@ void Player::Tick( World& world, float delta )
 
 void Player::ApplyInputs()
 {
-   float speed = 0.4f;
-   if( Input::IsKeyPressed( Input::LeftShift ) )
-      speed *= 1.8;
-
+   glm::vec3 wishdir( 0.0f );
    if( Input::IsKeyPressed( Input::W ) )
    {
-      m_acceleration.x -= glm::cos( glm::radians( m_rotation.y + 90 ) ) * speed;
-      m_acceleration.z -= glm::sin( glm::radians( m_rotation.y + 90 ) ) * speed;
+      wishdir.x -= glm::cos( glm::radians( m_rotation.y + 90 ) );
+      wishdir.z -= glm::sin( glm::radians( m_rotation.y + 90 ) );
    }
    if( Input::IsKeyPressed( Input::S ) )
    {
-      m_acceleration.x += glm::cos( glm::radians( m_rotation.y + 90 ) ) * speed;
-      m_acceleration.z += glm::sin( glm::radians( m_rotation.y + 90 ) ) * speed;
+      wishdir.x += glm::cos( glm::radians( m_rotation.y + 90 ) );
+      wishdir.z += glm::sin( glm::radians( m_rotation.y + 90 ) );
    }
    if( Input::IsKeyPressed( Input::A ) )
    {
       float yaw = glm::radians( m_rotation.y );
-      m_acceleration += glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) ) * speed;
+      wishdir += glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) );
    }
    if( Input::IsKeyPressed( Input::D ) )
    {
       float yaw = glm::radians( m_rotation.y );
-      m_acceleration -= glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) ) * speed;
+      wishdir -= glm::vec3( -glm::cos( yaw ), 0, -glm::sin( yaw ) );
+   }
+   if( glm::length( wishdir ) > 0.0f )
+      wishdir = glm::normalize( wishdir );
+
+   float maxSpeed = m_fInAir ? AIR_MAXSPEED : GROUND_MAXSPEED;
+   if( Input::IsKeyPressed( Input::LeftShift ) )
+      maxSpeed *= SPRINT_MODIFIER;
+
+   if( m_fInAir )
+   {
+      // Air control: add a portion of wishdir to velocity (horizontal only)
+      glm::vec3 wishvel = wishdir * maxSpeed;
+      glm::vec3 velHoriz = glm::vec3( m_velocity.x, 0, m_velocity.z );
+      glm::vec3 wishvelHoriz = glm::vec3( wishvel.x, 0, wishvel.z );
+      glm::vec3 add = wishvelHoriz - velHoriz;
+      m_velocity.x += add.x * AIR_CONTROL;
+      m_velocity.z += add.z * AIR_CONTROL;
+   }
+   else
+   {
+      // On ground: set velocity directly
+      m_velocity.x = wishdir.x * maxSpeed;
+      m_velocity.z = wishdir.z * maxSpeed;
    }
 
    // Jump
-   if( !m_fInAir && Input::IsKeyPressed( Input::Space ) ) // Jump only if not in air
+   if( !m_fInAir && Input::IsKeyPressed( Input::Space ) )
    {
-      m_acceleration.y = JUMP_VELOCITY; // Set upward velocity
-      m_fInAir         = true;          // Player is now in the air
+      m_velocity.y = JUMP_VELOCITY;
+      m_fInAir     = true;
    }
 }
 
 void Player::UpdateState( World& world, float delta )
 {
-   m_acceleration.y += -9.8f * ( delta * 0.33f );
-   m_acceleration.y = glm::clamp( m_acceleration.y, -9.8f, 9.8f ); // Clamp vertical acceleration
-   m_velocity += m_acceleration * delta;
-   m_position += m_velocity * delta; // Update position based on velocity
+   m_velocity.y += GRAVITY * delta;
+   if( m_velocity.y < TERMINAL_VELOCITY )
+      m_velocity.y = TERMINAL_VELOCITY;
 
-   // Check if player has landed
+   m_position += m_velocity * delta;
+
    float edgeHeight   = std::max( { world.GetHeightAtPos( m_position.x + 0.5f, m_position.z ),
                                     world.GetHeightAtPos( m_position.x - 0.5f, m_position.z ),
                                     world.GetHeightAtPos( m_position.x, m_position.z + 0.5f ),
@@ -108,21 +114,21 @@ void Player::UpdateState( World& world, float delta )
                                     world.GetHeightAtPos( m_position.x - 0.25f, m_position.z + 0.25f ),
                                     world.GetHeightAtPos( m_position.x + 0.25f, m_position.z - 0.25f ),
                                     world.GetHeightAtPos( m_position.x - 0.25f, m_position.z - 0.25f ) } );
-   float groundHeight = std::max( { edgeHeight, cornerHeight } ) + 2.0f; // Add buffer for ground height
-   m_fInAir           = m_position.y > groundHeight;
+   float groundHeight = std::max( { edgeHeight, cornerHeight } );
+   bool  wasInAir     = m_fInAir;
+   // Player's feet are at (m_position.y - PLAYER_HEIGHT)
+   m_fInAir = (m_position.y - PLAYER_HEIGHT) > groundHeight + 0.01f;
    if( !m_fInAir )
    {
-      m_position.y = groundHeight; // Snap to ground height
-      m_velocity.y = 0.0f;         // Stop vertical velocity
+      m_position.y = groundHeight + PLAYER_HEIGHT;
+      m_velocity.y = 0.0f;
+      // No horizontal velocity stop on landing
    }
 }
 
-// --------------------------------------------------------------------
-//      Player Event Handling
-// --------------------------------------------------------------------
 void Player::MouseButtonPressed( const Events::MouseButtonPressedEvent& event ) noexcept
 {
-   Window& window = Window::Get(); // clean this up, so we dont need to check each call
+   Window& window = Window::Get();
    if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
       return;
 
@@ -131,7 +137,7 @@ void Player::MouseButtonPressed( const Events::MouseButtonPressedEvent& event ) 
 
 void Player::MouseButtonReleased( const Events::MouseButtonReleasedEvent& event ) noexcept
 {
-   Window& window = Window::Get(); // clean this up, so we dont need to check each call
+   Window& window = Window::Get();
    if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
       return;
 
@@ -149,10 +155,10 @@ void Player::MouseMove( const Events::MouseMovedEvent& event ) noexcept
    static glm::vec2 lastMousePos    = window.GetMousePosition();
    glm::vec2        currentMousePos = window.GetMousePosition();
    glm::vec2        delta           = currentMousePos - lastMousePos;
-   m_rotation.x                     = glm::clamp( m_rotation.x + ( delta.y * sensitivity ), -90.0f, 90.0f ); // Clamp vertical rotation
-   m_rotation.y                     = glm::mod( m_rotation.y + ( delta.x * sensitivity ) + 360.0f, 360.0f ); // Wrap horizontal rotation
+   m_rotation.x                     = glm::clamp( m_rotation.x + ( delta.y * sensitivity ), -90.0f, 90.0f );
+   m_rotation.y                     = glm::mod( m_rotation.y + ( delta.x * sensitivity ) + 360.0f, 360.0f );
 
    const WindowData& windowData = window.GetWindowData();
    lastMousePos                 = { windowData.Width * 0.5f, windowData.Height * 0.5f };
-   glfwSetCursorPos( nativeWindow, lastMousePos.x, lastMousePos.y ); // Reset mouse to center of screen
+   glfwSetCursorPos( nativeWindow, lastMousePos.x, lastMousePos.y );
 }

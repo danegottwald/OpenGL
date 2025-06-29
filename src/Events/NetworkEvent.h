@@ -89,18 +89,38 @@ private:
 };
 
 //=========================================================================
-// NetworkHostDisconnectEvent
+// NetworkHostShutdownEvent
 //=========================================================================
-class NetworkHostDisconnectEvent final : public NetworkEvent
+class NetworkHostShutdownEvent final : public NetworkEvent
 {
 public:
-   NetworkHostDisconnectEvent( uint64_t hostClientID ) :
+   NetworkHostShutdownEvent( uint64_t hostClientID ) :
       NetworkEvent( hostClientID )
    {}
 
-   std::string ToString() const noexcept override { return "NetworkHostDisconnectEvent"; }
+   std::string ToString() const noexcept override { return "NetworkHostShutdownEvent"; }
 
    EVENT_CLASS_TYPE( EventType::NetworkHostDisconnected )
+};
+
+//=========================================================================
+// NetworkPositionUpdateEvent
+//=========================================================================
+class NetworkPositionUpdateEvent final : public NetworkEvent
+{
+public:
+   NetworkPositionUpdateEvent( uint64_t clientID, const glm::vec3& position ) :
+      NetworkEvent( clientID ),
+      m_position( position )
+   {}
+
+   std::string      ToString() const noexcept override { return "NetworkPositionUpdateEvent"; }
+   const glm::vec3& GetPosition() const noexcept { return m_position; }
+
+   EVENT_CLASS_TYPE( EventType::NetworkPositionUpdate )
+
+private:
+   glm::vec3 m_position;
 };
 
 } // namespace Events
