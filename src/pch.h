@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <expected>
 #include <fstream>
 #include <functional>
 #include <future>

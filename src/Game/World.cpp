@@ -1,9 +1,11 @@
 ﻿#include "World.h"
 #include "../Events/NetworkEvent.h"
+#include "../Input/Input.h"
 
 #include "Camera.h"
 #include "Mesh.h"
 #include "Renderer/Shader.h"
+#include "Entity/Player.h"
 
 
 std::unique_ptr< Shader > pShader;
@@ -304,21 +306,29 @@ void World::Setup()
                   const int adjHeightEast  = static_cast< int >( getNoise( x + 1, z ) * 127.5f ) - 64;
                   const int adjHeightWest  = static_cast< int >( getNoise( x - 1, z ) * 127.5f ) - 64;
 
-                  glm::vec3 cubePos( x, height, z );
-                  // Add faces if not adjacent to another block
-                  if( height > adjHeightNorth )
-                     chunk->AddFace( cubePos, BlockFace::North );
-                  if( height > adjHeightSouth )
-                     chunk->AddFace( cubePos, BlockFace::South );
-                  if( height > adjHeightEast )
-                     chunk->AddFace( cubePos, BlockFace::East );
-                  if( height > adjHeightWest )
-                     chunk->AddFace( cubePos, BlockFace::West );
-
+                  const glm::vec3 cubePos( x, height, z );
                   chunk->AddFace( cubePos, BlockFace::Up );
                   //chunk->AddFace( cubePos, BlockFace::Down );
+
+                  // Replace the repeated face-filling blocks with a lambda to reduce duplication
+                  auto fillFace = [ & ]( int adjHeight, int height, BlockFace face )
+                  {
+                     if( height > adjHeight ) // Add faces if not adjacent to another block
+                     {
+                        chunk->AddFace( cubePos, face );
+                        for( int h = adjHeight + 1; h < height; h++ )
+                           chunk->AddFace( glm::vec3( x, h, z ), face );
+                     }
+                  };
+                  fillFace( adjHeightNorth, height, BlockFace::North );
+                  fillFace( adjHeightSouth, height, BlockFace::South );
+                  fillFace( adjHeightEast, height, BlockFace::East );
+                  fillFace( adjHeightWest, height, BlockFace::West );
                }
             }
+
+            // set color of chunk randomly
+            chunk->SetColor( glm::vec3( std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f ) );
 
             {
                std::lock_guard< std::mutex > lock( m_chunkMutex );
@@ -334,19 +344,9 @@ void World::Setup()
    m_cubeMeshes.push_back( m_pSun );
 }
 
-glm::vec3 lightPos;
-void      World::Tick( float delta, Camera& camera )
+void World::Tick( float delta, Camera& camera )
 {
-   { // sun orbits player
-      //static float time = 0.0f;
-      //time              = std::fmod( time + delta, 20.0f ); // Loop back every 5 seconds
-
-      //float angle = glm::two_pi< float >() * ( time / 20.0f ); // 360 degrees in radians (two_pi)
-      //lightPos    = camera.GetPosition() + glm::vec3( ( glm::cos( angle ) * 10.0f ), ( glm::sin( angle ) * 10.0f ), 0.0f );
-   }
-
-   lightPos = camera.GetPosition() + glm::vec3( 0.0f, 5.0f, 0.0 );
-   m_pSun->SetPosition( lightPos );
+   m_pSun->SetPosition( camera.GetPosition() );
 }
 
 // Render the world from provided perspective
@@ -364,7 +364,7 @@ void World::Render( const Camera& camera )
    pShader->SetUniform( "u_MVP", camera.GetProjectionView() ); // Set Model-View-Projection matrix
    pShader->SetUniform( "u_viewPos", camera.GetPosition() );   // Set camera position
    //pShader->SetUniform( "u_color", 0.5f, 0.0f, 0.0f );         // Set color (example: red)
-   pShader->SetUniform( "u_lightPos", lightPos ); // Set light position
+   pShader->SetUniform( "u_lightPos", camera.GetPosition() ); // Set light position
 
    // 4. Optional: Bind texture (if any)
    // m_Texture->Bind(0); // Bind texture (if using one)
@@ -419,7 +419,7 @@ void World::Render( const Camera& camera )
 void World::ReceivePlayerPosition( uint64_t clientID, const glm::vec3& position )
 {
    if( m_otherPlayers.find( clientID ) == m_otherPlayers.end() )
-      throw std::runtime_error( "Player does not exist" );
+      return;
 
    m_otherPlayers[ clientID ]->SetPosition( position - glm::vec3( 0.0f, 1.0f, 0.0f ) ); // set position, adjust for head level
 }

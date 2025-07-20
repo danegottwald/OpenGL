@@ -62,15 +62,23 @@ void NetworkClient::RecvThread()
          size_t offset = 0;
          while( offset < static_cast< size_t >( bytesReceived ) )
          {
-            Packet inPacket = Packet::Deserialize( buffer, offset );
-            offset += inPacket.Size();
-            std::lock_guard< std::mutex > lock( m_queueMutex );
-            m_incomingPackets.push( inPacket );
+            if( auto inPacket = Packet::Deserialize( buffer, offset ) )
+            {
+               offset += inPacket->Size();
+               std::lock_guard< std::mutex > lock( m_queueMutex );
+               m_incomingPackets.push( *inPacket );
+            }
+            else
+            {
+               s_logs.push_back( std::format( "Failed to deserialize packet: {}", std::to_underlying( inPacket.error() ) ) );
+               break;
+            }
          }
       }
       else if( bytesReceived == 0 || ( bytesReceived < 0 && WSAGetLastError() != WSAEWOULDBLOCK ) )
       {
-         m_running = false;
+         m_fConnected = false;
+         m_running    = false;
          break;
       }
 
@@ -78,15 +86,15 @@ void NetworkClient::RecvThread()
    }
 }
 
-bool NetworkClient::PollPacket( Packet& packet )
+std::optional< Packet > NetworkClient::PollPacket()
 {
    std::lock_guard< std::mutex > lock( m_queueMutex );
    if( m_incomingPackets.empty() )
-      return false; // No packets to process
+      return std::nullopt; // No packets to process
 
-   packet = m_incomingPackets.front();
+   const Packet& packet = m_incomingPackets.front();
    m_incomingPackets.pop();
-   return true;
+   return packet;
 }
 
 void NetworkClient::Connect( const char* ipAddress, uint16_t port )
@@ -97,9 +105,14 @@ void NetworkClient::Connect( const char* ipAddress, uint16_t port )
    if( connect( m_hostSocket, ( struct sockaddr* )&m_socketAddressIn, sizeof( m_socketAddressIn ) ) == SOCKET_ERROR )
    {
       if( WSAGetLastError() != WSAEWOULDBLOCK )
+      {
          std::cerr << "connect error: " << WSAGetLastError() << std::endl;
+         m_fConnected = false;
+         return;
+      }
    }
 
+   //m_fConnected = true; // Set to true only if connect did not fail
    StartRecvThread();
 }
 
@@ -133,7 +146,10 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world, 
       //   SendPacket( Packet::Create< NetworkCode::Handshake >( m_ID, m_serverID, {} ) );
       //   Events::Dispatch< Events::NetworkClientConnectEvent >( m_serverID );
       //   break;
-      case NetworkCode::HostShutdown: Events::Dispatch< Events::NetworkHostShutdownEvent >( inPacket.m_sourceID ); break;
+      case NetworkCode::HostShutdown:
+         m_fConnected = false;
+         Events::Dispatch< Events::NetworkHostShutdownEvent >( inPacket.m_sourceID );
+         break;
       case NetworkCode::ClientConnect:
       {
          if( m_fConnected )
@@ -178,12 +194,11 @@ void NetworkClient::Poll( World& world, Player& player )
    if( m_hostSocket == INVALID_SOCKET )
       return;
 
-   // Send position update if connected
+   // Send position updates if connected
    if( m_fConnected )
       SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, m_serverID, player.GetPosition() ) );
 
    // Process incoming packets
-   Packet inPacket;
-   while( PollPacket( inPacket ) )
-      HandleIncomingPacket( inPacket, world, player );
+   while( std::optional< Packet > optInPacket = PollPacket() )
+      HandleIncomingPacket( *optInPacket, world, player );
 }

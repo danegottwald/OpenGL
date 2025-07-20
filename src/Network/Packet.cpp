@@ -38,52 +38,13 @@ static void DeserializeFixedFields( Packet& packet, const std::vector< uint8_t >
    return data;
 }
 
-enum class DeserializeResult
-{
-   Success                    = 0,
-   InsufficientData           = 1,
-   DataOffsetOutOfBounds      = 2,
-   BufferLengthExceedsMaxSize = 3,
-};
-
-struct DeserializationResult
-{
-   DeserializeResult       m_result;
-   std::optional< Packet > m_optPacket; // only valid if m_result == DeserializeResult::Success
-};
-
-/* static */ DeserializationResult Deserialize( const std::vector< uint8_t >& data, size_t dataOffset )
+/* static */ std::expected< Packet, Packet::DeserializationError > Packet::Deserialize( const std::vector< uint8_t >& data, size_t dataOffset )
 {
    if( dataOffset >= data.size() )
-      return { DeserializeResult::DataOffsetOutOfBounds, std::nullopt };
+      return std::unexpected( DeserializationError::DataOffsetOutOfBounds );
 
    if( data.size() < Packet::HeaderSize() )
-      return { DeserializeResult::InsufficientData, std::nullopt };
-
-   Packet packet;
-   size_t offset = dataOffset;
-   DeserializeFixedFields( packet, data, offset );
-
-   if( packet.m_bufferLength == 0 )
-      return { DeserializeResult::Success, std::move( packet ) }; // No buffer data, return early
-
-   if( packet.m_bufferLength > PACKET_BUFFER_SIZE )
-      return { DeserializeResult::BufferLengthExceedsMaxSize, std::nullopt };
-
-   if( data.size() - offset < packet.m_bufferLength )
-      return { DeserializeResult::InsufficientData, std::nullopt }; // not enough remaining data for buffer
-
-   std::memcpy( packet.m_buffer.data(), data.data() + offset, packet.m_bufferLength ); // deserialize m_buffer
-   return { DeserializeResult::Success, std::move( packet ) };
-}
-
-/* static */ Packet Packet::Deserialize( const std::vector< uint8_t >& data, size_t dataOffset )
-{
-   if( dataOffset >= data.size() )
-      throw std::runtime_error( "Data offset is out of bounds." );
-
-   if( data.size() < HeaderSize() )
-      throw std::runtime_error( "Data size is insufficient for header deserialization." );
+      return std::unexpected( DeserializationError::InsufficientData );
 
    Packet packet;
    size_t offset = dataOffset;
@@ -93,10 +54,10 @@ struct DeserializationResult
       return packet; // No buffer data, return early
 
    if( packet.m_bufferLength > PACKET_BUFFER_SIZE )
-      throw std::runtime_error( "Buffer length exceeds the maximum allowed size." );
+      return std::unexpected( DeserializationError::BufferLengthExceedsMaxSize );
 
    if( data.size() - offset < packet.m_bufferLength )
-      throw std::runtime_error( "Data size is insufficient for buffer deserialization." );
+      return std::unexpected( DeserializationError::InsufficientData ); // not enough remaining data for buffer
 
    std::memcpy( packet.m_buffer.data(), data.data() + offset, packet.m_bufferLength ); // deserialize m_buffer
    return packet;

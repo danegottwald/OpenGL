@@ -111,16 +111,23 @@ void NetworkHost::ClientIOThread( uint64_t clientID )
          size_t offset = 0;
          while( offset < static_cast< size_t >( bytesReceived ) )
          {
-            Packet inPacket = Packet::Deserialize( recvBuffer, offset );
-            offset += inPacket.Size();
+            if( auto inPacket = Packet::Deserialize( recvBuffer, offset ) )
+            {
+               offset += inPacket->Size();
 
-            // Handle the packet
-            // TODO: Pass World/Player for game logic
-            // For now, pass nullptrs (should be refactored for real use)
+               // Handle the packet
+               // TODO: Pass World/Player for game logic
+               // For now, pass nullptrs (should be refactored for real use)
 
-            World*  dummyWorld  = nullptr;
-            Player* dummyPlayer = nullptr;
-            HandleIncomingPacket( inPacket, *( World* )dummyWorld, *( Player* )dummyPlayer );
+               World*  dummyWorld  = nullptr;
+               Player* dummyPlayer = nullptr;
+               HandleIncomingPacket( *inPacket, *( World* )dummyWorld, *( Player* )dummyPlayer );
+            }
+            else
+            {
+               s_logs.push_back( std::format( "Failed to deserialize packet from client {}: {}", clientID, std::to_underlying( inPacket.error() ) ) );
+               break;
+            }
          }
       }
       else if( bytesReceived == 0 || ( bytesReceived < 0 && WSAGetLastError() != WSAEWOULDBLOCK ) )
@@ -270,6 +277,8 @@ void NetworkHost::Shutdown()
 void NetworkHost::Poll( World& world, Player& player )
 {
    // No-op: all work is done in threads
+
+   SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0, player.GetPosition() ) );
 }
 
 // TODO: Implement ProcessPacket to handle game logic, relay, etc.

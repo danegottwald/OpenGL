@@ -22,16 +22,16 @@ private:
    constexpr NetworkType GetNetworkType() const noexcept override { return NetworkType::Client; }
 
    // Threaded receive logic
-   void StartRecvThread();
-   void StopRecvThread();
-   void RecvThread();
-   bool PollPacket( Packet& packet );
+   void                    StartRecvThread();
+   void                    StopRecvThread();
+   void                    RecvThread();
+   std::optional< Packet > PollPacket();
 
    uint64_t    m_serverID { 0 }; // ID of the server
    std::string m_serverIpAddress { DEFAULT_ADDRESS };
-   bool        m_fConnected { false };
 
    // Threading and queue
+   std::atomic< bool >  m_fConnected { false };
    std::atomic< bool >  m_running { false };
    std::thread          m_recvThread;
    std::queue< Packet > m_incomingPackets;

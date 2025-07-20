@@ -49,7 +49,14 @@ struct Packet
    [[nodiscard]] static typename NetworkCodeType< TCode >::Type ParseBuffer( const Packet& packet );
 
    [[nodiscard]] static std::vector< uint8_t > Serialize( const Packet& packet );
-   [[nodiscard]] static Packet                 Deserialize( const std::vector< uint8_t >& data, size_t dataOffset = 0 );
+
+   enum class DeserializationError
+   {
+      InsufficientData           = 0,
+      DataOffsetOutOfBounds      = 1,
+      BufferLengthExceedsMaxSize = 2,
+   };
+   [[nodiscard]] static std::expected< Packet, DeserializationError > Deserialize( const std::vector< uint8_t >& data, size_t dataOffset = 0 );
 };
 
 inline constexpr size_t Packet::HeaderSize() noexcept
