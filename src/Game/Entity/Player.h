@@ -34,10 +34,7 @@ private:
    void UpdateState( World& world, float delta );
 
    Events::EventSubscriber m_eventSubscriber;
-   std::unordered_map< uint16_t, bool > m_InputMap;
-   void MouseButtonPressed( const Events::MouseButtonPressedEvent& e ) noexcept;
-   void MouseButtonReleased( const Events::MouseButtonReleasedEvent& e ) noexcept;
-   void MouseMove( const Events::MouseMovedEvent& e ) noexcept;
+   void                    MouseMove( const Events::MouseMovedEvent& e ) noexcept;
 
    bool m_fInAir { false };
 };

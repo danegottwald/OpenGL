@@ -119,4 +119,64 @@ void DebugGUI::Draw()
       }
       ImGui::End();
    }
+
+   struct ServerListItem
+   {
+      std::string name;
+      int         playerCount;
+      int         ping;
+      bool        connectRequested = false;
+   };
+
+   // Add this to your DebugGUI class (or another GUI element as needed)
+   std::vector< ServerListItem > m_serverList = {
+      { "Alpha Server",   12, 45 },
+      { "Bravo Server",   8,  60 },
+      { "Charlie Server", 24, 30 },
+      { "Delta Server",   5,  80 },
+      { "Echo Server",    16, 55 },
+      { "Foxtrot Server", 9,  70 },
+      { "Golf Server",    20, 40 },
+      { "Hotel Server",   7,  90 }  // ... add more as needed
+   };
+
+   { // ImGui Server List (fills window, no padding, no title)
+      ImGui::SetNextWindowPos( ImVec2( 10, 200 ), ImGuiCond_Always );
+      ImGui::SetNextWindowSize( ImVec2( 400, 250 ), ImGuiCond_Always );
+
+      ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( 0, 0 ) );
+      ImGui::Begin( "Server List", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse );
+
+      if( ImGui::BeginTable( "ServerListTable",
+                             4,
+                             ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp ) )
+      {
+         ImGui::TableSetupColumn( "Server Name", ImGuiTableColumnFlags_WidthStretch );
+         ImGui::TableSetupColumn( "Players", ImGuiTableColumnFlags_WidthFixed, 70.0f );
+         ImGui::TableSetupColumn( "Ping", ImGuiTableColumnFlags_WidthFixed, 60.0f );
+         ImGui::TableSetupColumn( "Action", ImGuiTableColumnFlags_WidthFixed, 90.0f );
+         ImGui::TableHeadersRow();
+
+         for( size_t i = 0; i < m_serverList.size(); ++i )
+         {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex( 0 );
+            ImGui::TextUnformatted( m_serverList[ i ].name.c_str() );
+            ImGui::TableSetColumnIndex( 1 );
+            ImGui::Text( "%d", m_serverList[ i ].playerCount );
+            ImGui::TableSetColumnIndex( 2 );
+            ImGui::Text( "%d ms", m_serverList[ i ].ping );
+            ImGui::TableSetColumnIndex( 3 );
+            std::string btnLabel = "Connect##" + std::to_string( i );
+            if( ImGui::Button( btnLabel.c_str() ) )
+            {
+               m_serverList[ i ].connectRequested = true;
+               // Handle connect logic here
+            }
+         }
+         ImGui::EndTable();
+      }
+      ImGui::End();
+      ImGui::PopStyleVar();
+   }
 }

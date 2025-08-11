@@ -80,8 +80,10 @@ void NetworkHost::AcceptThread()
          //std::vector< uint8_t > data = Packet::Serialize( Packet::Create< NetworkCode::ClientConnect >( m_ID, newClient.m_clientID, 0 /*data*/ ) );
          //send( clientSocket, reinterpret_cast< const char* >( data.data() ), data.size(), 0 );
 
-         SendPacket( Packet::Create< NetworkCode::ClientConnect >( m_ID, newClient.m_clientID, 0 /*data*/ ) );
-         Events::Dispatch< Events::NetworkClientConnectEvent >( newClient.m_clientID ); // Notify that a new client connected
+         SendPacket( Packet::Create< NetworkCode::ClientConnect >( m_ID, newClient.m_clientID, 0 /*data*/ ) ); // Inform new client of the host
+         Events::Dispatch< Events::NetworkClientConnectEvent >( newClient.m_clientID );                        // Notify that a new client connected
+
+         // TODO: Need to inform all other clients that a new client connected
       }
 
       // Sleep accept thread to avoid busy waiting
@@ -164,8 +166,8 @@ void NetworkHost::HandleIncomingPacket( const Packet& packet, World& world, Play
          // Optionally handle client disconnect logic
          break;
       case NetworkCode::Chat:
-         // Broadcast chat to all clients
-         BroadcastPacket( packet );
+         // Broadcast chat to all except sender
+         BroadcastPacket( packet, packet.m_sourceID );
          Events::Dispatch< Events::NetworkChatReceivedEvent >( packet.m_sourceID, Packet::ParseBuffer< NetworkCode::Chat >( packet ) );
          break;
       case NetworkCode::PositionUpdate:
@@ -218,14 +220,12 @@ void NetworkHost::EnqueueOutgoing( uint64_t clientID, const Packet& packet )
 bool NetworkHost::DequeueOutgoing( uint64_t clientID, Packet& packet )
 {
    std::lock_guard< std::mutex > lock( m_queueMutexes[ clientID ] );
-   if( !m_outgoingQueues[ clientID ].empty() )
-   {
-      packet = m_outgoingQueues[ clientID ].front();
-      m_outgoingQueues[ clientID ].pop();
-      return true;
-   }
+   if( m_outgoingQueues[ clientID ].empty() )
+      return false;
 
-   return false;
+   packet = m_outgoingQueues[ clientID ].front();
+   m_outgoingQueues[ clientID ].pop();
+   return true;
 }
 
 void NetworkHost::DisconnectClient( uint64_t clientID )
@@ -277,7 +277,6 @@ void NetworkHost::Shutdown()
 void NetworkHost::Poll( World& world, Player& player )
 {
    // No-op: all work is done in threads
-
    SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0, player.GetPosition() ) );
 }
 

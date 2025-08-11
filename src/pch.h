@@ -6,6 +6,7 @@
 #include <array>
 #include <cassert>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
@@ -33,6 +34,7 @@
 #include <stack>
 #include <string>
 #include <tuple>
+#include <typeindex>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>

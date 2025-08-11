@@ -22,8 +22,6 @@ Player::Player()
 
    // Subscribe to events
    m_eventSubscriber.Subscribe< Events::MouseMovedEvent >( std::bind( &Player::MouseMove, this, std::placeholders::_1 ) );
-   m_eventSubscriber.Subscribe< Events::MouseButtonPressedEvent >( std::bind( &Player::MouseButtonPressed, this, std::placeholders::_1 ) );
-   m_eventSubscriber.Subscribe< Events::MouseButtonReleasedEvent >( std::bind( &Player::MouseButtonReleased, this, std::placeholders::_1 ) );
 }
 
 void Player::Update( float delta )
@@ -76,10 +74,10 @@ void Player::ApplyInputs()
    if( m_fInAir )
    {
       // Air control: add a portion of wishdir to velocity (horizontal only)
-      glm::vec3 wishvel = wishdir * maxSpeed;
-      glm::vec3 velHoriz = glm::vec3( m_velocity.x, 0, m_velocity.z );
+      glm::vec3 wishvel      = wishdir * maxSpeed;
+      glm::vec3 velHoriz     = glm::vec3( m_velocity.x, 0, m_velocity.z );
       glm::vec3 wishvelHoriz = glm::vec3( wishvel.x, 0, wishvel.z );
-      glm::vec3 add = wishvelHoriz - velHoriz;
+      glm::vec3 add          = wishvelHoriz - velHoriz;
       m_velocity.x += add.x * AIR_CONTROL;
       m_velocity.z += add.z * AIR_CONTROL;
    }
@@ -117,31 +115,13 @@ void Player::UpdateState( World& world, float delta )
    float groundHeight = std::max( { edgeHeight, cornerHeight } );
    bool  wasInAir     = m_fInAir;
    // Player's feet are at (m_position.y - PLAYER_HEIGHT)
-   m_fInAir = (m_position.y - PLAYER_HEIGHT) > groundHeight + 0.01f;
+   m_fInAir = ( m_position.y - PLAYER_HEIGHT ) > groundHeight + 0.01f;
    if( !m_fInAir )
    {
       m_position.y = groundHeight + PLAYER_HEIGHT;
       m_velocity.y = 0.0f;
       // No horizontal velocity stop on landing
    }
-}
-
-void Player::MouseButtonPressed( const Events::MouseButtonPressedEvent& event ) noexcept
-{
-   Window& window = Window::Get();
-   if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
-      return;
-
-   m_InputMap[ event.GetMouseButton() ] = true;
-}
-
-void Player::MouseButtonReleased( const Events::MouseButtonReleasedEvent& event ) noexcept
-{
-   Window& window = Window::Get();
-   if( glfwGetInputMode( window.GetNativeWindow(), GLFW_CURSOR ) != GLFW_CURSOR_DISABLED )
-      return;
-
-   m_InputMap[ event.GetMouseButton() ] = false;
 }
 
 void Player::MouseMove( const Events::MouseMovedEvent& event ) noexcept

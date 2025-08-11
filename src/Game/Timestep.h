@@ -29,29 +29,27 @@ public:
    Timestep( Timestep&& )                 = delete;
    Timestep& operator=( Timestep&& )      = delete;
 
-   // Delta Related
+   // Step the Timestep to update delta time and tick state
    float Step() noexcept
    {
       const double currentTime = glfwGetTime();
       m_delta                  = currentTime - m_lastTime;
       m_lastTime               = currentTime;
-      return m_delta;
-   }
-   float GetLastDelta() const noexcept { return m_delta; }
 
-   // Tick Related
-   bool FTick()
-   {
-      m_accumulator += m_delta;
       if( m_accumulator >= m_interval )
       {
          m_accumulator -= m_interval;
          m_tick++;
-         return true;
       }
+      else
+         m_accumulator += m_delta;
 
-      return false;
+      return m_delta;
    }
+   float GetLastDelta() const noexcept { return m_delta; }
+
+   // Returns true if enough time has passed to advance a tick
+   bool     FTick() noexcept { return m_accumulator >= m_interval; }
    uint64_t GetLastTick() const { return m_tick; }
 
 private:
@@ -60,7 +58,7 @@ private:
    float m_delta { 0.0f };
 
    // Tick
-   float    m_interval { 0.0f };
-   float    m_accumulator { 0.0f };
-   uint64_t m_tick { 0 };
+   const float m_interval { 0.0f };
+   float       m_accumulator { 0.0f };
+   uint64_t    m_tick { 0 };
 };

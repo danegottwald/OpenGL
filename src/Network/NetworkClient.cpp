@@ -152,6 +152,8 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world, 
          break;
       case NetworkCode::ClientConnect:
       {
+         // TODO: Need to handle if clients other than the server connect, this is hacky right now for just server connection
+
          if( m_fConnected )
             break; // Already connected, ignore duplicate, this shouldn't happen
 
