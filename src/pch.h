@@ -64,4 +64,25 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+// Macro Definitions
+class ScopeTimer
+{
+public:
+   ScopeTimer( const std::string& label ) :
+      m_label( label ),
+      m_start( std::chrono::high_resolution_clock::now() )
+   {}
+
+   ~ScopeTimer()
+   {
+      double ms = std::chrono::duration< double, std::milli >( std::chrono::high_resolution_clock::now() - m_start ).count();
+      std::cout << m_label << " took " << std::fixed << std::setprecision( 3 ) << ms << "ms\n";
+   }
+
+private:
+   std::string                                    m_label;
+   std::chrono::high_resolution_clock::time_point m_start;
+};
+#define PROFILE_SCOPE( name ) ScopeTimer timer##__LINE__{name}
+
 #endif // PCH_H

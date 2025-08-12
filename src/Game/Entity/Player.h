@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Entity.h"
 #include "IGameObject.h"
 
 #include <unordered_map>
