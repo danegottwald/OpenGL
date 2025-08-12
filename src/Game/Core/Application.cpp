@@ -1,4 +1,3 @@
-
 #include "Application.h"
 
 #include "../Timestep.h"
@@ -45,44 +44,40 @@ public:
    Registry()  = default;
    ~Registry() = default;
 
-   [[nodiscard]] Entity Create()
+   [[nodiscard]] Entity Create() noexcept
    {
-      Entity entity = 0;
+      Entity entity = !m_recycledEntities.empty() ? m_recycledEntities.front() : m_nextEntity++;
       if( !m_recycledEntities.empty() )
-      {
-         entity = m_recycledEntities.front();
          m_recycledEntities.pop();
-      }
-      else
-         entity = m_nextEntity++;
 
-      m_entityComponentTypes[ entity ] = std::unordered_set< ComponentTypeKey >(); // Initialize with an empty set of component types
+      m_entityComponentTypes[ entity ] = {}; // Initialize with an empty set of component types
       return entity;
    }
 
    void Destroy( Entity entity )
    {
-      if( auto compTypesIter = m_entityComponentTypes.find( entity ); compTypesIter != m_entityComponentTypes.end() )
+      auto compTypesIter = m_entityComponentTypes.find( entity );
+      if( compTypesIter == m_entityComponentTypes.end() )
+         return; // Entity does not exist, nothing to destroy
+
+      for( ComponentTypeKey typeKey : compTypesIter->second )
       {
-         for( ComponentTypeKey typeKey : compTypesIter->second )
-         {
-            // The pool MUST exist at this point; otherwise, why do we have a record of the typeKey?
-            Pool* pPool = m_storagePools.at( typeKey ).get();
-            pPool->Remove( entity );
+         // The pool MUST exist at this point; otherwise, why do we have a record of the typeKey?
+         Pool* pPool = m_storagePools.at( typeKey ).get();
+         pPool->Remove( entity );
 
-            // Will invalidate pPool pointer, do not use it after this point
-            if( pPool->FEmpty() )
-               m_storagePools.erase( typeKey ); // If the pool is empty, we can remove it from the storage pools
-         }
-
-         m_entityComponentTypes.erase( entity );
-         m_recycledEntities.push( entity ); // Recycle the entity ID for future use
+         // Will invalidate pPool pointer, do not use it after this point
+         if( pPool->FEmpty() )
+            m_storagePools.erase( typeKey ); // If the pool is empty, we can remove it from the storage pools
       }
+
+      m_entityComponentTypes.erase( entity );
+      m_recycledEntities.push( entity ); // Recycle the entity ID for future use
    }
 
    // FValid
    //   Checks if the entity is valid, i.e., it has not been destroyed.
-   [[nodiscard]] bool FValid( Entity entity ) const { return m_entityComponentTypes.contains( entity ); }
+   [[nodiscard]] bool FValid( Entity entity ) const noexcept { return m_entityComponentTypes.contains( entity ); }
 
    // AddComponent
    //   Adds a component to the entity, if the entity already has the component, it will throw an error.
@@ -91,8 +86,12 @@ public:
    void AddComponent( Entity entity, TArgs&&... args )
    {
       // If the entity already has this component type, throw an error
+      auto it = m_entityComponentTypes.find( entity );
+      if( it == m_entityComponentTypes.end() )
+         throw std::runtime_error( std::string( "Entity does not exist: " ) + std::to_string( entity ) );
+
       ComponentTypeKey typeKey = GetTypeKey< TComponent >();
-      if( m_entityComponentTypes.contains( entity ) && m_entityComponentTypes[ entity ].contains( typeKey ) )
+      if( it->second.contains( typeKey ) )
          throw std::runtime_error( std::string( "Entity already has component: " ) + typeid( TComponent ).name() );
 
       // Otherwise, ensure the storage exists for this component type and associate it with the entity
@@ -100,29 +99,25 @@ public:
       storage.m_components.emplace_back( std::forward< TArgs >( args )... );
       storage.m_entityAtIndex.push_back( entity );
       storage.m_entityIndexMap[ entity ] = storage.m_components.size() - 1;
-
-      // Record that this entity has this component type
-      m_entityComponentTypes[ entity ].insert( typeKey );
+      it->second.insert( typeKey );
    }
 
    // RemoveComponent
    //   Removes the component from the entity if the entity has the component; otherwise, it does nothing.
    template< typename TComponent >
-   void RemoveComponent( Entity entity )
+   void RemoveComponent( Entity entity ) noexcept
    {
-      bool             fEmpty  = false;
+      ComponentStorage< TComponent >* pStorage = GetStorage< TComponent >();
+      if( !pStorage )
+         return; // Storage does not exist for this component type
+
+      pStorage->Remove( entity );
       ComponentTypeKey typeKey = GetTypeKey< TComponent >();
-      if( ComponentStorage< TComponent >* pStorage = GetStorage< TComponent >() )
-      {
-         pStorage->Remove( entity );
-         fEmpty = pStorage->FEmpty();
+      m_entityComponentTypes[ entity ].erase( typeKey );
 
-         m_entityComponentTypes[ entity ].erase( typeKey );
-      }
-
-      // If the storage is empty, we can remove it from the storage pools
-      if( fEmpty )
-         m_storagePools.erase( typeKey );
+      // If the storage is empty, remove it from the storage pools. This will invalidate pStorage pointer, do not use it after this point.
+      if( pStorage->FEmpty() )
+         m_storagePools.erase( typeKey ); // pStorage is no longer valid after this point
    }
 
    // RemoveComponents
@@ -136,31 +131,107 @@ public:
    // GetComponent
    //   Returns a pointer to the component of the entity. If the entity does not have the component, it returns nullptr.
    template< typename TComponent >
-   [[nodiscard]] TComponent* GetComponent( Entity entity )
+   [[nodiscard]] TComponent* GetComponent( Entity entity ) const noexcept
    {
-      if( ComponentStorage< TComponent >* pStorage = GetStorage< TComponent >() )
-      {
-         if( auto it = pStorage->m_entityIndexMap.find( entity ); it != pStorage->m_entityIndexMap.end() )
-            return &pStorage->m_components.at( it->second );
-      }
+      ComponentStorage< TComponent >* pStorage = GetStorage< TComponent >();
+      if( !pStorage )
+         return nullptr; // Storage does not exist for this component type
 
-      return nullptr; // Entity does not have the component
+      auto it = pStorage->m_entityIndexMap.find( entity );
+      return ( it != pStorage->m_entityIndexMap.end() ) ? &pStorage->m_components.at( it->second ) : nullptr;
    }
 
    // GetComponents
    //   Returns a tuple of pointers to the components of the entity. If the entity does not have a component, the pointer will be nullptr.
    template< typename... TComponents >
-   [[nodiscard]] auto GetComponents( Entity entity )
+   [[nodiscard]] auto GetComponents( Entity entity ) const noexcept
    {
       return std::tuple< TComponents*... > { GetComponent< TComponents >( entity )... };
+   }
+
+   template< typename TComponent >
+   [[nodiscard]] bool FHasComponent( Entity entity ) const noexcept
+   {
+      auto it = m_entityComponentTypes.find( entity );
+      return it != m_entityComponentTypes.end() && ( it->second.find( GetTypeKey< TComponent >() ) != it->second.end() );
+   }
+
+   template< typename... TComponents >
+   [[nodiscard]] bool FHasComponents( Entity entity ) const noexcept
+   {
+      return ( FHasComponent< TComponents >( entity ) && ... );
+   }
+
+   template< typename... TComponents >
+   class ViewIterator
+   {
+   public:
+      ViewIterator( Registry& registry ) noexcept :
+         m_registry( registry )
+      {
+         size_t minSize     = ( std::numeric_limits< size_t >::max )();
+         auto   checkPoolFn = [ this, &minSize ]< typename TComponent >() noexcept
+         {
+            if( auto* storage = m_registry.GetStorage< TComponent >(); storage && storage->m_entityAtIndex.size() < minSize )
+            {
+               minSize     = storage->m_entityAtIndex.size();
+               m_pEntities = &storage->m_entityAtIndex;
+            }
+         };
+         ( checkPoolFn.template operator()< TComponents >(), ... );
+      }
+
+      struct Iterator
+      {
+         Registry&                   registry;
+         std::vector< EntityIndex >* entities;
+         size_t                      index;
+
+         Iterator( Registry& reg, std::vector< EntityIndex >* ents, size_t idx ) noexcept :
+            registry( reg ),
+            entities( ents ),
+            index( idx )
+         {
+            SkipInvalid();
+         }
+
+         Iterator& operator++() noexcept
+         {
+            ++index;
+            SkipInvalid();
+            return *this;
+         }
+         bool operator!=( const Iterator& other ) const noexcept { return index != other.index; }
+         auto operator*() const noexcept { return std::tuple< TComponents&... > { *( registry.GetComponent< TComponents >( ( *entities )[ index ] ) )... }; }
+
+      private:
+         void SkipInvalid() noexcept
+         {
+            while( index < entities->size() && !registry.FHasComponents< TComponents... >( ( *entities )[ index ] ) )
+               ++index;
+         }
+      };
+
+      Iterator begin() noexcept { return Iterator( m_registry, m_pEntities, 0 ); }
+      Iterator end() noexcept { return Iterator( m_registry, m_pEntities, m_pEntities ? m_pEntities->size() : 0 ); }
+
+   private:
+      Registry&                   m_registry;
+      std::vector< EntityIndex >* m_pEntities = nullptr;
+   };
+
+   template< typename... TComponents >
+   ViewIterator< TComponents... > View() noexcept
+   {
+      return ViewIterator< TComponents... >( *this );
    }
 
 private:
    struct Pool
    {
-      virtual ~Pool() noexcept             = default;
-      virtual void Remove( Entity )        = 0;
-      virtual bool FEmpty() const noexcept = 0;
+      virtual ~Pool() noexcept               = default;
+      virtual void Remove( Entity ) noexcept = 0;
+      virtual bool FEmpty() const noexcept   = 0;
    };
 
    template< typename TComponent >
@@ -171,26 +242,20 @@ private:
       std::unordered_map< Entity, size_t > m_entityIndexMap; // maps entity -> index
 
       // Remove the entity from this storage
-      void Remove( Entity entity ) override
+      void Remove( Entity entity ) noexcept override
       {
          auto it = m_entityIndexMap.find( entity );
          if( m_components.empty() || it == m_entityIndexMap.end() )
             return;
 
          const EntityIndex index = it->second;
-
-         // swap and pop to remove the component (overwrite with last component)
-         m_components.at( index ) = std::move( m_components.back() );
+         m_components[ index ]   = std::move( m_components.back() ); // swap-and-pop component
          m_components.pop_back();
-
-         // swap and pop to remove the entity from the index (overwrite with last entity)
-         m_entityAtIndex.at( index ) = std::move( m_entityAtIndex.back() );
+         m_entityAtIndex[ index ] = std::move( m_entityAtIndex.back() ); // swap-and-pop entity
          m_entityAtIndex.pop_back();
-
-         // erase entity from index map and update the index of the swapped entity
-         m_entityIndexMap.erase( entity );
+         m_entityIndexMap.erase( entity ); // remove the entity from the index map
          if( !m_entityAtIndex.empty() && index < m_entityAtIndex.size() )
-            m_entityIndexMap[ m_entityAtIndex.at( index ) ] = index;
+            m_entityIndexMap[ m_entityAtIndex[ index ] ] = index;
       }
 
       bool FEmpty() const noexcept override { return m_components.empty(); }
@@ -198,7 +263,7 @@ private:
 
    // Uses the unique type address as a key to identify the component type
    template< typename TComponent >
-   ComponentTypeKey GetTypeKey()
+   ComponentTypeKey GetTypeKey() const noexcept
    {
       static int typeKey;
       return &typeKey; // Return the address of the static variable as a unique key for the TComponent type
@@ -216,13 +281,10 @@ private:
    }
 
    template< typename TComponent >
-   ComponentStorage< TComponent >* GetStorage() // Will return nullptr if the storage does not exist
+   ComponentStorage< TComponent >* GetStorage() const noexcept // Will return nullptr if the storage does not exist
    {
-      ComponentTypeKey typeKey = GetTypeKey< TComponent >();
-      if( auto it = m_storagePools.find( typeKey ); it != m_storagePools.end() )
-         return static_cast< ComponentStorage< TComponent >* >( it->second.get() );
-
-      return nullptr;
+      auto it = m_storagePools.find( GetTypeKey< TComponent >() );
+      return ( it != m_storagePools.end() ) ? static_cast< ComponentStorage< TComponent >* >( it->second.get() ) : nullptr;
    }
 
    Entity               m_nextEntity { 1 }; // Start from 1 to avoid zero ID (could be reserved for invalid entity)
@@ -360,6 +422,35 @@ void Application::Run()
          registry.AddComponent< PositionComponent >( entity2, 3.0f, 4.0f, 5.0f );
          if( PositionComponent* pPos = registry.GetComponent< PositionComponent >( entity1 ) )
             std::println( "E2 - Position: ({}, {}, {})", pPos->position.x, pPos->position.y, pPos->position.z );
+      }
+
+      {
+         // HasComponents
+         std::println( "E1 Has PositionComponent - {}", registry.FHasComponent< PositionComponent >( entity1 ) );
+         std::println( "E1 Has VelocityComponent - {}", registry.FHasComponent< VelocityComponent >( entity1 ) );
+         std::println( "E2 Has both - {}", registry.FHasComponents< PositionComponent, VelocityComponent >( entity1 ) );
+      }
+
+      {
+         // View
+         for( int i = 0; i < 10; i++ )
+         {
+            AEntity::Entity entity = registry.Create();
+            registry.AddComponent< PositionComponent >( entity, i * 1.0f, i * 1.0f, i * 1.0f );
+            registry.AddComponent< VelocityComponent >( entity, i * 0.1f, i * 0.1f, i * 0.1f );
+         }
+
+         auto view = registry.View< PositionComponent, VelocityComponent >();
+         for( auto [ pos, vel ] : view )
+         {
+            std::println( "View - Position: ({}, {}, {}), Velocity: ({}, {}, {})",
+                          pos.position.x,
+                          pos.position.y,
+                          pos.position.z,
+                          vel.velocity.x,
+                          vel.velocity.y,
+                          vel.velocity.z );
+         }
       }
 
       {
