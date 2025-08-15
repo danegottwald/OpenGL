@@ -10,15 +10,17 @@
 
 #include "GUIManager.h"
 
-struct PositionComponent
+struct TransformComponent
 {
    glm::vec3 position { 0.0f, 0.0f, 0.0f };
+   glm::quat rotation { 0.0f, 0.0f, 0.0f, 1.0f };
+   glm::vec3 scale { 1.0f, 1.0f, 1.0f };
 
-   PositionComponent() = default;
-   PositionComponent( float x, float y, float z ) :
-      position( x, y, z )
+   TransformComponent() = default;
+   TransformComponent( float xPos, float yPos, float zPos ) :
+      position( xPos, yPos, zPos )
    {}
-   PositionComponent( const glm::vec3& pos ) :
+   TransformComponent( const glm::vec3& pos ) :
       position( pos )
    {}
 };
@@ -41,8 +43,7 @@ struct InputComponent
 
 void InputSystem( Entity::Registry& registry, float delta, bool fDidTick )
 {
-   auto [ pPos, pVel ] = registry.GetComponents< PositionComponent, VelocityComponent >( 1 /*entity*/ );
-   if( pPos && pVel )
+   for( auto [ tran, vel, input ] : registry.CView< TransformComponent, VelocityComponent, InputComponent >() )
    {
       const float accel  = 12.0f * delta;
       auto        dampen = []( float& v, float amount )
@@ -54,43 +55,93 @@ void InputSystem( Entity::Registry& registry, float delta, bool fDidTick )
       };
 
       if( Input::IsKeyPressed( Input::W ) )
-         pVel->velocity.y += accel;
+         vel.velocity.y += accel;
       else if( Input::IsKeyPressed( Input::S ) )
-         pVel->velocity.y -= accel;
+         vel.velocity.y -= accel;
       else
-         dampen( pVel->velocity.y, accel );
+         dampen( vel.velocity.y, accel );
 
       if( Input::IsKeyPressed( Input::D ) )
-         pVel->velocity.x += accel;
+         vel.velocity.x += accel;
       else if( Input::IsKeyPressed( Input::A ) )
-         pVel->velocity.x -= accel;
+         vel.velocity.x -= accel;
       else
-         dampen( pVel->velocity.x, accel );
+         dampen( vel.velocity.x, accel );
 
       constexpr float maxSpeed = 5.0f;
-      pVel->velocity.x         = std::clamp( pVel->velocity.x, -maxSpeed, maxSpeed );
-      pVel->velocity.y         = std::clamp( pVel->velocity.y, -maxSpeed, maxSpeed );
+      vel.velocity.x           = std::clamp( vel.velocity.x, -maxSpeed, maxSpeed );
+      vel.velocity.y           = std::clamp( vel.velocity.y, -maxSpeed, maxSpeed );
 
       if( fDidTick )
-         std::println( "Input: Vel: ({}, {}, {})", pVel->velocity.x, pVel->velocity.y, pVel->velocity.z );
+         std::println( "Input: Vel: ({}, {}, {})", vel.velocity.x, vel.velocity.y, vel.velocity.z );
    }
 }
 
 void PhysicsSystem( Entity::Registry& registry, float delta, bool fDidTick )
 {
-   auto [ pPos, pVel ] = registry.GetComponents< PositionComponent, VelocityComponent >( 1 /*entity*/ );
-   if( pPos && pVel )
+   for( auto [ tran, vel ] : registry.CView< TransformComponent, VelocityComponent >() )
    {
-      pPos->position += pVel->velocity * delta;
+      tran.position += vel.velocity * delta;
 
       if( fDidTick )
          std::println( "Physics: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
-                       pPos->position.x,
-                       pPos->position.y,
-                       pPos->position.z,
-                       pVel->velocity.x,
-                       pVel->velocity.y,
-                       pVel->velocity.z );
+                       tran.position.x,
+                       tran.position.y,
+                       tran.position.z,
+                       vel.velocity.x,
+                       vel.velocity.y,
+                       vel.velocity.z );
+   }
+}
+
+void MovementSystem( Entity::Registry& registry, float delta, bool fDidTick )
+{
+   // Iterate all entities with Transform, Velocity, and Input
+   for( auto [ tran, vel, input ] : registry.CView< TransformComponent, VelocityComponent, InputComponent >() )
+   {
+      // Keyboard input (WASD)
+      const float accel  = 12.0f * delta;
+      auto        dampen = []( float& v, float amount )
+      {
+         if( v > 0.0f )
+            v = std::max< float >( 0.0f, v - amount );
+         else if( v < 0.0f )
+            v = std::min< float >( 0.0f, v + amount );
+      };
+
+      if( Input::IsKeyPressed( Input::W ) )
+         vel.velocity.y += accel;
+      else if( Input::IsKeyPressed( Input::S ) )
+         vel.velocity.y -= accel;
+      else
+         dampen( vel.velocity.y, accel );
+
+      if( Input::IsKeyPressed( Input::D ) )
+         vel.velocity.x += accel;
+      else if( Input::IsKeyPressed( Input::A ) )
+         vel.velocity.x -= accel;
+      else
+         dampen( vel.velocity.x, accel );
+
+      constexpr float maxSpeed = 5.0f;
+      vel.velocity.x           = std::clamp( vel.velocity.x, -maxSpeed, maxSpeed );
+      vel.velocity.y           = std::clamp( vel.velocity.y, -maxSpeed, maxSpeed );
+
+      // Mouse input (example: could be used for looking/rotation)
+      // You can expand this to update orientation, etc.
+      // if( Input::IsMouseMoved() ) { ... }
+
+      // Apply velocity to position
+      tran.position += vel.velocity * delta;
+
+      if( fDidTick )
+         std::println( "MovementSystem: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
+                       tran.position.x,
+                       tran.position.y,
+                       tran.position.z,
+                       vel.velocity.x,
+                       vel.velocity.y,
+                       vel.velocity.z );
    }
 }
 
@@ -109,43 +160,66 @@ void Application::Shutdown()
 
 void Application::Run()
 {
+   Entity::Registry registry;
    {
-      constexpr size_t entityCount = 1'000;
-
-      Entity::Registry registry;
-      for( size_t i = 0; i < entityCount; ++i )
-      {
-         Entity::Entity ent = registry.Create();
-
-         // Assign Position to all
-         registry.AddComponent< PositionComponent >( ent, 0.0f, 0.0f, 0.0f );
-
-         // Assign Velocity to half randomly
-         if( i % 2 == 0 )
-            registry.AddComponent< VelocityComponent >( ent, 0.0f, 0.0f, 0.0f );
-      }
-
       PROFILE_SCOPE( "ECS: View Iterator" );
-      auto view = registry.View< PositionComponent, VelocityComponent >();
-      for( auto [ pos, vel ] : view )
+
+      // Create player entity
+      Entity::Entity dummy  = registry.Create();
+      Entity::Entity player = registry.Create();
+      registry.AddComponent< TransformComponent >( player, 0.0f, 0.0f, 0.0f );
+      registry.AddComponent< VelocityComponent >( player, 0.0f, 0.0f, 0.0f );
+      registry.AddComponent< InputComponent >( player );
+
+      for( auto [ entity, tran, vel ] : registry.ECView< TransformComponent, VelocityComponent >() )
       {
-         pos.position.x += vel.velocity.x;
-         pos.position.y += vel.velocity.y;
-         pos.position.z += vel.velocity.z;
+         std::println( "Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
+                       entity,
+                       tran.position.x,
+                       tran.position.y,
+                       tran.position.z,
+                       vel.velocity.x,
+                       vel.velocity.y,
+                       vel.velocity.z );
       }
+
+      for( auto [ tran, vel ] : registry.CView< TransformComponent, VelocityComponent >() )
+      {
+         std::println( "Transform: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
+                       tran.position.x,
+                       tran.position.y,
+                       tran.position.z,
+                       vel.velocity.x,
+                       vel.velocity.y,
+                       vel.velocity.z );
+      }
+
+      for( Entity::Entity entity : registry.EView< TransformComponent, VelocityComponent >() )
+      {
+         TransformComponent& tran = *registry.GetComponent< TransformComponent >( entity );
+         VelocityComponent&  vel  = *registry.GetComponent< VelocityComponent >( entity );
+
+         std::println( "Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
+                       entity,
+                       tran.position.x,
+                       tran.position.y,
+                       tran.position.z,
+                       vel.velocity.x,
+                       vel.velocity.y,
+                       vel.velocity.z );
+      }
+
+      // Create camera entity
+      Entity::Entity camera = registry.Create();
+      registry.AddComponent< TransformComponent >( camera, 0.0f, 0.0f, 0.0f );
+      // Optionally: registry.AddComponent< CameraComponent >( camera, player ); // if you have a CameraComponent
    }
 
    Init(); // Initialize the application
 
    // TODO:
-   // Write a RenderQueue, IGameObjects will be submitted to the RenderQueue
-   //      After, the RenderQueue will be rendered
    // Write a logging library (log to file)
    //    Get rid of console window, pipe output to a imgui window
-
-   // PlayerManager::GetPlayer() - returns the player
-   //    only one player should theoretically exist at a time
-
    // https://github.com/htmlboss/OpenGL-Renderer
 
    World world;
@@ -158,22 +232,15 @@ void Application::Run()
          world.Setup();
    } );
 
-   Player player;
-   Camera camera;
+   Player playerObj;
+   Camera cameraObj;
 
    // Attach debug UI to track player/camera
-   GUIManager::Attach( std::make_shared< DebugGUI >( player, camera ) );
+   GUIManager::Attach( std::make_shared< DebugGUI >( playerObj, cameraObj ) );
 
    // Attach Network GUI
    INetwork::RegisterGUI();
 
-   // ECS
-   Entity::Registry     registry;
-   const Entity::Entity entity1 = registry.Create();
-   registry.AddComponent< PositionComponent >( entity1, 1.0f, 1.0f, 1.0f );
-   registry.AddComponent< VelocityComponent >( entity1, 0.1f, 0.1f, 0.0f );
-
-   float    time = 0;
    Timestep timestep( 20 /*tickrate*/ );
    Window&  window = Window::Get();
    while( window.IsOpen() )
@@ -189,25 +256,24 @@ void Application::Run()
       }
 
       // Game Ticks
-      world.Tick( delta, camera ); // Update world
-      player.Tick( world, delta ); // Tick Player, use m_World to check collisions
+      world.Tick( delta, cameraObj ); // Update world
+      playerObj.Tick( world, delta ); // Tick Player, use m_World to check collisions
 
       // Game Updates
-      player.Update( delta );  // Update Player
-      camera.Update( player ); // Update Camera to match Player
+      cameraObj.Update( playerObj ); // Update Camera to match Player
 
       if( timestep.FTick() )
       {
          std::println( "Tick: {}", timestep.GetLastTick() );
          if( INetwork* pNetwork = INetwork::Get() )
-            pNetwork->Poll( world, player ); // Poll network events
+            pNetwork->Poll( world, playerObj ); // Poll network events
       }
 
       // Render only if not minimized
       if( !window.FMinimized() )
       {
          // Render
-         world.Render( camera );
+         world.Render( cameraObj );
 
          // Render
          //RenderManager::Render();

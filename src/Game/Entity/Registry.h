@@ -8,13 +8,23 @@ using Entity = uint64_t;
 class Registry
 {
 private:
-   using EntityIndex      = uint32_t;
    using ComponentTypeKey = void*; // Unique identifier for component types, can be a typeid or similar
 
 public:
-   Registry()  = default;
+   /*! @brief Default constructor. */
+   Registry() = default;
+
+   /*! @brief Default destructor. */
    ~Registry() = default;
 
+   /*! @brief Default copy constructor and copy assignment operator, copying is not allowed. */
+   Registry( const Registry& )            = delete;
+   Registry& operator=( const Registry& ) = delete;
+
+   /**
+    * @brief Creates a new entity.
+    * @return The ID of the newly created entity.
+    */
    [[nodiscard]] Entity Create() noexcept
    {
       Entity entity = !m_recycledEntities.empty() ? m_recycledEntities.front() : m_nextEntity++;
@@ -25,6 +35,10 @@ public:
       return entity;
    }
 
+   /**
+    * @brief Destroys the entity and all its components.
+    * @param entity The entity to destroy.
+    */
    void Destroy( Entity entity )
    {
       auto compTypesIter = m_entityComponentTypes.find( entity );
@@ -43,16 +57,22 @@ public:
       }
 
       m_entityComponentTypes.erase( entity );
-      m_recycledEntities.push( entity ); // Recycle the entity ID for future use
+      m_recycledEntities.push( entity ); // Recycle the entity for future use
    }
 
-   // FValid
-   //   Checks if the entity is valid, i.e., it has not been destroyed.
+   /**
+    * @brief Checks if the entity is valid.
+    * @param entity The entity to check.
+    * @return True if the entity is valid, false otherwise.
+    */
    [[nodiscard]] bool FValid( Entity entity ) const noexcept { return m_entityComponentTypes.contains( entity ); }
 
-   // AddComponent
-   //   Adds a component to the entity, if the entity already has the component, it will throw an error.
-   //   Enforces that each entity can only have one instance of a component type.
+   /**
+    * @brief Adds a component of the specified type to the entity. Ensures that the entity does not already have the component.
+    * @tparam TComponent The type of the component to add.
+    * @param entity The entity to which the component will be added.
+    * @param args The arguments to construct the component.
+    */
    template< typename TComponent, typename... TArgs >
    void AddComponent( Entity entity, TArgs&&... args )
    {
@@ -71,8 +91,11 @@ public:
       it->second.insert( typeKey );
    }
 
-   // RemoveComponent
-   //   Removes the component from the entity if the entity has the component; otherwise, it does nothing.
+   /**
+    * @brief Removes a component from the entity.
+    * @tparam TComponent The type of the component to remove.
+    * @param entity The entity from which to remove the component.
+    */
    template< typename TComponent >
    void RemoveComponent( Entity entity ) noexcept
    {
@@ -88,16 +111,23 @@ public:
          m_storagePools.erase( typeKey ); // pStorage is no longer valid after this point
    }
 
-   // RemoveComponents
-   //   Removes multiple components from the entity. If the entity does not have a component, it will do nothing for that component.
+   /**
+    * @brief Removes multiple components from the entity.
+    * @tparam TComponents The types of the components to remove.
+    * @param entity The entity from which to remove the components.
+    */
    template< typename... TComponents >
    void RemoveComponents( Entity entity )
    {
       ( RemoveComponent< TComponents >( entity ), ... );
    }
 
-   // GetComponent
-   //   Returns a pointer to the component of the entity. If the entity does not have the component, it returns nullptr.
+   /**
+    * @brief Gets a component of the specified type from the entity.
+    * @tparam TComponent The type of the component.
+    * @param entity The entity from which to get the component.
+    * @return A pointer to the component if it exists, nullptr otherwise.
+    */
    template< typename TComponent >
    [[nodiscard]] TComponent* GetComponent( Entity entity ) const noexcept
    {
@@ -109,14 +139,24 @@ public:
       return ( it != pStorage->m_entityIndexMap.end() ) ? &pStorage->m_components.at( it->second ) : nullptr;
    }
 
-   // GetComponents
-   //   Returns a tuple of pointers to the components of the entity. If the entity does not have a component, the pointer will be nullptr.
+   /**
+    * @brief Gets multiple components of the specified types from the entity.
+    * @tparam TComponents The types of the components.
+    * @param entity The entity from which to get the components.
+    * @return A tuple of pointers to the components if they exist, nullptr otherwise.
+    */
    template< typename... TComponents >
    [[nodiscard]] auto GetComponents( Entity entity ) const noexcept
    {
       return std::tuple< TComponents*... > { GetComponent< TComponents >( entity )... };
    }
 
+   /**
+    * @brief Checks if the entity has a component of the specified type.
+    * @tparam TComponent The type of the component to check.
+    * @param entity The entity to check.
+    * @return True if the entity has the component, false otherwise.
+    */
    template< typename TComponent >
    [[nodiscard]] bool FHasComponent( Entity entity ) const noexcept
    {
@@ -124,13 +164,21 @@ public:
       return it != m_entityComponentTypes.end() && ( it->second.find( GetTypeKey< TComponent >() ) != it->second.end() );
    }
 
+   /**
+    * @brief Checks if the entity has all of the specified components.
+    * @tparam TComponents The types of the components to check.
+    * @param entity The entity to check.
+    * @return True if the entity has all of the components, false otherwise.
+    */
    template< typename... TComponents >
    [[nodiscard]] bool FHasComponents( Entity entity ) const noexcept
    {
       return ( FHasComponent< TComponents >( entity ) && ... );
    }
 
-   template< typename... TComponents >
+   // clang-format off
+   enum class ViewTupleType { Entity, Components, EntityAndComponents };
+   template< ViewTupleType TTupleType, typename... TComponents >
    class ViewIterator
    {
    public:
@@ -140,59 +188,86 @@ public:
          size_t minSize     = ( std::numeric_limits< size_t >::max )();
          auto   checkPoolFn = [ this, &minSize ]< typename TComponent >() noexcept
          {
-            if( auto* storage = m_registry.GetStorage< TComponent >(); storage && storage->m_entityAtIndex.size() < minSize )
-            {
-               minSize     = storage->m_entityAtIndex.size();
-               m_pEntities = &storage->m_entityAtIndex;
-            }
+            auto* storage = m_registry.GetStorage< TComponent >();
+            if( !storage || storage->m_entityAtIndex.size() >= minSize )
+               return; // Skip this component type if it does not have fewer entities than the current minimum
+
+            minSize          = storage->m_entityAtIndex.size();
+            m_pEntityAtIndex = &storage->m_entityAtIndex;
          };
          ( checkPoolFn.template operator()< TComponents >(), ... );
       }
 
       struct Iterator
       {
-         Registry&                   registry;
-         std::vector< EntityIndex >* entities;
-         size_t                      index;
+         Registry&              registry;
+         std::vector< Entity >* entityAtIndex;
+         size_t                 index;
 
-         Iterator( Registry& reg, std::vector< EntityIndex >* ents, size_t idx ) noexcept :
+         Iterator( Registry& reg, std::vector< Entity >* ents, size_t idx ) noexcept :
             registry( reg ),
-            entities( ents ),
+            entityAtIndex( ents ),
             index( idx )
-         {
-            SkipInvalid();
-         }
+         { SkipInvalid(); }
 
-         Iterator& operator++() noexcept
-         {
-            ++index;
-            SkipInvalid();
-            return *this;
-         }
+         Iterator& operator++() noexcept { ++index; SkipInvalid(); return *this; }
          bool operator!=( const Iterator& other ) const noexcept { return index != other.index; }
-         auto operator*() const noexcept { return std::tuple< TComponents&... > { *( registry.GetComponent< TComponents >( ( *entities )[ index ] ) )... }; }
+         auto operator*() const noexcept
+         {
+            Entity entity = ( *entityAtIndex )[ index ];
+            if constexpr( TTupleType == ViewTupleType::Entity )
+               return entity;
+            else if constexpr( TTupleType == ViewTupleType::Components )
+               return std::tuple< TComponents&... > { *( registry.GetComponent< TComponents >( entity ) )... };
+            else if constexpr( TTupleType == ViewTupleType::EntityAndComponents )
+               return std::tuple< Entity, TComponents&... > { entity, *( registry.GetComponent< TComponents >( entity ) )... };
+         }
 
       private:
          void SkipInvalid() noexcept
          {
-            while( entities && index < entities->size() && !registry.FHasComponents< TComponents... >( ( *entities )[ index ] ) )
+            while( entityAtIndex && index < entityAtIndex->size() && !registry.FHasComponents< TComponents... >( ( *entityAtIndex )[ index ] ) )
                ++index;
          }
       };
 
-      Iterator begin() noexcept { return Iterator( m_registry, m_pEntities, 0 ); }
-      Iterator end() noexcept { return Iterator( m_registry, m_pEntities, m_pEntities ? m_pEntities->size() : 0 ); }
+      Iterator begin() noexcept { return Iterator( m_registry, m_pEntityAtIndex, 0 ); }
+      Iterator end() noexcept { return Iterator( m_registry, m_pEntityAtIndex, m_pEntityAtIndex ? m_pEntityAtIndex->size() : 0 ); }
 
    private:
-      Registry&                   m_registry;
-      std::vector< EntityIndex >* m_pEntities = nullptr;
+      Registry&              m_registry;
+      std::vector< Entity >* m_pEntityAtIndex = nullptr;
    };
 
-   template< typename... TComponents >
-   ViewIterator< TComponents... > View() noexcept
-   {
-      return ViewIterator< TComponents... >( *this );
-   }
+private:
+   template< ViewTupleType TTupleType, typename... TComponents >
+   auto ViewInternal() noexcept { return ViewIterator< TTupleType, TComponents... >( *this ); }
+
+public:
+   /**
+    * @brief (Entity View) A view into the registry that iterates entities with the specified components, returning just the entity.
+    * @tparam TComponents The types of the components to filter by.
+    * @return An iterator over entities that have the specified components, returning just the entity.
+    */
+   template<typename... TComponents>
+   auto EView() noexcept { return ViewInternal< ViewTupleType::Entity, TComponents... >(); }
+
+   /**
+    * @brief (Component View) A view into the registry that iterates entities with the specified components, returning just the components as a tuple.
+    * @tparam TComponents The types of the components to filter by.
+    * @return An iterator over entities that have the specified components, returning just the components as a tuple.
+    */
+   template<typename... TComponents>
+   auto CView() noexcept { return ViewInternal< ViewTupleType::Components, TComponents... >(); }
+
+   /**
+    * @brief (Entity and Component View) A view into the registry that iterates entities with the specified components, returning both the entity and the components as a tuple.
+    * @tparam TComponents The types of the components to filter by.
+    * @return An iterator over entities that have the specified components, returning both the entity and the components as a tuple.
+    */
+   template<typename... TComponents>
+   auto ECView() noexcept { return ViewInternal< ViewTupleType::EntityAndComponents, TComponents... >(); }
+   // clang-format on
 
 private:
    struct Pool
@@ -206,8 +281,8 @@ private:
    struct ComponentStorage : public Pool
    {
       std::vector< TComponent >            m_components;     // dense array of components
-      std::vector< EntityIndex >           m_entityAtIndex;  // maps index -> entity
-      std::unordered_map< Entity, size_t > m_entityIndexMap; // maps entity -> index
+      std::vector< Entity >                m_entityAtIndex;  // maps index -> entity ([index] = entity)
+      std::unordered_map< Entity, size_t > m_entityIndexMap; // maps entity -> index ([entity] = index)
 
       void Remove( Entity entity ) noexcept override
       {
@@ -215,14 +290,14 @@ private:
          if( m_components.empty() || it == m_entityIndexMap.end() )
             return;
 
-         const EntityIndex index = it->second;
-         m_components[ index ]   = std::move( m_components.back() ); // swap-and-pop component
+         size_t entityIndex          = it->second;
+         m_components[ entityIndex ] = std::move( m_components.back() ); // swap-and-pop component
          m_components.pop_back();
-         m_entityAtIndex[ index ] = std::move( m_entityAtIndex.back() ); // swap-and-pop entity
+         m_entityAtIndex[ entityIndex ] = std::move( m_entityAtIndex.back() ); // swap-and-pop entity
          m_entityAtIndex.pop_back();
          m_entityIndexMap.erase( entity ); // remove the entity from the index map
-         if( !m_entityAtIndex.empty() && index < m_entityAtIndex.size() )
-            m_entityIndexMap[ m_entityAtIndex[ index ] ] = index;
+         if( !m_entityAtIndex.empty() && entityIndex < m_entityAtIndex.size() )
+            m_entityIndexMap[ m_entityAtIndex[ entityIndex ] ] = entityIndex;
       }
 
       bool FEmpty() const noexcept override { return m_components.empty(); }
@@ -232,7 +307,6 @@ private:
    template< typename TComponent >
    ComponentTypeKey GetTypeKey() const noexcept
    {
-      // This is a unique key for the GetTypeKey< TComponent > specialization (i.e. defines a unique key for each component type)
       static int typeKey;
       return &typeKey;
    }
@@ -263,4 +337,4 @@ private:
    std::unordered_map< Entity, std::unordered_set< ComponentTypeKey > > m_entityComponentTypes;
 };
 
-}
+} // namespace Entity
