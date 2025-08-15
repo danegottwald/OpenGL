@@ -5,10 +5,30 @@ namespace Entity
 
 using Entity = uint64_t;
 
+enum class ViewType
+{
+   Entity,
+   Components,
+   EntityAndComponents
+};
+
+/**
+ * @class Registry
+ * @brief A registry that manages entities and their associated components.
+ *
+ * This class implements an Entity-Component-System (ECS) registry.
+ * It manages the lifecycle of entities and their associated components, providing efficient creation,
+ * destruction, and querying of entities and components. The registry supports adding, removing, and retrieving
+ * components for entities, as well as iterating over entities with specific component sets using flexible view types.
+ * Internally, it uses dense storage for components and recycles entity IDs for performance and memory efficiency.
+ */
 class Registry
 {
 private:
-   using ComponentTypeKey = void*; // Unique identifier for component types, can be a typeid or similar
+   using ComponentTypeKey = void*;
+
+   template< ViewType TViewType, typename... TComponents >
+   friend class View;
 
 public:
    /*! @brief Default constructor. */
@@ -17,7 +37,7 @@ public:
    /*! @brief Default destructor. */
    ~Registry() = default;
 
-   /*! @brief Default copy constructor and copy assignment operator, copying is not allowed. */
+   /*! @brief Delete copy constructor and copy assignment operator, copying is not allowed. */
    Registry( const Registry& )            = delete;
    Registry& operator=( const Registry& ) = delete;
 
@@ -176,98 +196,38 @@ public:
       return ( FHasComponent< TComponents >( entity ) && ... );
    }
 
-   // clang-format off
-   enum class ViewTupleType { Entity, Components, EntityAndComponents };
-   template< ViewTupleType TTupleType, typename... TComponents >
-   class ViewIterator
-   {
-   public:
-      ViewIterator( Registry& registry ) noexcept :
-         m_registry( registry )
-      {
-         size_t minSize     = ( std::numeric_limits< size_t >::max )();
-         auto   checkPoolFn = [ this, &minSize ]< typename TComponent >() noexcept
-         {
-            auto* storage = m_registry.GetStorage< TComponent >();
-            if( !storage || storage->m_entityAtIndex.size() >= minSize )
-               return; // Skip this component type if it does not have fewer entities than the current minimum
-
-            minSize          = storage->m_entityAtIndex.size();
-            m_pEntityAtIndex = &storage->m_entityAtIndex;
-         };
-         ( checkPoolFn.template operator()< TComponents >(), ... );
-      }
-
-      struct Iterator
-      {
-         Registry&              registry;
-         std::vector< Entity >* entityAtIndex;
-         size_t                 index;
-
-         Iterator( Registry& reg, std::vector< Entity >* ents, size_t idx ) noexcept :
-            registry( reg ),
-            entityAtIndex( ents ),
-            index( idx )
-         { SkipInvalid(); }
-
-         Iterator& operator++() noexcept { ++index; SkipInvalid(); return *this; }
-         bool operator!=( const Iterator& other ) const noexcept { return index != other.index; }
-         auto operator*() const noexcept
-         {
-            Entity entity = ( *entityAtIndex )[ index ];
-            if constexpr( TTupleType == ViewTupleType::Entity )
-               return entity;
-            else if constexpr( TTupleType == ViewTupleType::Components )
-               return std::tuple< TComponents&... > { *( registry.GetComponent< TComponents >( entity ) )... };
-            else if constexpr( TTupleType == ViewTupleType::EntityAndComponents )
-               return std::tuple< Entity, TComponents&... > { entity, *( registry.GetComponent< TComponents >( entity ) )... };
-         }
-
-      private:
-         void SkipInvalid() noexcept
-         {
-            while( entityAtIndex && index < entityAtIndex->size() && !registry.FHasComponents< TComponents... >( ( *entityAtIndex )[ index ] ) )
-               ++index;
-         }
-      };
-
-      Iterator begin() noexcept { return Iterator( m_registry, m_pEntityAtIndex, 0 ); }
-      Iterator end() noexcept { return Iterator( m_registry, m_pEntityAtIndex, m_pEntityAtIndex ? m_pEntityAtIndex->size() : 0 ); }
-
-   private:
-      Registry&              m_registry;
-      std::vector< Entity >* m_pEntityAtIndex = nullptr;
-   };
-
-private:
-   template< ViewTupleType TTupleType, typename... TComponents >
-   auto ViewInternal() noexcept { return ViewIterator< TTupleType, TComponents... >( *this ); }
-
-public:
    /**
     * @brief (Entity View) A view into the registry that iterates entities with the specified components, returning just the entity.
     * @tparam TComponents The types of the components to filter by.
     * @return An iterator over entities that have the specified components, returning just the entity.
     */
-   template<typename... TComponents>
-   auto EView() noexcept { return ViewInternal< ViewTupleType::Entity, TComponents... >(); }
+   template< typename... TComponents >
+   [[nodiscard]] auto EView() noexcept
+   {
+      return View< ViewType::Entity, TComponents... >( *this );
+   }
 
    /**
     * @brief (Component View) A view into the registry that iterates entities with the specified components, returning just the components as a tuple.
     * @tparam TComponents The types of the components to filter by.
     * @return An iterator over entities that have the specified components, returning just the components as a tuple.
     */
-   template<typename... TComponents>
-   auto CView() noexcept { return ViewInternal< ViewTupleType::Components, TComponents... >(); }
+   template< typename... TComponents >
+   [[nodiscard]] auto CView() noexcept
+   {
+      return View< ViewType::Components, TComponents... >( *this );
+   }
 
    /**
-    * @brief (Entity and Component View) A view into the registry that iterates entities with the specified components, returning both the entity and the components as a tuple.
+    * @brief (Entity-Component View) A view into the registry that iterates entities with the specified components, returning both the entity and the components as a tuple.
     * @tparam TComponents The types of the components to filter by.
     * @return An iterator over entities that have the specified components, returning both the entity and the components as a tuple.
     */
-   template<typename... TComponents>
-   auto ECView() noexcept { return ViewInternal< ViewTupleType::EntityAndComponents, TComponents... >(); }
-   // clang-format on
+   template< typename... TComponents >
+   [[nodiscard]] auto ECView() noexcept
+   {
+      return View< ViewType::EntityAndComponents, TComponents... >( *this );
+   }
 
 private:
    struct Pool
@@ -335,6 +295,80 @@ private:
    // Component and Entity <-> Component association mappings
    std::unordered_map< ComponentTypeKey, std::unique_ptr< Pool > >      m_storagePools;
    std::unordered_map< Entity, std::unordered_set< ComponentTypeKey > > m_entityComponentTypes;
+};
+
+/**
+ * @class View
+ * @brief A view into an entity registry that provides iterative access to entities and their components.
+ */
+template< ViewType TViewType, typename... TComponents >
+class View
+{
+public:
+   View( Registry& registry ) noexcept :
+      m_registry( registry )
+   {
+      size_t minSize = ( std::numeric_limits< size_t >::max )();
+      ( CheckPool< TComponents >( minSize, m_pEntityAtIndex ), ... );
+   }
+
+   struct Iterator
+   {
+      Registry&              registry;
+      std::vector< Entity >* entityAtIndex;
+      size_t                 index;
+
+      Iterator( Registry& registry, std::vector< Entity >* entities, size_t index ) noexcept :
+         registry( registry ),
+         entityAtIndex( entities ),
+         index( index )
+      {
+         SkipInvalid();
+      }
+
+      Iterator& operator++() noexcept
+      {
+         ++index;
+         SkipInvalid();
+         return *this;
+      }
+      bool operator!=( const Iterator& other ) const noexcept { return index != other.index; }
+      auto operator*() const noexcept
+      {
+         Entity entity = ( *entityAtIndex )[ index ];
+         if constexpr( TViewType == ViewType::Entity )
+            return entity;
+         else if constexpr( TViewType == ViewType::Components )
+            return std::tuple< TComponents&... > { *( registry.GetComponent< TComponents >( entity ) )... };
+         else if constexpr( TViewType == ViewType::EntityAndComponents )
+            return std::tuple< Entity, TComponents&... > { entity, *( registry.GetComponent< TComponents >( entity ) )... };
+      }
+
+   private:
+      void SkipInvalid() noexcept
+      {
+         while( entityAtIndex && index < entityAtIndex->size() && !registry.FHasComponents< TComponents... >( ( *entityAtIndex )[ index ] ) )
+            ++index;
+      }
+   };
+
+   Iterator begin() noexcept { return Iterator( m_registry, m_pEntityAtIndex, 0 ); }
+   Iterator end() noexcept { return Iterator( m_registry, m_pEntityAtIndex, m_pEntityAtIndex ? m_pEntityAtIndex->size() : 0 ); }
+
+private:
+   template< typename TComponent >
+   void CheckPool( size_t& minSize, std::vector< Entity >*& pEntityAtIndex ) const noexcept
+   {
+      auto* storage = m_registry.GetStorage< TComponent >();
+      if( !storage || storage->m_entityAtIndex.size() >= minSize )
+         return;
+
+      minSize        = storage->m_entityAtIndex.size();
+      pEntityAtIndex = &storage->m_entityAtIndex;
+   }
+
+   Registry&              m_registry;
+   std::vector< Entity >* m_pEntityAtIndex = nullptr;
 };
 
 } // namespace Entity

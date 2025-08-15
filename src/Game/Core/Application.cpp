@@ -173,7 +173,7 @@ void Application::Run()
 
       for( auto [ entity, tran, vel ] : registry.ECView< TransformComponent, VelocityComponent >() )
       {
-         std::println( "Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
+         std::println( "ECView - Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
                        entity,
                        tran.position.x,
                        tran.position.y,
@@ -185,7 +185,7 @@ void Application::Run()
 
       for( auto [ tran, vel ] : registry.CView< TransformComponent, VelocityComponent >() )
       {
-         std::println( "Transform: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
+         std::println( "CView - Transform: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
                        tran.position.x,
                        tran.position.y,
                        tran.position.z,
@@ -199,7 +199,7 @@ void Application::Run()
          TransformComponent& tran = *registry.GetComponent< TransformComponent >( entity );
          VelocityComponent&  vel  = *registry.GetComponent< VelocityComponent >( entity );
 
-         std::println( "Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
+         std::println( "EView - Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
                        entity,
                        tran.position.x,
                        tran.position.y,
