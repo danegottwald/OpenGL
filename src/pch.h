@@ -76,7 +76,7 @@ public:
    ~ScopeTimer()
    {
       double ms = std::chrono::duration< double, std::milli >( std::chrono::high_resolution_clock::now() - m_start ).count();
-      std::cout << m_label << " took " << std::fixed << std::setprecision( 3 ) << ms << "ms\n";
+      std::println( "{} took {:.3f}ms", m_label, ms );
    }
 
 private:

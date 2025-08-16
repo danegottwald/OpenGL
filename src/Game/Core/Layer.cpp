@@ -1,14 +1,18 @@
-#include "Layer.h"
 
 #include "Window.h"
+#include "../Renderer/Shader.h"
+#include "../Renderer/Texture.h"
 
 std::vector< float >        v;
 std::vector< unsigned int > i;
 
-Layer::Layer() :
-   m_VAID( 0 ),
-   m_VBID( 0 ),
-   m_IBID( 0 )
+GLuint                     m_VAID { 0 }; // Vertex Array ID
+GLuint                     m_VBID { 0 }; // Vertex Buffer ID
+GLuint                     m_IBID { 0 }; // Index Buffer ID
+std::shared_ptr< Shader >  m_Shader;
+std::shared_ptr< Texture > m_Texture;
+
+void constructor()
 {
    glCreateVertexArrays( 1, &m_VAID );
    glBindVertexArray( m_VAID );
@@ -17,17 +21,54 @@ Layer::Layer() :
    glBindBuffer( GL_ARRAY_BUFFER, m_VBID );
 
    m_Shader.reset( new Shader() );
-   // m_Texture.reset(new Texture("cobble.png"));
+   m_Texture.reset( new Texture( "cobble.png" ) );
 }
 
-Layer::~Layer()
+void destructor()
 {
    glDeleteVertexArrays( 1, &m_VAID );
    glDeleteBuffers( 1, &m_VBID );
    glDeleteBuffers( 1, &m_IBID );
 }
 
-void Layer::Enable()
+
+void LoadModel( const std::string& filename )
+{
+   v.clear();
+   i.clear();
+   std::ifstream obj( filename );
+   std::string   data;
+   while( std::getline( obj, data ) )
+   {
+      if( data[ 0 ] == 'v' )
+      {
+         float x, y, z;
+         sscanf( data.c_str(), "v %f %f %f", &x, &y, &z );
+         //std::println( "Vertex: {}, {}, {}", x, y, z );
+         v.push_back( x );
+         v.push_back( y );
+         v.push_back( z );
+      }
+      else if( data[ 0 ] == 'f' )
+      {
+         unsigned int x, y, z;
+         sscanf( data.c_str(), "f %u %u %u", &x, &y, &z );
+         x -= 1;
+         y -= 1;
+         z -= 1;
+         //std::println( "Face: {}, {}, {}", x, y, z );
+         i.push_back( x );
+         i.push_back( y );
+         i.push_back( z );
+      }
+   }
+   std::println( "Loaded model: {} ({}v, {}i)", filename, v.size() / 3, i.size() / 3 );
+
+   glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_IBID );
+   glBufferData( GL_ELEMENT_ARRAY_BUFFER, i.size() * sizeof( unsigned int ), i.data(), GL_STATIC_DRAW );
+}
+
+void Enable()
 {
    // '1000' is how many Vertex structs to allocate space for
    glBufferData( GL_ARRAY_BUFFER, 100000, nullptr, GL_DYNAMIC_DRAW );
@@ -78,7 +119,7 @@ void Layer::Enable()
    glClearColor( 0.1f, 0.1f, 0.1f, 1.0f );
 }
 
-void Layer::Draw( float deltaTime )
+void Draw( float deltaTime )
 {
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
@@ -98,41 +139,4 @@ void Layer::Draw( float deltaTime )
    glBindTexture( GL_TEXTURE_2D, 0 );
    glBindVertexArray( 0 );
    glUseProgram( 0 );
-}
-
-void Layer::LoadModel( const std::string& filename )
-{
-   v.clear();
-   i.clear();
-   std::ifstream obj( filename );
-   std::string   data;
-   while( std::getline( obj, data ) )
-   {
-      if( data[ 0 ] == 'v' )
-      {
-         float x, y, z;
-         sscanf( data.c_str(), "v %f %f %f", &x, &y, &z );
-         // std::cout << x << " " << y << " " << z << std::endl;
-         v.push_back( x );
-         v.push_back( y );
-         v.push_back( z );
-      }
-      else if( data[ 0 ] == 'f' )
-      {
-         unsigned int x, y, z;
-         sscanf( data.c_str(), "f %u %u %u", &x, &y, &z );
-         x -= 1;
-         y -= 1;
-         z -= 1;
-         // std::cout << x << " " << y << " " << z << std::endl;
-         i.push_back( x );
-         i.push_back( y );
-         i.push_back( z );
-      }
-   }
-   std::cout << "Vertices: " << v.size() / 3 << std::endl;
-   std::cout << "Indices: " << i.size() / 3 << std::endl;
-
-   glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, m_IBID );
-   glBufferData( GL_ELEMENT_ARRAY_BUFFER, i.size() * sizeof( unsigned int ), i.data(), GL_STATIC_DRAW );
 }

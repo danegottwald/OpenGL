@@ -1,7 +1,6 @@
 #include "NetworkHost.h"
 
 #include "../Events/NetworkEvent.h"
-#include "../Game/Entity/Player.h"
 #include "../Game/World.h"
 
 constexpr size_t RECV_BUFFER_SIZE = 4096;
@@ -121,9 +120,8 @@ void NetworkHost::ClientIOThread( uint64_t clientID )
                // TODO: Pass World/Player for game logic
                // For now, pass nullptrs (should be refactored for real use)
 
-               World*  dummyWorld  = nullptr;
-               Player* dummyPlayer = nullptr;
-               HandleIncomingPacket( *inPacket, *( World* )dummyWorld, *( Player* )dummyPlayer );
+               World* dummyWorld = nullptr;
+               HandleIncomingPacket( *inPacket, *( World* )dummyWorld );
             }
             else
             {
@@ -150,7 +148,7 @@ void NetworkHost::ClientIOThread( uint64_t clientID )
    }
 }
 
-void NetworkHost::HandleIncomingPacket( const Packet& packet, World& world, Player& player )
+void NetworkHost::HandleIncomingPacket( const Packet& packet, World& world )
 {
    switch( packet.m_code )
    {
@@ -274,10 +272,10 @@ void NetworkHost::Shutdown()
    m_queueMutexes.clear();
 }
 
-void NetworkHost::Poll( World& world, Player& player )
+void NetworkHost::Poll( World& world, const glm::vec3& playerPosition )
 {
    // No-op: all work is done in threads
-   SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0, player.GetPosition() ) );
+   SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0, playerPosition ) );
 }
 
 // TODO: Implement ProcessPacket to handle game logic, relay, etc.

@@ -27,8 +27,5 @@ private:
    Application( const Application& )            = delete;
    Application& operator=( const Application& ) = delete;
 
-   void Init();
-   void Shutdown();
-
    ApplicationState m_state { APP_STATE_NONE };
 };

@@ -5,6 +5,53 @@ namespace Entity
 
 using Entity = uint64_t;
 
+/**
+ * @class EntityHandle
+ * @brief A handle to an entity that manages its lifetime in the registry. Lightweight wrapper around an Entity.
+ *
+ * This class provides a way to manage the lifetime of an entity in the registry.
+ * It ensures that the entity is destroyed when the handle falls out of scope.
+ */
+class EntityHandle
+{
+private:
+   // Only Registry can create EntityHandle instances
+   friend class Registry;
+   EntityHandle( Entity entity, Registry& registry ) :
+      m_entity( entity ),
+      m_pRegistry( &registry )
+   {}
+
+   void Invalidate() noexcept { m_pRegistry = nullptr; }
+
+public:
+   ~EntityHandle();
+
+   /*! @brief Delete copy constructor and move assignment operator, copying is not allowed. */
+   EntityHandle( const EntityHandle& )                = delete;
+   EntityHandle( EntityHandle&& ) noexcept            = delete;
+   EntityHandle& operator=( EntityHandle&& ) noexcept = delete;
+   EntityHandle& operator=( const EntityHandle& )     = delete;
+
+   Entity Get() const noexcept { return m_entity; }
+
+   // Operator overloads
+   explicit operator Entity() const noexcept { return m_entity; }
+   bool     operator==( const EntityHandle& other ) const { return m_entity == other.m_entity; }
+   bool     operator!=( const EntityHandle& other ) const { return m_entity != other.m_entity; }
+   bool     operator==( Entity other ) const noexcept { return m_entity == other; }
+   bool     operator!=( Entity other ) const noexcept { return m_entity != other; }
+   bool     operator<( const EntityHandle& other ) const noexcept { return m_entity < other.m_entity; }
+
+private:
+   const Entity m_entity { 0 };
+   Registry*    m_pRegistry;
+};
+
+/**
+ * @enum ViewType
+ * @brief The different types of views for querying entities and components.
+ */
 enum class ViewType
 {
    Entity,
@@ -20,7 +67,12 @@ enum class ViewType
  * It manages the lifecycle of entities and their associated components, providing efficient creation,
  * destruction, and querying of entities and components. The registry supports adding, removing, and retrieving
  * components for entities, as well as iterating over entities with specific component sets using flexible view types.
- * Internally, it uses dense storage for components and recycles entity IDs for performance and memory efficiency.
+ * Internally, it uses dense storage for components and recycles entities for performance and memory efficiency.
+ *
+ * @note Do not store long-lived references or pointers to components obtained from the registry.
+ *       Because components are stored contiguously, any operation that causes reallocation
+ *       (like adding new components) can invalidate references or pointers. Instead, use the Entity
+ *       to retrieve components from the registry as needed, or use handles provided by the ECS.
  */
 class Registry
 {
@@ -34,8 +86,16 @@ public:
    /*! @brief Default constructor. */
    Registry() = default;
 
-   /*! @brief Default destructor. */
-   ~Registry() = default;
+   /*! @brief Destructor. */
+   ~Registry()
+   {
+      // Invalidate all handles to prevent dangling references
+      for( auto& [ _, wkHandle ] : m_wkEntityHandles )
+      {
+         if( std::shared_ptr< EntityHandle > psHandle = wkHandle.lock() )
+            psHandle->Invalidate();
+      }
+   }
 
    /*! @brief Delete copy constructor and copy assignment operator, copying is not allowed. */
    Registry( const Registry& )            = delete;
@@ -53,6 +113,17 @@ public:
 
       m_entityComponentTypes[ entity ] = {}; // Initialize with an empty set of component types
       return entity;
+   }
+
+   /**
+    * @brief Creates a new entity and returns an EntityHandle for it.
+    * @return An EntityHandle for the newly created entity.
+    */
+   [[nodiscard]] std::shared_ptr< EntityHandle > CreateWithHandle() noexcept
+   {
+      std::shared_ptr< EntityHandle > psEntityHandle( new EntityHandle( Create(), *this ) );
+      m_wkEntityHandles.insert( { psEntityHandle->Get(), psEntityHandle } );
+      return psEntityHandle;
    }
 
    /**
@@ -76,6 +147,14 @@ public:
             m_storagePools.erase( typeKey ); // pPool is no longer valid after this point
       }
 
+      if( auto it = m_wkEntityHandles.find( entity ); it != m_wkEntityHandles.end() )
+      {
+         if( auto psHandle = it->second.lock() )
+            psHandle->Invalidate(); // Invalidate the handle
+
+         m_wkEntityHandles.erase( it );
+      }
+
       m_entityComponentTypes.erase( entity );
       m_recycledEntities.push( entity ); // Recycle the entity for future use
    }
@@ -88,27 +167,72 @@ public:
    [[nodiscard]] bool FValid( Entity entity ) const noexcept { return m_entityComponentTypes.contains( entity ); }
 
    /**
+    * @brief Gets the number of entities in the registry.
+    * @return The count of entities.
+    */
+   [[nodiscard]] size_t GetEntityCount() const noexcept { return m_entityComponentTypes.size(); }
+
+   /**
+    * @brief Gets the number of components associated with the entity.
+    * @param entity The entity to check.
+    * @return The count of components associated with the entity.
+    */
+   [[nodiscard]] size_t GetEntityComponentCount( Entity entity ) const noexcept
+   {
+      auto it = m_entityComponentTypes.find( entity );
+      return ( it != m_entityComponentTypes.end() ) ? it->second.size() : 0;
+   }
+
+   /**
     * @brief Adds a component of the specified type to the entity. Ensures that the entity does not already have the component.
     * @tparam TComponent The type of the component to add.
     * @param entity The entity to which the component will be added.
     * @param args The arguments to construct the component.
+    * @return A reference to the added component.
+    *
+    * @note The returned reference should not be long-lived, as it may become invalid if the registry reallocates storage.
     */
    template< typename TComponent, typename... TArgs >
-   void AddComponent( Entity entity, TArgs&&... args )
+   TComponent& AddComponent( Entity entity, TArgs&&... args )
    {
       auto it = m_entityComponentTypes.find( entity );
       if( it == m_entityComponentTypes.end() )
          throw std::runtime_error( std::string( "Entity does not exist: " ) + std::to_string( entity ) );
 
       ComponentTypeKey typeKey = GetTypeKey< TComponent >();
-      if( it->second.contains( typeKey ) )
-         throw std::runtime_error( std::string( "Entity already has component: " ) + typeid( TComponent ).name() );
+      if( it->second.contains( typeKey ) ) // Entity already has this component type
+      {
+         TComponent& component = *GetComponent< TComponent >( entity );
+         component             = TComponent( std::forward< TArgs >( args )... );
+         return component;
+      }
 
-      ComponentStorage< TComponent >& storage = EnsureStorage< TComponent >();
-      storage.m_components.emplace_back( std::forward< TArgs >( args )... );
-      storage.m_entityAtIndex.push_back( entity );
-      storage.m_entityIndexMap[ entity ] = storage.m_components.size() - 1;
+      ComponentStorage< TComponent >* pStorage = nullptr;
+      if( auto itStorage = m_storagePools.find( typeKey ); itStorage != m_storagePools.end() )
+         pStorage = static_cast< ComponentStorage< TComponent >* >( itStorage->second.get() );
+      else
+         pStorage = static_cast< ComponentStorage< TComponent >* >(
+            m_storagePools.emplace( typeKey, std::make_unique< ComponentStorage< TComponent > >() ).first->second.get() );
+
+      pStorage->m_components.emplace_back( std::forward< TArgs >( args )... );
+      pStorage->m_entityAtIndex.push_back( entity );
+      pStorage->m_entityIndexMap[ entity ] = pStorage->m_components.size() - 1;
       it->second.insert( typeKey );
+      return pStorage->m_components.back();
+   }
+
+   /**
+    * @brief Adds multiple components of the specified types to the entity. Ensures that the entity does not already have any of the components.
+    * @tparam TComponents The types of the components to add.
+    * @param entity The entity to which the components will be added.
+    * @return A tuple of references to the added components.
+    *
+    * @note The returned references should not be long-lived, as they may become invalid if the registry reallocates storage.
+    */
+   template< typename... TComponents >
+   std::tuple< TComponents&... > AddComponents( Entity entity )
+   {
+      return std::tuple< TComponents&... > { AddComponent< TComponents >( entity )... };
    }
 
    /**
@@ -272,17 +396,6 @@ private:
    }
 
    template< typename TComponent >
-   ComponentStorage< TComponent >& EnsureStorage()
-   {
-      ComponentTypeKey typeKey = GetTypeKey< TComponent >();
-      if( auto it = m_storagePools.find( typeKey ); it != m_storagePools.end() )
-         return static_cast< ComponentStorage< TComponent >& >( *it->second );
-
-      return static_cast< ComponentStorage< TComponent >& >(
-         *m_storagePools.emplace( typeKey, std::make_unique< ComponentStorage< TComponent > >() ).first->second );
-   }
-
-   template< typename TComponent >
    ComponentStorage< TComponent >* GetStorage() const noexcept
    {
       auto it = m_storagePools.find( GetTypeKey< TComponent >() );
@@ -295,6 +408,9 @@ private:
    // Component and Entity <-> Component association mappings
    std::unordered_map< ComponentTypeKey, std::unique_ptr< Pool > >      m_storagePools;
    std::unordered_map< Entity, std::unordered_set< ComponentTypeKey > > m_entityComponentTypes;
+
+   // Maps Entity to their handle
+   std::unordered_map< Entity, std::weak_ptr< EntityHandle > > m_wkEntityHandles;
 };
 
 /**
@@ -361,7 +477,7 @@ private:
    {
       auto* storage = m_registry.GetStorage< TComponent >();
       if( !storage || storage->m_entityAtIndex.size() >= minSize )
-         return;
+         return; // No storage or not smaller than current minSize
 
       minSize        = storage->m_entityAtIndex.size();
       pEntityAtIndex = &storage->m_entityAtIndex;
@@ -372,3 +488,11 @@ private:
 };
 
 } // namespace Entity
+
+
+// Hash specialization for Entity::EntityHandle
+template<>
+struct std::hash< Entity::EntityHandle >
+{
+   size_t operator()( const Entity::EntityHandle& handle ) const noexcept { return std::hash< Entity::Entity >()( handle.Get() ); }
+};

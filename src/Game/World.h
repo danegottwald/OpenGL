@@ -10,16 +10,20 @@ using GLuint = unsigned int;
 class Camera;
 class FastNoiseLite;
 class IMesh;
+namespace Entity
+{
+class Registry;
+}
 
 class World
 {
 public:
    World();
-   ~World();
+   ~World() = default;
 
-   void Setup();
-   void Tick( float delta, Camera& camera );
-   void Render( const Camera& camera );
+   void Setup( Entity::Registry& registry );
+   void Tick( float delta, const glm::vec3& position );
+   void Render( Entity::Registry& registry, const glm::vec3& position, const glm::mat4& projectionView );
 
    void ReceivePlayerPosition( uint64_t clientID, const glm::vec3& position );
 
@@ -36,15 +40,7 @@ private:
 
    FastNoiseLite m_mapNoise; // https://auburn.github.io/FastNoiseLite/
 
-   std::shared_ptr< IMesh >                                 m_pSun;
-   std::vector< std::shared_ptr< IMesh > >                  m_chunkMeshes;
-   std::vector< std::shared_ptr< IMesh > >                  m_cubeMeshes;
    std::unordered_map< uint64_t, std::shared_ptr< IMesh > > m_otherPlayers;
-
-   std::atomic< bool > m_fChunkThreadActive { false };
-   std::atomic< bool > m_fChunkThreadTerminate { false };
-   std::mutex          m_chunkMutex;
-   std::thread         m_chunkThread;
 
    Events::EventSubscriber m_eventSubscriber;
 };

@@ -17,16 +17,9 @@ private:
    InputManager& operator=( const InputManager& ) = delete;
 
    friend bool IsKeyPressed( KeyCode key ) noexcept;
-   static bool IsKeyPressed( KeyCode key ) noexcept { return m_keys[ key ]; }
-
    friend bool IsMouseButtonPressed( MouseCode button ) noexcept;
-   static bool IsMouseButtonPressed( MouseCode button ) noexcept { return m_keys[ button ]; }
-
    friend void SetKeyPressed( KeyCode key, bool fPressed ) noexcept;
-   static void SetKeyPressed( KeyCode key, bool fPressed ) noexcept { m_keys[ key ] = fPressed; }
-
    friend void SetMouseButtonPressed( MouseCode button, bool fPressed ) noexcept;
-   static void SetMouseButtonPressed( MouseCode button, bool fPressed ) noexcept { m_keys[ button ] = fPressed; }
 
    // Holds MouseCode + KeyCode values (safe as these values do not overlap)
    inline static std::unordered_map< uint16_t, bool > m_keys;
@@ -37,22 +30,22 @@ private:
 //=========================================================================
 inline bool IsKeyPressed( KeyCode key ) noexcept
 {
-   return InputManager::IsKeyPressed( key );
+   return InputManager::m_keys[ key ];
 }
 
 inline bool IsMouseButtonPressed( MouseCode button ) noexcept
 {
-   return InputManager::IsMouseButtonPressed( button );
+   return InputManager::m_keys[ button ];
 }
 
 inline void SetKeyPressed( KeyCode key, bool fPressed ) noexcept
 {
-   InputManager::SetKeyPressed( key, fPressed );
+   InputManager::m_keys[ key ] = fPressed;
 }
 
 inline void SetMouseButtonPressed( MouseCode button, bool fPressed ) noexcept
 {
-   InputManager::SetMouseButtonPressed( button, fPressed );
+   InputManager::m_keys[ button ] = fPressed;
 }
 
 } // namespace Input

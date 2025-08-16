@@ -1,5 +1,13 @@
 #pragma once
 
+namespace Entity
+{
+using Entity = uint64_t;
+class Registry;
+}
+
+class Timestep;
+
 // ========================================================================
 //      IGUIElement
 // ========================================================================
@@ -41,12 +49,19 @@ private:
 class DebugGUI final : public IGUIElement
 {
 public:
-   DebugGUI( class Player& player, class Camera& camera );
+   DebugGUI( const Entity::Registry& registry, Entity::Entity player, Entity::Entity camera, Timestep& timestep ) :
+      m_registry( registry ),
+      m_player( player ),
+      m_camera( camera ),
+      m_timestep( timestep )
+   {}
    ~DebugGUI() = default;
 
    void Draw() override;
 
 private:
-   class Player& m_player;
-   class Camera& m_camera;
+   const Entity::Registry& m_registry;
+   Entity::Entity          m_player;
+   Entity::Entity          m_camera;
+   Timestep&               m_timestep;
 };

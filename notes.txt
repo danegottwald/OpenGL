@@ -21,4 +21,7 @@ Server Packet Schema
 Can be used to detect if mouse over ImGui
     ImGui::GetIO().WantCaptureMouse
 
+TODO
+    Properly include folders so I am not doing local relative includes
+
 https://minecraft.wiki/w/Java_Edition_protocol

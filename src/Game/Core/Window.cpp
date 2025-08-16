@@ -33,7 +33,7 @@ void Window::Init()
    if( !glfwInit() )
       throw std::runtime_error( "Failed to initialize GLFW" );
 
-   glfwSetErrorCallback( []( int code, const char* message ) { std::cout << "[GLFW Error] (" << code << "): " << message << std::endl; } );
+   glfwSetErrorCallback( []( int code, const char* message ) { std::println( std::cerr, "[GLFW Error] ({}) {}", code, message ); } );
 
 #ifndef NDEBUG
    std::clog << "GLFW DEBUG CONTEXT ENABLED" << std::endl;
@@ -63,10 +63,10 @@ void Window::Init()
       throw std::runtime_error( "Failed to initialize OpenGL context" );
 
 #ifndef NDEBUG
-   std::cout << "GPU Vendor: " << glGetString( GL_VENDOR ) << std::endl;
-   std::cout << "GPU Renderer: " << glGetString( GL_RENDERER ) << std::endl;
-   std::cout << "OpenGL Version: " << glGetString( GL_VERSION ) << std::endl;
-   std::cout << "GLSL Version: " << glGetString( GL_SHADING_LANGUAGE_VERSION ) << std::endl;
+   std::println( "GPU Vendor: {}", reinterpret_cast< const char* >( glGetString( GL_VENDOR ) ) );
+   std::println( "GPU Renderer: {}", reinterpret_cast< const char* >( glGetString( GL_RENDERER ) ) );
+   std::println( "OpenGL Version: {}", reinterpret_cast< const char* >( glGetString( GL_VERSION ) ) );
+   std::println( "GLSL Version: {}", reinterpret_cast< const char* >( glGetString( GL_SHADING_LANGUAGE_VERSION ) ) );
 #endif
 
    {                             // ---- OpenGL State Setup ----
@@ -170,6 +170,10 @@ void Window::SetCallbacks()
             static int fFlip = GLFW_CURSOR_NORMAL;
             fFlip            = ( fFlip == GLFW_CURSOR_NORMAL ) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
             glfwSetInputMode( m_Window, GLFW_CURSOR, fFlip );
+
+            int width, height;
+            glfwGetWindowSize( m_Window, &width, &height );
+            glfwSetCursorPos( m_Window, width * 0.5f, height * 0.5f ); // Center the cursor
             break;
          }
 
@@ -227,13 +231,10 @@ void Window::SetCallbacks()
       if( severity != GL_DEBUG_SEVERITY_NOTIFICATION )
       {
          // Log the message with all relevant details
-         std::cout << "[OpenGL " << sourceStr << "] "
-                   << "[" << typeStr << "] "
-                   << "[" << severityStr << "] "
-                   << "[" << id << "]: " << message << std::endl;
+         std::println( "[OpenGL {}] [{}] [{}] [{}]: {}", sourceStr, typeStr, severityStr, id, message );
 
          if( severity == GL_DEBUG_SEVERITY_HIGH )
-            std::cerr << "CRITICAL: OpenGL error, severity HIGH!" << std::endl;
+            std::println( std::cerr, "CRITICAL: OpenGL error, severity HIGH!" );
       }
    },
       nullptr );
@@ -295,7 +296,11 @@ void Window::SetCallbacks()
       Events::Dispatch< Events::MouseScrolledEvent >( static_cast< float >( xOffset ), static_cast< float >( yOffset ) );
    } );
 
-   glfwSetCursorPosCallback( m_Window,
-                             []( GLFWwindow* window, double xPos, double yPos )
-   { Events::Dispatch< Events::MouseMovedEvent >( static_cast< float >( xPos ), static_cast< float >( yPos ) ); } );
+   // Use polling instead of callback for cursor position
+   //glfwSetCursorPosCallback( m_Window,
+   //                          []( GLFWwindow* window, double xPos, double yPos )
+   //{
+   //   Input::SetStateChanged( true ); // Set input state changed flag
+   //   Events::Dispatch< Events::MouseMovedEvent >( static_cast< float >( xPos ), static_cast< float >( yPos ) );
+   //} );
 }

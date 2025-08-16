@@ -1,12 +1,13 @@
 ﻿#include "World.h"
+
 #include "../Events/NetworkEvent.h"
 #include "../Input/Input.h"
 
-#include "Camera.h"
+#include "Entity/Registry.h"
+#include "Entity/Components/TransformComponent.h"
+
 #include "Mesh.h"
 #include "Renderer/Shader.h"
-#include "Entity/Player.h"
-
 
 std::unique_ptr< Shader > pShader;
 Events::EventSubscriber   m_eventSubscriber;
@@ -30,27 +31,6 @@ World::World()
    { this->ReceivePlayerPosition( e.GetClientID(), e.GetPosition() ); } );
 }
 
-World::~World()
-{
-   m_fChunkThreadTerminate.store( true );
-   if( m_chunkThread.joinable() )
-      m_chunkThread.join();
-}
-
-class Chunk
-{
-public:
-   Chunk( const glm::vec3& position ) noexcept :
-      m_position( position )
-   {}
-
-   static constexpr uint8_t GetSize() noexcept { return 16; }
-
-private:
-   // Chunks only are positioned on the XZ plane (Y is always 0)
-   glm::vec3 m_position { 0.0f };
-};
-
 enum class BlockFace
 {
    North,
@@ -64,11 +44,7 @@ enum class BlockFace
 class ChunkMesh : public IMesh
 {
 public:
-   ChunkMesh( const glm::vec3& position = glm::vec3( 0.0f ) )
-   {
-      m_position = position;
-      SetPosition( position );
-   }
+   ChunkMesh() = default;
 
    void SetPosition( const glm::vec3& /*position*/ ) override {}
 
@@ -243,8 +219,25 @@ private:
    };
 };
 
-void World::Setup()
+struct MeshComponent
 {
+   std::shared_ptr< IMesh > mesh;
+   MeshComponent( std::shared_ptr< IMesh > mesh ) :
+      mesh( std::move( mesh ) )
+   {}
+};
+
+constexpr uint8_t  CHUNK_SIZE       = 16;
+constexpr uint16_t WORLD_CHUNK_SIZE = 32; //64;
+constexpr uint16_t WORLD_SIZE       = CHUNK_SIZE * WORLD_CHUNK_SIZE / 2;
+
+std::vector< std::shared_ptr< Entity::EntityHandle > > entityHandles;
+
+void World::Setup( Entity::Registry& registry )
+{
+   PROFILE_SCOPE( "World::Setup" );
+   entityHandles.clear();
+
    std::random_device                       rd;          // Non-deterministic seed generator
    std::mt19937                             gen( rd() ); // Mersenne Twister PRNG
    std::uniform_int_distribution< int32_t > dist;
@@ -255,102 +248,107 @@ void World::Setup()
    m_mapNoise.SetFractalType( FastNoiseLite::FractalType_FBm ); // Use fractal Brownian motion for more realistic terrain
    m_mapNoise.SetFractalOctaves( 5 );                           // Controls the detail level (higher = more detail)
 
-   if( m_chunkThread.joinable() )
+   for( int chunkX = 0; chunkX < WORLD_CHUNK_SIZE; ++chunkX )
    {
-      if( m_fChunkThreadActive.load() )
-         m_fChunkThreadTerminate.store( true );
-
-      m_chunkThread.join();
-   }
-
-   //std::future< void > chunkFuture = std::async( std::launch::async, [ this, noise ]() {} );
-   m_chunkThread = std::thread( [ noise = m_mapNoise, this ]()
-   {
-      m_fChunkThreadActive.store( true );
-
-      { // Lock the mutex and clear existing chunks
-         std::lock_guard< std::mutex > lock( m_chunkMutex );
-         m_chunkMeshes.clear();
-      }
-
-      constexpr int chunkSize   = Chunk::GetSize(); // 16x16 chunks
-      constexpr int mapSize     = 64 * chunkSize;
-      constexpr int halfMapSize = mapSize / 2;
-      for( int chunkX = -halfMapSize; chunkX < halfMapSize; chunkX += chunkSize )
+      for( int chunkZ = 0; chunkZ < WORLD_CHUNK_SIZE; ++chunkZ )
       {
-         for( int chunkZ = -halfMapSize; chunkZ < halfMapSize; chunkZ += chunkSize )
+         const glm::vec3 chunkStartPos( -WORLD_SIZE + chunkX * CHUNK_SIZE, 0.0f, -WORLD_SIZE + chunkZ * CHUNK_SIZE );
+
+         std::shared_ptr< ChunkMesh > psChunkMesh = std::make_shared< ChunkMesh >();
+         for( int x = chunkStartPos.x; x < chunkStartPos.x + CHUNK_SIZE; x++ )
          {
-            if( m_fChunkThreadTerminate.load() )
+            for( int z = chunkStartPos.z; z < chunkStartPos.z + CHUNK_SIZE; z++ )
             {
-               m_fChunkThreadTerminate.store( false );
-               return;
-            }
-            std::shared_ptr< ChunkMesh > chunk = std::make_shared< ChunkMesh >( glm::vec3( chunkX, 0, chunkZ ) );
-            for( int x = chunkX; x < chunkX + chunkSize; x++ )
-            {
-               for( int z = chunkZ; z < chunkZ + chunkSize; z++ )
+               //auto getNoise = [ &noise ]( int x, int z ) -> float { return 1; };
+               auto getNoise = [ &noise = m_mapNoise ]( int x, int z ) -> float
+               { return noise.GetNoise( static_cast< float >( x ), static_cast< float >( z ) ) + 1; };
+
+               const int height = static_cast< int >( getNoise( x, z ) * 127.5f ) - 64;
+               //chunk->AddCube( glm::vec3( x, height, z ) );
+               //continue;
+
+               const int adjHeightNorth = static_cast< int >( getNoise( x, z + 1 ) * 127.5f ) - 64;
+               const int adjHeightSouth = static_cast< int >( getNoise( x, z - 1 ) * 127.5f ) - 64;
+               const int adjHeightEast  = static_cast< int >( getNoise( x + 1, z ) * 127.5f ) - 64;
+               const int adjHeightWest  = static_cast< int >( getNoise( x - 1, z ) * 127.5f ) - 64;
+
+               const glm::vec3 cubePos( x, height, z );
+               psChunkMesh->AddFace( cubePos, BlockFace::Up );
+               //chunk->AddFace( cubePos, BlockFace::Down );
+
+               // Replace the repeated face-filling blocks with a lambda to reduce duplication
+               auto fillFace = [ & ]( int adjHeight, int height, BlockFace face )
                {
-                  if( m_fChunkThreadTerminate.load() )
+                  if( height > adjHeight ) // Add faces if not adjacent to another block
                   {
-                     m_fChunkThreadTerminate.store( false );
-                     return;
+                     psChunkMesh->AddFace( cubePos, face );
+                     for( int h = adjHeight + 1; h < height; h++ )
+                        psChunkMesh->AddFace( glm::vec3( x, h, z ), face );
                   }
-                  //auto getNoise = [ &noise ]( int x, int z ) -> float { return 1; };
-                  auto getNoise    = [ &noise ]( int x, int z ) -> float { return noise.GetNoise( static_cast< float >( x ), static_cast< float >( z ) ) + 1; };
-                  const int height = static_cast< int >( getNoise( x, z ) * 127.5f ) - 64;
-                  //chunk->AddCube( glm::vec3( x, height, z ) );
-                  //continue;
-
-                  const int adjHeightNorth = static_cast< int >( getNoise( x, z + 1 ) * 127.5f ) - 64;
-                  const int adjHeightSouth = static_cast< int >( getNoise( x, z - 1 ) * 127.5f ) - 64;
-                  const int adjHeightEast  = static_cast< int >( getNoise( x + 1, z ) * 127.5f ) - 64;
-                  const int adjHeightWest  = static_cast< int >( getNoise( x - 1, z ) * 127.5f ) - 64;
-
-                  const glm::vec3 cubePos( x, height, z );
-                  chunk->AddFace( cubePos, BlockFace::Up );
-                  //chunk->AddFace( cubePos, BlockFace::Down );
-
-                  // Replace the repeated face-filling blocks with a lambda to reduce duplication
-                  auto fillFace = [ & ]( int adjHeight, int height, BlockFace face )
-                  {
-                     if( height > adjHeight ) // Add faces if not adjacent to another block
-                     {
-                        chunk->AddFace( cubePos, face );
-                        for( int h = adjHeight + 1; h < height; h++ )
-                           chunk->AddFace( glm::vec3( x, h, z ), face );
-                     }
-                  };
-                  fillFace( adjHeightNorth, height, BlockFace::North );
-                  fillFace( adjHeightSouth, height, BlockFace::South );
-                  fillFace( adjHeightEast, height, BlockFace::East );
-                  fillFace( adjHeightWest, height, BlockFace::West );
-               }
-            }
-
-            // set color of chunk randomly
-            chunk->SetColor( glm::vec3( std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f ) );
-
-            {
-               std::lock_guard< std::mutex > lock( m_chunkMutex );
-               m_chunkMeshes.push_back( chunk );
+               };
+               fillFace( adjHeightNorth, height, BlockFace::North );
+               fillFace( adjHeightSouth, height, BlockFace::South );
+               fillFace( adjHeightEast, height, BlockFace::East );
+               fillFace( adjHeightWest, height, BlockFace::West );
             }
          }
+
+         psChunkMesh->SetColor( glm::vec3( std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f ) );
+         psChunkMesh->Finalize();
+
+         std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
+         registry.AddComponent< TransformComponent >( psChunk->Get(), chunkStartPos.x, 0.0f, chunkStartPos.z );
+         registry.AddComponent< MeshComponent >( psChunk->Get(), psChunkMesh );
+         entityHandles.push_back( psChunk );
       }
-      m_fChunkThreadActive.store( false );
-   } );
+   }
 
-   m_cubeMeshes.clear();
-   m_pSun = std::make_shared< CubeMesh >( glm::vec3( 0.0f ) );
-   m_cubeMeshes.push_back( m_pSun );
+   std::shared_ptr< Entity::EntityHandle > psSun = registry.CreateWithHandle();
+   registry.AddComponent< TransformComponent >( psSun->Get(), 0.0f, 128.0f, 0.0f );
+   registry.AddComponent< MeshComponent >( psSun->Get(), std::make_shared< CubeMesh >( glm::vec3( 0.0f, 96.0f, 0.0f ) ) );
+   entityHandles.push_back( psSun );
 }
 
-void World::Tick( float delta, Camera& camera )
+void World::Tick( float delta, const glm::vec3& position )
 {
-   m_pSun->SetPosition( camera.GetPosition() );
+   //m_pSun->SetPosition( position );
 }
+
+class ViewFrustum
+{
+public:
+   ViewFrustum( const glm::mat4& pv )
+   {
+      m_planes[ 0 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 0 ],
+                                 pv[ 3 ][ 3 ] + pv[ 3 ][ 0 ] ); // Left
+      m_planes[ 1 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 0 ],
+                                 pv[ 3 ][ 3 ] - pv[ 3 ][ 0 ] ); // Right
+      m_planes[ 2 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 1 ],
+                                 pv[ 3 ][ 3 ] - pv[ 3 ][ 1 ] ); // Top
+      m_planes[ 3 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 1 ],
+                                 pv[ 3 ][ 3 ] + pv[ 3 ][ 1 ] ); // Bottom
+      m_planes[ 4 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 2 ],
+                                 pv[ 3 ][ 3 ] + pv[ 3 ][ 2 ] ); // Near
+      m_planes[ 5 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 2 ],
+                                 pv[ 3 ][ 3 ] - pv[ 3 ][ 2 ] ); // Far
+
+      for( glm::vec4& plane : m_planes )
+         plane = glm::normalize( plane );
+   }
+
+   bool FInFrustum( const glm::vec3& point, float padding = 0.0f ) const
+   {
+      return std::none_of( m_planes.begin(),
+                           m_planes.end(),
+                           [ & ]( const glm::vec4& plane ) { return glm::dot( glm::vec3( plane ), point ) + plane.w + padding < 0; } );
+   }
+
+private:
+   std::array< glm::vec4, 6 > m_planes;
+};
 
 // Render the world from provided perspective
-void World::Render( const Camera& camera )
+void World::Render( Entity::Registry& registry, const glm::vec3& position, const glm::mat4& projectionView )
 {
    // 1. Clear the color and depth buffers
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
@@ -360,51 +358,26 @@ void World::Render( const Camera& camera )
    //glBufferSubData( GL_ARRAY_BUFFER, 0, vt.size() * sizeof( float ), vt.data() ); // Update vertex data if changed
 
    // 3. Bind shader and set uniform values
-   pShader->Bind();                                            // Bind the shader program
-   pShader->SetUniform( "u_MVP", camera.GetProjectionView() ); // Set Model-View-Projection matrix
-   pShader->SetUniform( "u_viewPos", camera.GetPosition() );   // Set camera position
+   pShader->Bind();                                // Bind the shader program
+   pShader->SetUniform( "u_MVP", projectionView ); // Set Model-View-Projection matrix
+   pShader->SetUniform( "u_viewPos", position );   // Set camera position
    //pShader->SetUniform( "u_color", 0.5f, 0.0f, 0.0f );         // Set color (example: red)
-   pShader->SetUniform( "u_lightPos", camera.GetPosition() ); // Set light position
+   pShader->SetUniform( "u_lightPos", position ); // Set light position
+
+   ViewFrustum frustum( projectionView );
+   for( auto [ tran, mesh ] : registry.CView< TransformComponent, MeshComponent >() )
+   {
+      //if( !frustum.FInFrustum( tran.position, 0.5f /*padding (half cube size)*/ ) )
+      //   continue; // Skip rendering this mesh
+
+      pShader->SetUniform( "u_color", mesh.mesh->GetColor() );
+      //mesh.mesh->SetPosition( tran.position );
+      mesh.mesh->Render();
+   }
 
    // 4. Optional: Bind texture (if any)
    // m_Texture->Bind(0); // Bind texture (if using one)
    // pShader->SetUniform1i("u_Texture", 0); // Set texture unit in shader
-   ViewFrustum frustum( camera );
-   if( !m_chunkMeshes.empty() )
-   {
-      std::unique_lock< std::mutex > lock( m_chunkMutex );
-      for( const std::shared_ptr< IMesh >& mesh : m_chunkMeshes )
-      {
-         //if( !frustum.FInFrustum( mesh->GetPosition(), Chunk::GetSize() ) )
-         //   continue; // Skip rendering this chunk
-
-         std::shared_ptr< ChunkMesh > chunk = std::static_pointer_cast< ChunkMesh >( mesh );
-         if( !chunk->FIsFinalized() )
-            chunk->Finalize();
-
-         // TODO implemente frustum culling for chunks
-         pShader->SetUniform( "u_color", mesh->GetColor() );
-         mesh->Render();
-      }
-   }
-
-   for( const std::shared_ptr< IMesh >& mesh : m_cubeMeshes )
-   {
-      if( !frustum.FInFrustum( mesh->GetPosition(), 0.5f /*padding (half cube size)*/ ) )
-         continue; // Skip rendering this mesh
-
-      pShader->SetUniform( "u_color", mesh->GetColor() );
-      mesh->Render();
-   }
-
-   for( const auto& [ _, pPlayerMesh ] : m_otherPlayers )
-   {
-      if( !frustum.FInFrustum( pPlayerMesh->GetPosition(), 0.5f /*padding (half cube size)*/ ) )
-         continue; // Skip rendering this mesh
-
-      pShader->SetUniform( "u_color", pPlayerMesh->GetColor() );
-      pPlayerMesh->Render();
-   }
 
    pShader->Unbind(); // Unbind shader program
 
@@ -422,4 +395,18 @@ void World::ReceivePlayerPosition( uint64_t clientID, const glm::vec3& position 
       return;
 
    m_otherPlayers[ clientID ]->SetPosition( position - glm::vec3( 0.0f, 1.0f, 0.0f ) ); // set position, adjust for head level
+
+   // handle player connected
+   //Entity::Entity connectedPlayer = registry.Create();
+   //registry.AddComponent< TransformComponent >( connectedPlayer, position.x, position.y, position.z );
+   //registry.AddComponent< ClientComponent >( connectedPlayer, clientID );
+
+   // update player position
+   //for( auto [ tran, client ] : registry.CView< TransformComponent, ClientComponent >() )
+   //{
+   //   if( client.clientID != clientID )
+   //      continue; // Skip if not the current client
+   //
+   //   tran.SetPosition( position ); // set position
+   //}
 }

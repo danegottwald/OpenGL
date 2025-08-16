@@ -1,7 +1,6 @@
 #include "NetworkClient.h"
 
 #include "../Events/NetworkEvent.h"
-#include "../Game/Entity/Player.h"
 #include "../Game/World.h"
 #include <thread>
 #include <mutex>
@@ -106,7 +105,8 @@ void NetworkClient::Connect( const char* ipAddress, uint16_t port )
    {
       if( WSAGetLastError() != WSAEWOULDBLOCK )
       {
-         std::cerr << "connect error: " << WSAGetLastError() << std::endl;
+         std::println( std::cerr, "Failed to connect to server: {}:{}", m_serverIpAddress, port );
+         std::println( std::cerr, "connect error: {}", WSAGetLastError() );
          m_fConnected = false;
          return;
       }
@@ -134,7 +134,7 @@ void NetworkClient::SendPackets( const std::vector< Packet >& packets )
       s_logs.push_back( std::format( "Failed to send packet to host: {}", m_hostSocket ) );
 }
 
-void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world, Player& player )
+void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world )
 {
    switch( inPacket.m_code )
    {
@@ -187,20 +187,20 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world, 
          // Optionally handle heartbeat
          break;
 
-      default: std::cout << "Unhandled network code" << std::endl;
+      default: std::println( std::cerr, "Unhandled network code: {}", std::to_underlying( inPacket.m_code ) );
    }
 }
 
-void NetworkClient::Poll( World& world, Player& player )
+void NetworkClient::Poll( World& world, const glm::vec3& playerPosition )
 {
    if( m_hostSocket == INVALID_SOCKET )
       return;
 
    // Send position updates if connected
    if( m_fConnected )
-      SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, m_serverID, player.GetPosition() ) );
+      SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, m_serverID, playerPosition ) );
 
    // Process incoming packets
    while( std::optional< Packet > optInPacket = PollPacket() )
-      HandleIncomingPacket( *optInPacket, world, player );
+      HandleIncomingPacket( *optInPacket, world );
 }

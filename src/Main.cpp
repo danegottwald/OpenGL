@@ -5,7 +5,7 @@
 
 int main( int argc, char* argv[] )
 {
-   std::cout << argv[ 0 ] << std::endl;
+   std::println( "{}", argv[ 0 ] ); // Print the executable name
 
    // Global event manager? register an event then they get polled every refresh
    // https://gamedev.stackexchange.com/a/59627
@@ -18,7 +18,7 @@ int main( int argc, char* argv[] )
    }
    catch( const std::exception& e )
    {
-      std::cerr << "Exception: " << e.what() << std::endl;
+      std::println( std::cerr, "Application failed to run: {}", e.what() );
       return -1;
    }
 

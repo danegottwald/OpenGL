@@ -8,7 +8,6 @@
 
 // Relative dependencies
 #include "../Events/NetworkEvent.h"
-#include "../Game/Entity/Player.h"
 #include "../Game/World.h"
 #include "../Game/Core/GUIManager.h"
 #include "../Game/Core/Window.h"
@@ -89,7 +88,7 @@ INetwork::~INetwork()
       char ipBuffer[ INET_ADDRSTRLEN ];
       if( inet_ntop( AF_INET, &client.m_socketAddressIn.sin_addr, ipBuffer, sizeof( ipBuffer ) ) == nullptr )
       {
-         std::cout << "Failed to get client IP address from socket: " << client.m_socket << std::endl;
+         std::println( std::cerr, "Failed to convert IP address to string for socket: {}", client.m_socket );
          return false;
       }
 
@@ -97,7 +96,7 @@ INetwork::~INetwork()
       return true;
    }
 
-   std::cout << "Failed to get peer name for socket: " << client.m_socket << std::endl;
+   std::println( std::cerr, "Failed to get peer name for socket: {}", client.m_socket );
    return false;
 }
 

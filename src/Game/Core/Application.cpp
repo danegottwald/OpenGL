@@ -2,292 +2,268 @@
 
 #include "../Timestep.h"
 #include "../World.h"
-#include "../Entity/Player.h"
-#include "../Entity/Registry.h"
-#include "../Camera.h"
 #include "../../Network/Network.h"
 #include "../../Input/Input.h"
-
 #include "GUIManager.h"
 
-struct TransformComponent
-{
-   glm::vec3 position { 0.0f, 0.0f, 0.0f };
-   glm::quat rotation { 0.0f, 0.0f, 0.0f, 1.0f };
-   glm::vec3 scale { 1.0f, 1.0f, 1.0f };
+// Component includes
+#include "../Entity/Registry.h"
+#include "../Entity/Components/TransformComponent.h"
+#include "../Entity/Components/VelocityComponent.h"
+#include "../Entity/Components/InputComponent.h"
+#include "../Entity/Components/CameraComponent.h"
+#include "../Entity/Components/PlayerTag.h"
+#include "../Entity/Components/CameraTag.h"
+#include "../Entity/Components/ParentComponent.h"
+#include "../Entity/Components/ChildrenComponent.h"
 
-   TransformComponent() = default;
-   TransformComponent( float xPos, float yPos, float zPos ) :
-      position( xPos, yPos, zPos )
-   {}
-   TransformComponent( const glm::vec3& pos ) :
-      position( pos )
-   {}
-};
+// ================ SYSTEMS ================
+constexpr float GRAVITY           = -32.0f;
+constexpr float TERMINAL_VELOCITY = -48.0f;
+constexpr float JUMP_VELOCITY     = 9.0f;
+constexpr float PLAYER_HEIGHT     = 1.9f;
+constexpr float GROUND_MAXSPEED   = 12.0f;
+constexpr float AIR_MAXSPEED      = 10.0f;
+constexpr float AIR_CONTROL       = 0.3f;
+constexpr float SPRINT_MODIFIER   = 1.5f;
 
-struct VelocityComponent
+void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
-   glm::vec3 velocity { 0.0f, 0.0f, 0.0f };
-   VelocityComponent() = default;
-   VelocityComponent( float vx, float vy, float vz ) :
-      velocity( vx, vy, vz )
-   {}
-   VelocityComponent( const glm::vec3& vel ) :
-      velocity( vel )
-   {}
-};
-
-struct InputComponent
-{
-};
-
-void InputSystem( Entity::Registry& registry, float delta, bool fDidTick )
-{
-   for( auto [ tran, vel, input ] : registry.CView< TransformComponent, VelocityComponent, InputComponent >() )
+   //PROFILE_SCOPE( "PlayerInputSystem" );
+   for( auto [ entity, tran, vel, input, tag ] : registry.ECView< TransformComponent, VelocityComponent, InputComponent, PlayerTag >() )
    {
-      const float accel  = 12.0f * delta;
-      auto        dampen = []( float& v, float amount )
-      {
-         if( v > 0.0f )
-            v = std::max< float >( 0.0f, v - amount );
-         else if( v < 0.0f )
-            v = std::min< float >( 0.0f, v + amount );
-      };
-
+      // Apply Player Movement Inputs
+      glm::vec3 wishdir( 0.0f );
       if( Input::IsKeyPressed( Input::W ) )
-         vel.velocity.y += accel;
-      else if( Input::IsKeyPressed( Input::S ) )
-         vel.velocity.y -= accel;
-      else
-         dampen( vel.velocity.y, accel );
-
-      if( Input::IsKeyPressed( Input::D ) )
-         vel.velocity.x += accel;
-      else if( Input::IsKeyPressed( Input::A ) )
-         vel.velocity.x -= accel;
-      else
-         dampen( vel.velocity.x, accel );
-
-      constexpr float maxSpeed = 5.0f;
-      vel.velocity.x           = std::clamp( vel.velocity.x, -maxSpeed, maxSpeed );
-      vel.velocity.y           = std::clamp( vel.velocity.y, -maxSpeed, maxSpeed );
-
-      if( fDidTick )
-         std::println( "Input: Vel: ({}, {}, {})", vel.velocity.x, vel.velocity.y, vel.velocity.z );
-   }
-}
-
-void PhysicsSystem( Entity::Registry& registry, float delta, bool fDidTick )
-{
-   for( auto [ tran, vel ] : registry.CView< TransformComponent, VelocityComponent >() )
-   {
-      tran.position += vel.velocity * delta;
-
-      if( fDidTick )
-         std::println( "Physics: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
-                       tran.position.x,
-                       tran.position.y,
-                       tran.position.z,
-                       vel.velocity.x,
-                       vel.velocity.y,
-                       vel.velocity.z );
-   }
-}
-
-void MovementSystem( Entity::Registry& registry, float delta, bool fDidTick )
-{
-   // Iterate all entities with Transform, Velocity, and Input
-   for( auto [ tran, vel, input ] : registry.CView< TransformComponent, VelocityComponent, InputComponent >() )
-   {
-      // Keyboard input (WASD)
-      const float accel  = 12.0f * delta;
-      auto        dampen = []( float& v, float amount )
       {
-         if( v > 0.0f )
-            v = std::max< float >( 0.0f, v - amount );
-         else if( v < 0.0f )
-            v = std::min< float >( 0.0f, v + amount );
-      };
-
-      if( Input::IsKeyPressed( Input::W ) )
-         vel.velocity.y += accel;
-      else if( Input::IsKeyPressed( Input::S ) )
-         vel.velocity.y -= accel;
-      else
-         dampen( vel.velocity.y, accel );
-
+         wishdir.x -= glm::cos( glm::radians( tran.rotation.y + 90 ) );
+         wishdir.z -= glm::sin( glm::radians( tran.rotation.y + 90 ) );
+      }
+      if( Input::IsKeyPressed( Input::S ) )
+      {
+         wishdir.x += glm::cos( glm::radians( tran.rotation.y + 90 ) );
+         wishdir.z += glm::sin( glm::radians( tran.rotation.y + 90 ) );
+      }
+      if( Input::IsKeyPressed( Input::A ) )
+      {
+         float y = glm::radians( tran.rotation.y );
+         wishdir += glm::vec3( -glm::cos( y ), 0, -glm::sin( y ) );
+      }
       if( Input::IsKeyPressed( Input::D ) )
-         vel.velocity.x += accel;
-      else if( Input::IsKeyPressed( Input::A ) )
-         vel.velocity.x -= accel;
+      {
+         float y = glm::radians( tran.rotation.y );
+         wishdir -= glm::vec3( -glm::cos( y ), 0, -glm::sin( y ) );
+      }
+      if( glm::length( wishdir ) > 0.0f )
+         wishdir = glm::normalize( wishdir );
+
+      float maxSpeed = GROUND_MAXSPEED;
+      if( Input::IsKeyPressed( Input::LeftShift ) )
+         maxSpeed *= SPRINT_MODIFIER;
+
+      vel.velocity.x = wishdir.x * maxSpeed;
+      vel.velocity.z = wishdir.z * maxSpeed;
+
+      // this needs to be per-component, not static which affects all
+      static bool wasJumping = false;
+      if( Input::IsKeyPressed( Input::Space ) )
+      {
+         if( !wasJumping )
+         {
+            vel.velocity.y = JUMP_VELOCITY;
+            wasJumping     = true;
+         }
+      }
       else
-         dampen( vel.velocity.x, accel );
+         wasJumping = false;
 
-      constexpr float maxSpeed = 5.0f;
-      vel.velocity.x           = std::clamp( vel.velocity.x, -maxSpeed, maxSpeed );
-      vel.velocity.y           = std::clamp( vel.velocity.y, -maxSpeed, maxSpeed );
-
-      // Mouse input (example: could be used for looking/rotation)
-      // You can expand this to update orientation, etc.
-      // if( Input::IsMouseMoved() ) { ... }
-
-      // Apply velocity to position
-      tran.position += vel.velocity * delta;
-
-      if( fDidTick )
-         std::println( "MovementSystem: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
-                       tran.position.x,
-                       tran.position.y,
-                       tran.position.z,
-                       vel.velocity.x,
-                       vel.velocity.y,
-                       vel.velocity.z );
+      // Apply Mouse Look Inputs
    }
 }
 
-// Ordering of initialization is critical
-void Application::Init()
+void PlayerPhysicsSystem( Entity::Registry& registry, float delta, World& world )
 {
-   Window::Get().Init(); // Initialize the window
-   GUIManager::Init();   // Initialize the GUI Manager
+   for( auto [ tran, vel, tag ] : registry.CView< TransformComponent, VelocityComponent, PlayerTag >() )
+   {
+      vel.velocity.y += GRAVITY * delta;
+      if( vel.velocity.y < TERMINAL_VELOCITY )
+         vel.velocity.y = TERMINAL_VELOCITY;
+
+      tran.position += vel.velocity * delta;
+      float edgeHeight   = ( std::max )( { world.GetHeightAtPos( tran.position.x + 0.5f, tran.position.z ),
+                                           world.GetHeightAtPos( tran.position.x - 0.5f, tran.position.z ),
+                                           world.GetHeightAtPos( tran.position.x, tran.position.z + 0.5f ),
+                                           world.GetHeightAtPos( tran.position.x, tran.position.z - 0.5f ) } );
+      float cornerHeight = ( std::max )( { world.GetHeightAtPos( tran.position.x + 0.25f, tran.position.z + 0.25f ),
+                                           world.GetHeightAtPos( tran.position.x - 0.25f, tran.position.z + 0.25f ),
+                                           world.GetHeightAtPos( tran.position.x + 0.25f, tran.position.z - 0.25f ),
+                                           world.GetHeightAtPos( tran.position.x - 0.25f, tran.position.z - 0.25f ) } );
+      float groundHeight = ( std::max )( edgeHeight, cornerHeight );
+      bool  inAir        = ( tran.position.y ) > groundHeight + 0.01f;
+      if( !inAir )
+      {
+         tran.position.y = groundHeight;
+         vel.velocity.y  = 0.0f;
+      }
+   }
 }
 
-// Cleanup should occur in reverse order of initialization
-void Application::Shutdown()
+void CameraSystem( Entity::Registry& registry, Window& window )
 {
-   GUIManager::Shutdown();
+   GLFWwindow* nativeWindow   = window.GetNativeWindow();
+   bool        fMouseCaptured = glfwGetInputMode( nativeWindow, GLFW_CURSOR ) == GLFW_CURSOR_DISABLED;
+
+   glm::vec2 mouseDelta { 0.0f };
+   if( fMouseCaptured )
+   {
+      static glm::vec2 lastMousePos = window.GetMousePosition();
+      mouseDelta                    = window.GetMousePosition() - lastMousePos;
+
+      const WindowData& windowData = window.GetWindowData();
+      lastMousePos                 = { windowData.Width * 0.5f, windowData.Height * 0.5f };
+      glfwSetCursorPos( nativeWindow, lastMousePos.x, lastMousePos.y );
+   }
+
+   for( auto [ tran, cam, tag ] : registry.CView< TransformComponent, CameraComponent, CameraTag >() )
+   {
+      if( fMouseCaptured )
+      {
+         tran.rotation.x = glm::clamp( tran.rotation.x + ( mouseDelta.y * cam.sensitivity ), -90.0f, 90.0f );
+         tran.rotation.y = glm::mod( tran.rotation.y + ( mouseDelta.x * cam.sensitivity ) + 360.0f, 360.0f );
+      }
+
+      cam.viewMatrix = glm::mat4( 1.0f );
+      cam.viewMatrix = glm::rotate( cam.viewMatrix, glm::radians( tran.rotation.x ), { 1, 0, 0 } ); // maybe tran rotation
+      cam.viewMatrix = glm::rotate( cam.viewMatrix, glm::radians( tran.rotation.y ), { 0, 1, 0 } );
+      cam.viewMatrix = glm::rotate( cam.viewMatrix, glm::radians( tran.rotation.z ), { 0, 0, 1 } );
+      cam.viewMatrix = glm::translate( cam.viewMatrix, -tran.position );
+
+      cam.projectionViewMatrix = cam.projectionMatrix * cam.viewMatrix;
+   }
 }
 
 void Application::Run()
 {
+   Events::EventSubscriber eventSubscriber;
+
+   // ----------------------------------- ECS
    Entity::Registry registry;
+
+   // Create player entity
+   Entity::Entity player = registry.Create();
+   registry.AddComponent< TransformComponent >( player, 0.0f, 128.0f, 0.0f );
+   registry.AddComponent< VelocityComponent >( player, 0.0f, 0.0f, 0.0f );
+   registry.AddComponent< InputComponent >( player );
+   registry.AddComponent< PlayerTag >( player );
+
+   // Create camera entity
+   Entity::Entity camera = registry.Create();
+   registry.AddComponent< TransformComponent >( camera, 0.0f, 128.0f + PLAYER_HEIGHT, 0.0f );
+   registry.AddComponent< CameraTag >( camera );
+
    {
-      PROFILE_SCOPE( "ECS: View Iterator" );
+      std::shared_ptr< Entity::EntityHandle > psEntity = registry.CreateWithHandle();
+      registry.AddComponent< TransformComponent >( psEntity->Get(), 0.0f, 128.0f, 0.0f );
+      registry.AddComponent< VelocityComponent >( psEntity->Get(), 0.0f, 0.0f, 0.0f );
+      registry.AddComponent< InputComponent >( psEntity->Get() );
 
-      // Create player entity
-      Entity::Entity dummy  = registry.Create();
-      Entity::Entity player = registry.Create();
-      registry.AddComponent< TransformComponent >( player, 0.0f, 0.0f, 0.0f );
-      registry.AddComponent< VelocityComponent >( player, 0.0f, 0.0f, 0.0f );
-      registry.AddComponent< InputComponent >( player );
-
-      for( auto [ entity, tran, vel ] : registry.ECView< TransformComponent, VelocityComponent >() )
-      {
-         std::println( "ECView - Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
-                       entity,
-                       tran.position.x,
-                       tran.position.y,
-                       tran.position.z,
-                       vel.velocity.x,
-                       vel.velocity.y,
-                       vel.velocity.z );
-      }
-
-      for( auto [ tran, vel ] : registry.CView< TransformComponent, VelocityComponent >() )
-      {
-         std::println( "CView - Transform: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
-                       tran.position.x,
-                       tran.position.y,
-                       tran.position.z,
-                       vel.velocity.x,
-                       vel.velocity.y,
-                       vel.velocity.z );
-      }
-
-      for( Entity::Entity entity : registry.EView< TransformComponent, VelocityComponent >() )
-      {
-         TransformComponent& tran = *registry.GetComponent< TransformComponent >( entity );
-         VelocityComponent&  vel  = *registry.GetComponent< VelocityComponent >( entity );
-
-         std::println( "EView - Entity {}: Pos: ({}, {}, {}), Vel: ({}, {}, {})",
-                       entity,
-                       tran.position.x,
-                       tran.position.y,
-                       tran.position.z,
-                       vel.velocity.x,
-                       vel.velocity.y,
-                       vel.velocity.z );
-      }
-
-      // Create camera entity
-      Entity::Entity camera = registry.Create();
-      registry.AddComponent< TransformComponent >( camera, 0.0f, 0.0f, 0.0f );
-      // Optionally: registry.AddComponent< CameraComponent >( camera, player ); // if you have a CameraComponent
+      //Entity::EntityHandle entitySame1( *psEntity );  // Create a reference to the same entity
+      //Entity::EntityHandle entitySame2 = entitySame1; // Create a reference to the same entity
    }
 
-   Init(); // Initialize the application
+   if( CameraComponent* pCameraComp = &registry.AddComponent< CameraComponent >( camera ) )
+      pCameraComp->projectionMatrix = glm::perspective( glm::radians( pCameraComp->fov ),
+                                                        Window::Get().GetWindowData().Width / static_cast< float >( Window::Get().GetWindowData().Height ),
+                                                        0.1f,
+                                                        1000.0f );
 
-   // TODO:
-   // Write a logging library (log to file)
-   //    Get rid of console window, pipe output to a imgui window
-   // https://github.com/htmlboss/OpenGL-Renderer
-
-   World world;
-   world.Setup();
-
-   Events::EventSubscriber eventSubscriber;
-   eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& e ) noexcept
+   eventSubscriber.Subscribe< Events::WindowResizeEvent >( [ &registry, camera ]( const Events::WindowResizeEvent& e ) noexcept
    {
-      if( e.GetKeyCode() == Input::R ) // Reload world
-         world.Setup();
+      if( e.GetHeight() == 0 )
+         return;
+
+      if( CameraComponent* pCameraComp = registry.GetComponent< CameraComponent >( camera ); pCameraComp )
+      {
+         float aspectRatio             = e.GetWidth() / static_cast< float >( e.GetHeight() );
+         pCameraComp->projectionMatrix = glm::perspective( glm::radians( pCameraComp->fov ), aspectRatio, 0.1f, 1000.0f );
+      }
    } );
 
-   Player playerObj;
-   Camera cameraObj;
+   eventSubscriber.Subscribe< Events::MouseScrolledEvent >( [ &registry, camera ]( const Events::MouseScrolledEvent& e ) noexcept
+   {
+      if( CameraComponent* pCameraComp = registry.GetComponent< CameraComponent >( camera ); pCameraComp )
+      {
+         pCameraComp->fov += -e.GetYOffset() * 5;
+         pCameraComp->fov              = std::clamp( pCameraComp->fov, 10.0f, 90.0f );
+         pCameraComp->projectionMatrix = glm::perspective( glm::radians( pCameraComp->fov ),
+                                                           Window::Get().GetWindowData().Width / static_cast< float >( Window::Get().GetWindowData().Height ),
+                                                           0.1f,
+                                                           1000.0f );
+      }
+   } );
+   // -----------------------------------
 
-   // Attach debug UI to track player/camera
-   GUIManager::Attach( std::make_shared< DebugGUI >( playerObj, cameraObj ) );
-
-   // Attach Network GUI
+   // Initialize things
+   Window& window = Window::Get();
+   window.Init();
+   GUIManager::Init();
    INetwork::RegisterGUI();
 
-   Timestep timestep( 20 /*tickrate*/ );
-   Window&  window = Window::Get();
+   Timestep timestep( 20 );
+   GUIManager::Attach( std::make_shared< DebugGUI >( registry, player, camera, timestep ) );
+
+   World world;
+   world.Setup( registry );
+
+   // what if I made Entity::Entity a ref-counted obj and when it goes out of scope  it automatically removes itself from the registry?
+   // because if you lose track of an entity, you can't remove it from the registry, this will protect against that
+   //    or at least make it optional to get a ref-counted entity
+
+   eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ &world, &registry ]( const Events::KeyPressedEvent& e ) noexcept
+   {
+      if( e.GetKeyCode() == Input::R )
+         world.Setup( registry );
+   } );
+
    while( window.IsOpen() )
    {
       const float delta = timestep.Step();
+      Events::ProcessQueuedEvents();
+      PlayerInputSystem( registry, delta );
+      PlayerPhysicsSystem( registry, delta, world );
+      CameraSystem( registry, window );
 
+      // Camera follows player
+      auto* pPlayerTran = registry.GetComponent< TransformComponent >( player );
+      auto* pCameraTran = registry.GetComponent< TransformComponent >( camera );
+      if( pPlayerTran && pCameraTran )
       {
-         Events::ProcessQueuedEvents(); // Process queued events before the next frame
-         //Network::ProcessQueuedEvents(); // Process network events before the next frame
-
-         InputSystem( registry, delta, timestep.FTick() );   // Handle input system
-         PhysicsSystem( registry, delta, timestep.FTick() ); // Run physics system
+         pCameraTran->position = pPlayerTran->position + glm::vec3( 0.0f, PLAYER_HEIGHT, 0.0f );
+         pPlayerTran->rotation = pCameraTran->rotation;
       }
 
       // Game Ticks
-      world.Tick( delta, cameraObj ); // Update world
-      playerObj.Tick( world, delta ); // Tick Player, use m_World to check collisions
-
-      // Game Updates
-      cameraObj.Update( playerObj ); // Update Camera to match Player
+      auto* pCameraComp = registry.GetComponent< CameraComponent >( camera );
+      if( pCameraTran /*pCameraComp*/ )
+         world.Tick( delta, pCameraTran->position );
 
       if( timestep.FTick() )
       {
-         std::println( "Tick: {}", timestep.GetLastTick() );
-         if( INetwork* pNetwork = INetwork::Get() )
-            pNetwork->Poll( world, playerObj ); // Poll network events
+         if( INetwork* pNetwork = INetwork::Get(); pNetwork && pPlayerTran )
+            pNetwork->Poll( world, pPlayerTran->position );
       }
 
-      // Render only if not minimized
       if( !window.FMinimized() )
       {
-         // Render
-         world.Render( cameraObj );
+         if( pCameraTran && pCameraComp )
+            world.Render( registry, pCameraTran->position, pCameraComp->projectionViewMatrix );
 
-         // Render
-         //RenderManager::Render();
-
-         // Draw GUI
          GUIManager::Draw();
       }
 
-      window.OnUpdate(); // Poll events and swap buffers
+      window.OnUpdate();
    }
 
-   Shutdown(); // Cleanup the application
+   // Shutdown everything
+   GUIManager::Shutdown();
 }
-
-// NOTES
-// https://developer.valvesoftware.com/wiki/Source_Multiplayer_Networking
-//      https://github.com/Hopson97/open-builder/issues/208#issuecomment-706747718

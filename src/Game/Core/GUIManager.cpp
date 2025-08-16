@@ -2,8 +2,11 @@
 #include "GUIManager.h"
 
 #include "Window.h"
-#include "../Entity/Player.h"
-#include "../Camera.h"
+
+#include "../Timestep.h"
+#include "../Entity/Registry.h"
+#include "../Entity/Components/TransformComponent.h"
+#include "../Entity/Components/VelocityComponent.h"
 
 // ========================================================================
 //      GUIManager
@@ -64,11 +67,6 @@ void GUIManager::Draw()
 // ========================================================================
 //      DebugGUI
 // ========================================================================
-DebugGUI::DebugGUI( Player& player, Camera& camera ) :
-   m_player( player ),
-   m_camera( camera )
-{}
-
 void DebugGUI::Draw()
 {
    { // ImGui Top Left
@@ -82,12 +80,27 @@ void DebugGUI::Draw()
       if( ImGui::Checkbox( "VSync", &fVSync ) )
          Window::Get().SetVSync( fVSync );
 
+      ImGui::Text( "Tick: %d", m_timestep.GetLastTick() );
+      ImGui::Text( "Entity Count: %d", m_registry.GetEntityCount() );
+
       ImGui::NewLine();
-      ImGui::Text( "Player Position: %.2f, %.2f, %.2f", m_player.GetPosition().x, m_player.GetPosition().y, m_player.GetPosition().z );
-      ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", m_player.GetRotation().x, m_player.GetRotation().y, m_player.GetRotation().z );
-      ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", m_player.GetVelocity().x, m_player.GetVelocity().y, m_player.GetVelocity().z );
-      ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
-      ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", m_camera.GetPosition().x, m_camera.GetPosition().y, m_camera.GetPosition().z );
+      auto [ pPlayerTran, pPlayerVel ] = m_registry.GetComponents< TransformComponent, VelocityComponent >( m_player );
+      if( pPlayerTran && pPlayerVel )
+      {
+         ImGui::Text( "Player Entity: %d", m_player );
+         ImGui::Text( "Player Position: %.2f, %.2f, %.2f", pPlayerTran->position.x, pPlayerTran->position.y, pPlayerTran->position.z );
+         ImGui::Text( "Player Rotation: %.2f, %.2f, %.2f", pPlayerTran->rotation.x, pPlayerTran->rotation.y, pPlayerTran->rotation.z );
+         ImGui::Text( "Player Velocity: %.2f, %.2f, %.2f", pPlayerVel->velocity.x, pPlayerVel->velocity.y, pPlayerVel->velocity.z );
+         //ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
+      }
+
+      if( TransformComponent* pCameraTran = m_registry.GetComponent< TransformComponent >( m_camera ) )
+      {
+         ImGui::NewLine();
+         ImGui::Text( "Camera Entity: %d", m_camera );
+         ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", pCameraTran->position.x, pCameraTran->position.y, pCameraTran->position.z );
+         ImGui::Text( "Camera Rotation: %.2f, %.2f, %.2f", pCameraTran->rotation.x, pCameraTran->rotation.y, pCameraTran->rotation.z );
+      }
       ImGui::End();
    }
 
@@ -118,65 +131,5 @@ void DebugGUI::Draw()
          ImGui::EndTable();
       }
       ImGui::End();
-   }
-
-   struct ServerListItem
-   {
-      std::string name;
-      int         playerCount;
-      int         ping;
-      bool        connectRequested = false;
-   };
-
-   // Add this to your DebugGUI class (or another GUI element as needed)
-   std::vector< ServerListItem > m_serverList = {
-      { "Alpha Server",   12, 45 },
-      { "Bravo Server",   8,  60 },
-      { "Charlie Server", 24, 30 },
-      { "Delta Server",   5,  80 },
-      { "Echo Server",    16, 55 },
-      { "Foxtrot Server", 9,  70 },
-      { "Golf Server",    20, 40 },
-      { "Hotel Server",   7,  90 }  // ... add more as needed
-   };
-
-   { // ImGui Server List (fills window, no padding, no title)
-      ImGui::SetNextWindowPos( ImVec2( 10, 200 ), ImGuiCond_Always );
-      ImGui::SetNextWindowSize( ImVec2( 400, 250 ), ImGuiCond_Always );
-
-      ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( 0, 0 ) );
-      ImGui::Begin( "Server List", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse );
-
-      if( ImGui::BeginTable( "ServerListTable",
-                             4,
-                             ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp ) )
-      {
-         ImGui::TableSetupColumn( "Server Name", ImGuiTableColumnFlags_WidthStretch );
-         ImGui::TableSetupColumn( "Players", ImGuiTableColumnFlags_WidthFixed, 70.0f );
-         ImGui::TableSetupColumn( "Ping", ImGuiTableColumnFlags_WidthFixed, 60.0f );
-         ImGui::TableSetupColumn( "Action", ImGuiTableColumnFlags_WidthFixed, 90.0f );
-         ImGui::TableHeadersRow();
-
-         for( size_t i = 0; i < m_serverList.size(); ++i )
-         {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex( 0 );
-            ImGui::TextUnformatted( m_serverList[ i ].name.c_str() );
-            ImGui::TableSetColumnIndex( 1 );
-            ImGui::Text( "%d", m_serverList[ i ].playerCount );
-            ImGui::TableSetColumnIndex( 2 );
-            ImGui::Text( "%d ms", m_serverList[ i ].ping );
-            ImGui::TableSetColumnIndex( 3 );
-            std::string btnLabel = "Connect##" + std::to_string( i );
-            if( ImGui::Button( btnLabel.c_str() ) )
-            {
-               m_serverList[ i ].connectRequested = true;
-               // Handle connect logic here
-            }
-         }
-         ImGui::EndTable();
-      }
-      ImGui::End();
-      ImGui::PopStyleVar();
    }
 }

@@ -73,12 +73,12 @@ public:
 
    SOCKET GetHostSocket() const noexcept { return m_hostSocket; }
 
-   virtual void Poll( World& world, Player& player ) = 0;
+   virtual void Poll( World& world, const glm::vec3& playerPosition ) = 0;
    //virtual void                  OnReceive( const uint8_t* data, size_t size ) = 0;
    virtual constexpr NetworkType GetNetworkType() const noexcept = 0;
 
    // Packet handling
-   virtual void HandleIncomingPacket( const Packet& packet, World& world, Player& player ) = 0;
+   virtual void HandleIncomingPacket( const Packet& packet, World& world ) = 0;
 
    //virtual void CheckForData( World& world, Player& player )    = 0; // check for data to read
    //virtual void CheckForClients( World& world, Player& player ) = 0; // check for new clients to accept
