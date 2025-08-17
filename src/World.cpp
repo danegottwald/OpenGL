@@ -1,31 +1,61 @@
 ﻿#include "World.h"
+
+// Project dependencies
 #include <Events/NetworkEvent.h>
 #include <Input/Input.h>
+#include <Renderer/Mesh.h>
+
 #include <Entity/Registry.h>
 #include <Entity/Components/Transform.h>
-#include <Renderer/Mesh.h>
-#include <Renderer/Shader.h>
+#include <Entity/Components/Velocity.h>
+#include <Entity/Components/Input.h>
+#include <Entity/Components/PlayerTag.h>
+#include <Entity/Components/Mesh.h>
 
-std::unique_ptr< Shader > pShader;
-Events::EventSubscriber   m_eventSubscriber;
+Events::EventSubscriber m_eventSubscriber;
 
-World::World()
+World::World( Entity::Registry& registry )
 {
-   pShader = std::make_unique< Shader >();
-
    m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ & ]( const Events::NetworkClientConnectEvent& e ) noexcept
    {
-      const uint64_t clientID    = e.GetClientID();
-      m_otherPlayers[ clientID ] = std::make_shared< CubeMesh >();
-      m_otherPlayers[ clientID ]->SetColor( glm::vec3( 0.0f, 0.0f, 1.0f ) );
+      std::shared_ptr< Entity::EntityHandle > psNewClient = registry.CreateWithHandle();
+      registry.AddComponent< CTransform >( psNewClient->Get(), 0.0f, 128.0f, 0.0f );
+
+      std::shared_ptr< CapsuleMesh > psClientMesh = std::make_shared< CapsuleMesh >();
+      psClientMesh->SetColor( glm::vec3( 100.0f / 255.0f, 147.0f / 255.0f, 237.0f / 255.0f ) ); // cornflower blue
+      registry.AddComponent< CMesh >( psNewClient->Get(), psClientMesh );
+
+      m_playerHandles.insert( { e.GetClientID(), std::move( psNewClient ) } );
    } );
+
    m_eventSubscriber.Subscribe< Events::NetworkClientDisconnectEvent >( [ & ]( const Events::NetworkClientDisconnectEvent& e ) noexcept
    {
-      if( auto it = m_otherPlayers.find( e.GetClientID() ); it != m_otherPlayers.end() )
-         m_otherPlayers.erase( it );
+      if( auto it = m_playerHandles.find( e.GetClientID() ); it != m_playerHandles.end() )
+         m_playerHandles.erase( it );
    } );
-   m_eventSubscriber.Subscribe< Events::NetworkPositionUpdateEvent >( [ this ]( const Events::NetworkPositionUpdateEvent& e ) noexcept
-   { this->ReceivePlayerPosition( e.GetClientID(), e.GetPosition() ); } );
+
+   m_eventSubscriber.Subscribe< Events::NetworkPositionUpdateEvent >( [ & ]( const Events::NetworkPositionUpdateEvent& e ) noexcept
+   {
+      auto it = m_playerHandles.find( e.GetClientID() );
+      if( it == m_playerHandles.end() )
+      {
+         std::println( std::cerr, "Client with ID {} not found", e.GetClientID() );
+         return; // Client not found
+      }
+
+      CTransform* pClientTransform = registry.GetComponent< CTransform >( it->second->Get() );
+      if( !pClientTransform )
+      {
+         std::println( std::cerr, "Transform component not found for client ID {}", e.GetClientID() );
+         return; // Transform component not found
+      }
+
+      glm::vec3 meshOffset( 0.0f, 1.0f, 0.0f ); // Offset for the mesh position
+      if( CMesh* pClientMesh = registry.GetComponent< CMesh >( it->second->Get() ) )
+         meshOffset.y = pClientMesh->mesh->GetCenterToBottomDistance();
+
+      pClientTransform->position = e.GetPosition() + meshOffset; // position is at feet level, so adjust for height
+   } );
 }
 
 enum class BlockFace
@@ -216,37 +246,18 @@ private:
    };
 };
 
-struct CMesh
-{
-   std::shared_ptr< IMesh > mesh;
-   CMesh( std::shared_ptr< IMesh > mesh ) :
-      mesh( std::move( mesh ) )
-   {}
-};
-
-//struct CMaterial
-//{
-//   std::shared_ptr< Material > material;
-//   CMaterial( std::shared_ptr< Material > material ) :
-//      material( std::move( material ) )
-//   {}
-//};
-
 constexpr uint8_t  CHUNK_SIZE       = 16;
 constexpr uint16_t WORLD_CHUNK_SIZE = 32; //64;
 constexpr uint16_t WORLD_SIZE       = CHUNK_SIZE * WORLD_CHUNK_SIZE / 2;
 
-std::vector< std::shared_ptr< Entity::EntityHandle > > entityHandles;
-
 void World::Setup( Entity::Registry& registry )
 {
    PROFILE_SCOPE( "World::Setup" );
-   entityHandles.clear();
+   m_entityHandles.clear();
 
    std::random_device                       rd;          // Non-deterministic seed generator
    std::mt19937                             gen( rd() ); // Mersenne Twister PRNG
    std::uniform_int_distribution< int32_t > dist;
-   //m_mapNoise.SetSeed( dist( gen ) );                           // Set the seed for reproducibility
    m_mapNoise.SetSeed( 5 );                                     // Set the seed for reproducibility
    m_mapNoise.SetNoiseType( FastNoiseLite::NoiseType_Perlin );  // Use Perlin noise for smooth terrain
    m_mapNoise.SetFrequency( 0.005f );                           // Lower frequency = larger features (mountains, valleys)
@@ -260,26 +271,16 @@ void World::Setup( Entity::Registry& registry )
          const glm::vec3 chunkStartPos( -WORLD_SIZE + chunkX * CHUNK_SIZE, 0.0f, -WORLD_SIZE + chunkZ * CHUNK_SIZE );
 
          std::shared_ptr< ChunkMesh > psChunkMesh = std::make_shared< ChunkMesh >();
-         for( int x = chunkStartPos.x; x < chunkStartPos.x + CHUNK_SIZE; x++ )
+         for( float x = chunkStartPos.x; x < chunkStartPos.x + CHUNK_SIZE; x++ )
          {
-            for( int z = chunkStartPos.z; z < chunkStartPos.z + CHUNK_SIZE; z++ )
+            for( float z = chunkStartPos.z; z < chunkStartPos.z + CHUNK_SIZE; z++ )
             {
-               //auto getNoise = [ &noise ]( int x, int z ) -> float { return 1; };
-               auto getNoise = [ &noise = m_mapNoise ]( int x, int z ) -> float
-               { return noise.GetNoise( static_cast< float >( x ), static_cast< float >( z ) ) + 1; };
+               auto getNoise = [ &noise = m_mapNoise ]( float x, float z ) -> float { return noise.GetNoise( x, z ) + 1; };
 
-               const int height = static_cast< int >( getNoise( x, z ) * 127.5f ) - 64;
-               //chunk->AddCube( glm::vec3( x, height, z ) );
-               //continue;
-
-               const int adjHeightNorth = static_cast< int >( getNoise( x, z + 1 ) * 127.5f ) - 64;
-               const int adjHeightSouth = static_cast< int >( getNoise( x, z - 1 ) * 127.5f ) - 64;
-               const int adjHeightEast  = static_cast< int >( getNoise( x + 1, z ) * 127.5f ) - 64;
-               const int adjHeightWest  = static_cast< int >( getNoise( x - 1, z ) * 127.5f ) - 64;
-
+               const int       height = static_cast< int >( getNoise( x, z ) * 127.5f ) - 64;
                const glm::vec3 cubePos( x, height, z );
                psChunkMesh->AddFace( cubePos, BlockFace::Up );
-               //chunk->AddFace( cubePos, BlockFace::Down );
+               //psChunkMesh->AddFace( cubePos, BlockFace::Down );
 
                // Replace the repeated face-filling blocks with a lambda to reduce duplication
                auto fillFace = [ & ]( int adjHeight, int height, BlockFace face )
@@ -291,6 +292,11 @@ void World::Setup( Entity::Registry& registry )
                         psChunkMesh->AddFace( glm::vec3( x, h, z ), face );
                   }
                };
+
+               float adjHeightNorth = ( getNoise( x, z + 1 ) * 127.5f ) - 64;
+               float adjHeightSouth = ( getNoise( x, z - 1 ) * 127.5f ) - 64;
+               float adjHeightEast  = ( getNoise( x + 1, z ) * 127.5f ) - 64;
+               float adjHeightWest  = ( getNoise( x - 1, z ) * 127.5f ) - 64;
                fillFace( adjHeightNorth, height, BlockFace::North );
                fillFace( adjHeightSouth, height, BlockFace::South );
                fillFace( adjHeightEast, height, BlockFace::East );
@@ -304,19 +310,15 @@ void World::Setup( Entity::Registry& registry )
          std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
          registry.AddComponent< CTransform >( psChunk->Get(), chunkStartPos.x, 0.0f, chunkStartPos.z );
          registry.AddComponent< CMesh >( psChunk->Get(), psChunkMesh );
-         entityHandles.push_back( psChunk );
+         m_entityHandles.push_back( psChunk );
       }
    }
 
    std::shared_ptr< Entity::EntityHandle > psSun = registry.CreateWithHandle();
-   registry.AddComponent< CTransform >( psSun->Get(), 0.0f, 128.0f, 0.0f );
-   registry.AddComponent< CMesh >( psSun->Get(), std::make_shared< CubeMesh >( glm::vec3( 0.0f, 96.0f, 0.0f ) ) );
-   entityHandles.push_back( psSun );
-}
+   registry.AddComponent< CTransform >( psSun->Get(), 0.0f, 76.0f, 0.0f );
+   registry.AddComponent< CMesh >( psSun->Get(), std::make_shared< SphereMesh >() );
 
-void World::Tick( float delta, const glm::vec3& position )
-{
-   //m_pSun->SetPosition( position );
+   m_entityHandles.push_back( psSun );
 }
 
 class ViewFrustum
@@ -351,67 +353,3 @@ public:
 private:
    std::array< glm::vec4, 6 > m_planes;
 };
-
-// Render the world from provided perspective
-void World::Render( Entity::Registry& registry, const glm::vec3& position, const glm::mat4& projectionView )
-{
-   // 1. Clear the color and depth buffers
-   glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
-
-   // 2. Update vertex buffer data (if changed)
-   //glBindBuffer( GL_ARRAY_BUFFER, m_VBID ); // Bind the Vertex Buffer Object (VBO)
-   //glBufferSubData( GL_ARRAY_BUFFER, 0, vt.size() * sizeof( float ), vt.data() ); // Update vertex data if changed
-
-   // 3. Bind shader and set uniform values
-   pShader->Bind();                                // Bind the shader program
-   pShader->SetUniform( "u_MVP", projectionView ); // Set Model-View-Projection matrix
-   pShader->SetUniform( "u_viewPos", position );   // Set camera position
-   //pShader->SetUniform( "u_color", 0.5f, 0.0f, 0.0f );         // Set color (example: red)
-   pShader->SetUniform( "u_lightPos", position ); // Set light position
-
-   ViewFrustum frustum( projectionView );
-   for( auto [ tran, mesh ] : registry.CView< CTransform, CMesh >() )
-   {
-      //if( !frustum.FInFrustum( tran.position, 0.5f /*padding (half cube size)*/ ) )
-      //   continue; // Skip rendering this mesh
-
-      pShader->SetUniform( "u_color", mesh.mesh->GetColor() );
-      //mesh.mesh->SetPosition( tran.position );
-      mesh.mesh->Render();
-   }
-
-   // 4. Optional: Bind texture (if any)
-   // m_Texture->Bind(0); // Bind texture (if using one)
-   // pShader->SetUniform1i("u_Texture", 0); // Set texture unit in shader
-
-   pShader->Unbind(); // Unbind shader program
-
-   // 7. Optional: Unbind texture (if any)
-   // glBindTexture(GL_TEXTURE_2D, 0); // Unbind texture (if using one)
-
-   // 8. Render additional objects (optional, e.g., chunks or entities)
-   // renderChunks(); // Example: render chunks
-   // renderEntities(); // Example: render entities
-}
-
-void World::ReceivePlayerPosition( uint64_t clientID, const glm::vec3& position )
-{
-   if( m_otherPlayers.find( clientID ) == m_otherPlayers.end() )
-      return;
-
-   m_otherPlayers[ clientID ]->SetPosition( position - glm::vec3( 0.0f, 1.0f, 0.0f ) ); // set position, adjust for head level
-
-   // handle player connected
-   //Entity::Entity connectedPlayer = registry.Create();
-   //registry.AddComponent< CTransform >( connectedPlayer, position.x, position.y, position.z );
-   //registry.AddComponent< ClientComponent >( connectedPlayer, clientID );
-
-   // update player position
-   //for( auto [ tran, client ] : registry.CView< CTransform, ClientComponent >() )
-   //{
-   //   if( client.clientID != clientID )
-   //      continue; // Skip if not the current client
-   //
-   //   tran.SetPosition( position ); // set position
-   //}
-}

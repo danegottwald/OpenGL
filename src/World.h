@@ -13,19 +13,16 @@ class IMesh;
 namespace Entity
 {
 class Registry;
+class EntityHandle;
 }
 
 class World
 {
 public:
-   World();
+   explicit World( Entity::Registry& registry );
    ~World() = default;
 
    void Setup( Entity::Registry& registry );
-   void Tick( float delta, const glm::vec3& position );
-   void Render( Entity::Registry& registry, const glm::vec3& position, const glm::mat4& projectionView );
-
-   void ReceivePlayerPosition( uint64_t clientID, const glm::vec3& position );
 
    float GetHeightAtPos( float x, float z ) const
    {
@@ -40,7 +37,8 @@ private:
 
    FastNoiseLite m_mapNoise; // https://auburn.github.io/FastNoiseLite/
 
-   std::unordered_map< uint64_t, std::shared_ptr< IMesh > > m_otherPlayers;
+   std::vector< std::shared_ptr< Entity::EntityHandle > >                  m_entityHandles;
+   std::unordered_map< uint64_t, std::shared_ptr< Entity::EntityHandle > > m_playerHandles; // Maps player ID to their entity handle
 
    Events::EventSubscriber m_eventSubscriber;
 };

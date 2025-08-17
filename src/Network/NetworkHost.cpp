@@ -113,22 +113,15 @@ void NetworkHost::ClientIOThread( uint64_t clientID )
          size_t offset = 0;
          while( offset < static_cast< size_t >( bytesReceived ) )
          {
-            if( auto inPacket = Packet::Deserialize( recvBuffer, offset ) )
-            {
-               offset += inPacket->Size();
-
-               // Handle the packet
-               // TODO: Pass World/Player for game logic
-               // For now, pass nullptrs (should be refactored for real use)
-
-               World* dummyWorld = nullptr;
-               HandleIncomingPacket( *inPacket, *( World* )dummyWorld );
-            }
-            else
+            auto inPacket = Packet::Deserialize( recvBuffer, offset );
+            if( !inPacket.has_value() )
             {
                s_logs.push_back( std::format( "Failed to deserialize packet from client {}: {}", clientID, std::to_underlying( inPacket.error() ) ) );
                break;
             }
+
+            offset += inPacket->Size();
+            HandleIncomingPacket( inPacket.value() );
          }
       }
       else if( bytesReceived == 0 || ( bytesReceived < 0 && WSAGetLastError() != WSAEWOULDBLOCK ) )
@@ -149,7 +142,7 @@ void NetworkHost::ClientIOThread( uint64_t clientID )
    }
 }
 
-void NetworkHost::HandleIncomingPacket( const Packet& packet, World& world )
+void NetworkHost::HandleIncomingPacket( const Packet& packet )
 {
    switch( packet.m_code )
    {
@@ -165,14 +158,11 @@ void NetworkHost::HandleIncomingPacket( const Packet& packet, World& world )
          // Optionally handle client disconnect logic
          break;
       case NetworkCode::Chat:
-         // Broadcast chat to all except sender
-         BroadcastPacket( packet, packet.m_sourceID );
+         BroadcastPacket( packet, packet.m_sourceID ); // Broadcast chat message to all other clients
          Events::Dispatch< Events::NetworkChatReceivedEvent >( packet.m_sourceID, Packet::ParseBuffer< NetworkCode::Chat >( packet ) );
          break;
       case NetworkCode::PositionUpdate:
-         // Broadcast position update to all except sender
-         BroadcastPacket( packet, packet.m_sourceID );
-         // Dispatch event for main thread to update world
+         BroadcastPacket( packet, packet.m_sourceID ); // Broadcast received position update to all other clients
          Events::Dispatch< Events::NetworkPositionUpdateEvent >( packet.m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( packet ) );
          break;
 
@@ -273,7 +263,7 @@ void NetworkHost::Shutdown()
    m_queueMutexes.clear();
 }
 
-void NetworkHost::Poll( World& world, const glm::vec3& playerPosition )
+void NetworkHost::Poll( const glm::vec3& playerPosition )
 {
    // No-op: all work is done in threads
    SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0, playerPosition ) );

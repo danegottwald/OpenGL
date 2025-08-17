@@ -18,14 +18,14 @@ public:
    void               Listen( uint16_t port );
    const std::string& GetListenAddress() const noexcept { return m_ipAddress; }
 
-   void                  Poll( World& world, const glm::vec3& playerPosition ) override;
+   void                  Poll( const glm::vec3& playerPosition ) override;
    constexpr NetworkType GetNetworkType() const noexcept override { return NetworkType::Host; }
 
    void SendPacket( const Packet& packet ) override;
    void SendPackets( const std::vector< Packet >& packets ) override;
 
    // Packet handling
-   void HandleIncomingPacket( const Packet& packet, World& world ) override;
+   void HandleIncomingPacket( const Packet& packet ) override;
 
 private:
    // New architecture

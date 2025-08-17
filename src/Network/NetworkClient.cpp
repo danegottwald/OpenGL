@@ -2,7 +2,6 @@
 
 // Project dependencies
 #include <Events/NetworkEvent.h>
-#include <World.h>
 
 namespace
 {
@@ -131,7 +130,7 @@ void NetworkClient::SendPackets( const std::vector< Packet >& packets )
       s_logs.push_back( std::format( "Failed to send packet to host: {}", m_hostSocket ) );
 }
 
-void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world )
+void NetworkClient::HandleIncomingPacket( const Packet& inPacket )
 {
    switch( inPacket.m_code )
    {
@@ -170,7 +169,7 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world )
          Events::Dispatch< Events::NetworkChatReceivedEvent >( inPacket.m_sourceID, Packet::ParseBuffer< NetworkCode::Chat >( inPacket ) );
          break;
       case NetworkCode::PositionUpdate:
-         world.ReceivePlayerPosition( inPacket.m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( inPacket ) );
+         Events::Dispatch< Events::NetworkPositionUpdateEvent >( inPacket.m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( inPacket ) );
          break;
       case NetworkCode::ClientDisconnect:
          s_logs.push_back( std::format( "Client disconnected: {}", inPacket.m_sourceID ) );
@@ -188,7 +187,7 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket, World& world )
    }
 }
 
-void NetworkClient::Poll( World& world, const glm::vec3& playerPosition )
+void NetworkClient::Poll( const glm::vec3& playerPosition )
 {
    if( m_hostSocket == INVALID_SOCKET )
       return;
@@ -199,5 +198,5 @@ void NetworkClient::Poll( World& world, const glm::vec3& playerPosition )
 
    // Process incoming packets
    while( std::optional< Packet > optInPacket = PollPacket() )
-      HandleIncomingPacket( *optInPacket, world );
+      HandleIncomingPacket( *optInPacket );
 }

@@ -121,23 +121,296 @@ public:
    virtual void SetPosition( const glm::vec3& position ) = 0;
    glm::vec3    GetPosition() { return m_position; }
 
+   virtual float GetCenterToBottomDistance() const { return 0.0f; }
+
 protected:
    MeshBuffer m_meshBuffer;
    glm::vec3  m_position { 0.0f, 0.0f, 0.0f };
    glm::vec3  m_color { 0.5f, 0.0f, 0.0f };
 };
 
+class CapsuleMesh : public IMesh
+{
+public:
+   CapsuleMesh( const glm::vec3& position = glm::vec3( 0.0f ), float radius = 0.5f, float height = 2.0f, int segments = 24, int rings = 12 ) :
+      m_radius( radius ),
+      m_height( height )
+   {
+      m_position = position;
+      m_meshBuffer.Initialize();
+      GenerateCapsule( radius, height, segments, rings );
+      SetPosition( position );
+   }
+
+   void SetPosition( const glm::vec3& position ) override
+   {
+      m_position = position;
+      m_meshBuffer.Bind();
+
+      VertexBufferLayout layout;
+      layout.Push< float >( 3 ); // Position
+      layout.Push< float >( 3 ); // Normal
+
+      // Offset vertices by position
+      std::vector< float > offsetVertices = m_vertices;
+      for( size_t i = 0; i < offsetVertices.size(); i += 6 )
+      {
+         offsetVertices[ i ] += position.x;
+         offsetVertices[ i + 1 ] += position.y;
+         offsetVertices[ i + 2 ] += position.z;
+      }
+      m_meshBuffer.SetVertexData( offsetVertices, std::move( layout ) );
+      m_meshBuffer.SetIndexData( m_indices );
+      m_meshBuffer.Unbind();
+   }
+
+   float GetCenterToBottomDistance() const override { return ( m_height * 0.5f ) + m_radius; }
+
+private:
+   std::vector< float >        m_vertices;
+   std::vector< unsigned int > m_indices;
+   float                       m_radius;
+   float                       m_height;
+
+   void GenerateCapsule( float radius, float height, int segments, int rings )
+   {
+      m_vertices.clear();
+      m_indices.clear();
+
+      float halfHeight   = ( height - 2.0f * radius ) * 0.5f;
+      int   hemiRings    = rings / 2; // rings for each hemisphere
+      int   vertsPerRing = segments + 1;
+
+      // Total rings laid out top->bottom:
+      //  top hemisphere:        (hemiRings + 1) rings, includes top seam at end
+      //  cylinder (interior):   (rings - 1) rings, excludes both seams
+      //  bottom hemisphere:     (hemiRings + 1) rings, starts at seam
+      int totalRings = ( hemiRings + 1 ) + ( std::max )( 0, rings - 1 ) + ( hemiRings + 1 );
+
+      auto addVertex = [ & ]( float px, float py, float pz, float nx, float ny, float nz )
+      {
+         m_vertices.push_back( px );
+         m_vertices.push_back( py );
+         m_vertices.push_back( pz );
+         m_vertices.push_back( nx );
+         m_vertices.push_back( ny );
+         m_vertices.push_back( nz );
+      };
+
+      // ---- Generate all rings (top -> bottom) ----
+      for( int y = 0; y < totalRings; ++y )
+      {
+         // Decide which section we're in
+         int topEnd   = hemiRings; // inclusive
+         int cylStart = topEnd + 1;
+         int cylEnd   = topEnd + ( std::max )( 0, rings - 1 ); // inclusive
+         int botStart = cylEnd + 1;
+         // int botEnd = botStart + hemiRings; // (unused) inclusive
+
+         for( int x = 0; x <= segments; ++x )
+         {
+            float u     = float( x ) / segments;
+            float theta = glm::two_pi< float >() * u;
+            float sinT  = sinf( theta );
+            float cosT  = cosf( theta );
+
+            float px, py, pz;
+            float nx, ny, nz;
+
+            if( y <= topEnd )
+            {
+               // Top hemisphere: phi 0..pi/2 (0 at pole, pi/2 at seam)
+               float v      = ( hemiRings == 0 ) ? 1.0f : float( y ) / float( hemiRings );
+               float phi    = glm::half_pi< float >() * v;
+               float sinPhi = sinf( phi );
+               float cosPhi = cosf( phi );
+
+               nx = cosT * sinPhi;
+               ny = cosPhi;
+               nz = sinT * sinPhi;
+
+               px = radius * nx;
+               py = halfHeight + radius * ny; // seam at +halfHeight when ny=0
+               pz = radius * nz;
+            }
+            else if( y <= cylEnd )
+            {
+               // Cylinder interior: skip both seam rings
+               // Map to v in (0,1): use (cy+1)/rings where cy in [0..rings-2]
+               int   cy = y - ( topEnd + 1 );
+               float v  = float( cy + 1 ) / float( rings ); // (0,1)
+               py       = halfHeight - v * ( 2.0f * halfHeight );
+
+               nx = cosT;
+               ny = 0.0f;
+               nz = sinT;
+
+               px = radius * nx;
+               pz = radius * nz;
+            }
+            else
+            {
+               // Bottom hemisphere: start at seam and go to bottom pole
+               // Use phi in [pi/2 .. 0]: phi = (1 - v) * pi/2, v in [0..1]
+               int   by    = y - botStart;
+               float v     = ( hemiRings == 0 ) ? 1.0f : float( by ) / float( hemiRings );
+               float phi   = glm::half_pi< float >() * ( 1.0f - v );
+               float sinPh = sinf( phi );
+               float cosPh = cosf( phi );
+
+               nx = cosT * sinPh;
+               ny = -cosPh; // points downward
+               nz = sinT * sinPh;
+
+               px = radius * nx;
+               py = -halfHeight + radius * ny; // seam at -halfHeight when ny=0
+               pz = radius * nz;
+            }
+
+            addVertex( px, py, pz, nx, ny, nz );
+         }
+      }
+
+      // ---- Indices (shared for all sections) ----
+      for( int y = 0; y < totalRings - 1; ++y )
+      {
+         int row0 = y * vertsPerRing;
+         int row1 = ( y + 1 ) * vertsPerRing;
+
+         for( int x = 0; x < segments; ++x )
+         {
+            int i0 = row0 + x;
+            int i1 = row1 + x;
+            int i2 = row1 + x + 1;
+            int i3 = row0 + x + 1;
+
+            // CCW winding facing outward
+            m_indices.push_back( i0 );
+            m_indices.push_back( i2 );
+            m_indices.push_back( i1 );
+
+            m_indices.push_back( i0 );
+            m_indices.push_back( i3 );
+            m_indices.push_back( i2 );
+         }
+      }
+   }
+};
+
+
+class SphereMesh : public IMesh
+{
+public:
+   SphereMesh( const glm::vec3& position = glm::vec3( 0.0f ), float radius = 0.5f, int segments = 24, int rings = 12 ) :
+      m_radius( radius )
+   {
+      m_position = position;
+      m_meshBuffer.Initialize();
+      GenerateSphere( radius, segments, rings );
+      SetPosition( position );
+   }
+
+   void SetPosition( const glm::vec3& position ) override
+   {
+      m_position = position;
+      m_meshBuffer.Bind();
+
+      VertexBufferLayout layout;
+      layout.Push< float >( 3 ); // Position
+      layout.Push< float >( 3 ); // Normal
+
+      // Offset vertices by position
+      std::vector< float > offsetVertices = m_vertices;
+      for( size_t i = 0; i < offsetVertices.size(); i += 6 )
+      {
+         offsetVertices[ i ] += position.x;
+         offsetVertices[ i + 1 ] += position.y;
+         offsetVertices[ i + 2 ] += position.z;
+      }
+      m_meshBuffer.SetVertexData( offsetVertices, std::move( layout ) );
+      m_meshBuffer.SetIndexData( m_indices );
+      m_meshBuffer.Unbind();
+   }
+
+   float GetCenterToBottomDistance() const override { return m_radius; }
+
+private:
+   std::vector< float >        m_vertices;
+   std::vector< unsigned int > m_indices;
+   float                       m_radius;
+
+   void GenerateSphere( float radius, int segments, int rings )
+   {
+      m_vertices.clear();
+      m_indices.clear();
+
+      // Vertices
+      for( int y = 0; y <= rings; ++y )
+      {
+         float v      = float( y ) / float( rings );
+         float phi    = glm::pi< float >() * v;
+         float sinPhi = sinf( phi );
+         float cosPhi = cosf( phi );
+
+         for( int x = 0; x <= segments; ++x )
+         {
+            float u        = float( x ) / float( segments );
+            float theta    = glm::two_pi< float >() * u;
+            float sinTheta = sinf( theta );
+            float cosTheta = cosf( theta );
+
+            float nx = cosTheta * sinPhi;
+            float ny = cosPhi;
+            float nz = sinTheta * sinPhi;
+
+            float px = radius * nx;
+            float py = radius * ny;
+            float pz = radius * nz;
+
+            m_vertices.push_back( px );
+            m_vertices.push_back( py );
+            m_vertices.push_back( pz );
+            m_vertices.push_back( nx );
+            m_vertices.push_back( ny );
+            m_vertices.push_back( nz );
+         }
+      }
+
+      // Indices
+      int vertsPerRow = segments + 1;
+      for( int y = 0; y < rings; ++y )
+      {
+         for( int x = 0; x < segments; ++x )
+         {
+            int i0 = y * vertsPerRow + x;
+            int i1 = ( y + 1 ) * vertsPerRow + x;
+            int i2 = ( y + 1 ) * vertsPerRow + ( x + 1 );
+            int i3 = y * vertsPerRow + ( x + 1 );
+
+            m_indices.push_back( i0 );
+            m_indices.push_back( i2 );
+            m_indices.push_back( i1 );
+
+            m_indices.push_back( i0 );
+            m_indices.push_back( i3 );
+            m_indices.push_back( i2 );
+         }
+      }
+   }
+};
+
 class CubeMesh : public IMesh
 {
 public:
-   CubeMesh( const glm::vec3& position = glm::vec3( 0.0f ) )
+   CubeMesh( const glm::vec3& position = glm::vec3( 0.0f ), float size = 1.0f ) :
+      m_size( size )
    {
       m_position = position;
       m_meshBuffer.Initialize();
       SetPosition( position );
    }
 
-   void SetPosition( const glm::vec3& position )
+   void SetPosition( const glm::vec3& position ) override
    {
       m_position = position;
       m_meshBuffer.Bind();
@@ -163,6 +436,8 @@ public:
       m_meshBuffer.SetIndexData( m_indices );
       m_meshBuffer.Unbind();
    }
+
+   float GetCenterToBottomDistance() const override { return m_size * 0.5f; }
 
 private:
    // clang-format off
@@ -222,4 +497,5 @@ private:
       20, 21, 22, 22, 23, 20
    };
    // clang-format on
+   float m_size;
 };

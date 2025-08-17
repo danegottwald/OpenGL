@@ -22,7 +22,8 @@ private:
       m_pRegistry( &registry )
    {}
 
-   void Invalidate() noexcept { m_pRegistry = nullptr; }
+   /*! @brief Unbinds the entity handle from the registry. Once unbound, the handle is no longer valid. */
+   void Unbind() noexcept { m_pRegistry = nullptr; }
 
 public:
    ~EntityHandle();
@@ -33,7 +34,11 @@ public:
    EntityHandle& operator=( EntityHandle&& ) noexcept = delete;
    EntityHandle& operator=( const EntityHandle& )     = delete;
 
-   Entity Get() const noexcept { return m_entity; }
+   /**
+    * @brief Gets the entity ID associated with this handle.
+    * @return The entity ID.
+    */
+   [[nodiscard]] Entity Get() const noexcept { return m_entity; }
 
    // Operator overloads
    explicit operator Entity() const noexcept { return m_entity; }
@@ -89,11 +94,11 @@ public:
    /*! @brief Destructor. */
    ~Registry()
    {
-      // Invalidate all handles to prevent dangling references
+      // Unbind all handles to prevent dangling references
       for( auto& [ _, wkHandle ] : m_wkEntityHandles )
       {
          if( std::shared_ptr< EntityHandle > psHandle = wkHandle.lock() )
-            psHandle->Invalidate();
+            psHandle->Unbind();
       }
    }
 
@@ -150,7 +155,7 @@ public:
       if( auto it = m_wkEntityHandles.find( entity ); it != m_wkEntityHandles.end() )
       {
          if( auto psHandle = it->second.lock() )
-            psHandle->Invalidate(); // Invalidate the handle
+            psHandle->Unbind(); // Let the handle know it is no longer valid
 
          m_wkEntityHandles.erase( it );
       }

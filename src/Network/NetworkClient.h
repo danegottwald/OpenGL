@@ -16,10 +16,10 @@ public:
    void SendPacket( const Packet& packet ) override;
    void SendPackets( const std::vector< Packet >& packets ) override;
 
-   void HandleIncomingPacket( const Packet& packet, World& world ) override;
+   void HandleIncomingPacket( const Packet& packet ) override;
 
 private:
-   void                  Poll( World& world, const glm::vec3& playerPosition ) override;
+   void                  Poll( const glm::vec3& playerPosition ) override;
    constexpr NetworkType GetNetworkType() const noexcept override { return NetworkType::Client; }
 
    // Threaded receive logic

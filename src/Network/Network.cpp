@@ -133,7 +133,7 @@ public:
 
    void Draw() override
    {
-      ImGui::SetNextWindowSize( ImVec2( 400, 170 ), ImGuiCond_FirstUseEver );
+      ImGui::SetNextWindowSize( ImVec2( 650, 250 ), ImGuiCond_FirstUseEver );
       ImGui::SetNextWindowPos( ImVec2( 10, Window::Get().GetWindowData().Height - 10 ), ImGuiCond_Always, ImVec2( 0.0f, 1.0f ) );
       ImGui::Begin( "##Network", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse );
       if( ImGui::BeginTabBar( "##Tabs" ) )
