@@ -1,13 +1,10 @@
 ﻿#include "World.h"
-
-#include "../Events/NetworkEvent.h"
-#include "../Input/Input.h"
-
-#include "Entity/Registry.h"
-#include "Entity/Components/TransformComponent.h"
-
-#include "Mesh.h"
-#include "Renderer/Shader.h"
+#include <Events/NetworkEvent.h>
+#include <Input/Input.h>
+#include <Entity/Registry.h>
+#include <Entity/Components/Transform.h>
+#include <Renderer/Mesh.h>
+#include <Renderer/Shader.h>
 
 std::unique_ptr< Shader > pShader;
 Events::EventSubscriber   m_eventSubscriber;
@@ -219,13 +216,21 @@ private:
    };
 };
 
-struct MeshComponent
+struct CMesh
 {
    std::shared_ptr< IMesh > mesh;
-   MeshComponent( std::shared_ptr< IMesh > mesh ) :
+   CMesh( std::shared_ptr< IMesh > mesh ) :
       mesh( std::move( mesh ) )
    {}
 };
+
+//struct CMaterial
+//{
+//   std::shared_ptr< Material > material;
+//   CMaterial( std::shared_ptr< Material > material ) :
+//      material( std::move( material ) )
+//   {}
+//};
 
 constexpr uint8_t  CHUNK_SIZE       = 16;
 constexpr uint16_t WORLD_CHUNK_SIZE = 32; //64;
@@ -297,15 +302,15 @@ void World::Setup( Entity::Registry& registry )
          psChunkMesh->Finalize();
 
          std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
-         registry.AddComponent< TransformComponent >( psChunk->Get(), chunkStartPos.x, 0.0f, chunkStartPos.z );
-         registry.AddComponent< MeshComponent >( psChunk->Get(), psChunkMesh );
+         registry.AddComponent< CTransform >( psChunk->Get(), chunkStartPos.x, 0.0f, chunkStartPos.z );
+         registry.AddComponent< CMesh >( psChunk->Get(), psChunkMesh );
          entityHandles.push_back( psChunk );
       }
    }
 
    std::shared_ptr< Entity::EntityHandle > psSun = registry.CreateWithHandle();
-   registry.AddComponent< TransformComponent >( psSun->Get(), 0.0f, 128.0f, 0.0f );
-   registry.AddComponent< MeshComponent >( psSun->Get(), std::make_shared< CubeMesh >( glm::vec3( 0.0f, 96.0f, 0.0f ) ) );
+   registry.AddComponent< CTransform >( psSun->Get(), 0.0f, 128.0f, 0.0f );
+   registry.AddComponent< CMesh >( psSun->Get(), std::make_shared< CubeMesh >( glm::vec3( 0.0f, 96.0f, 0.0f ) ) );
    entityHandles.push_back( psSun );
 }
 
@@ -365,7 +370,7 @@ void World::Render( Entity::Registry& registry, const glm::vec3& position, const
    pShader->SetUniform( "u_lightPos", position ); // Set light position
 
    ViewFrustum frustum( projectionView );
-   for( auto [ tran, mesh ] : registry.CView< TransformComponent, MeshComponent >() )
+   for( auto [ tran, mesh ] : registry.CView< CTransform, CMesh >() )
    {
       //if( !frustum.FInFrustum( tran.position, 0.5f /*padding (half cube size)*/ ) )
       //   continue; // Skip rendering this mesh
@@ -398,11 +403,11 @@ void World::ReceivePlayerPosition( uint64_t clientID, const glm::vec3& position 
 
    // handle player connected
    //Entity::Entity connectedPlayer = registry.Create();
-   //registry.AddComponent< TransformComponent >( connectedPlayer, position.x, position.y, position.z );
+   //registry.AddComponent< CTransform >( connectedPlayer, position.x, position.y, position.z );
    //registry.AddComponent< ClientComponent >( connectedPlayer, clientID );
 
    // update player position
-   //for( auto [ tran, client ] : registry.CView< TransformComponent, ClientComponent >() )
+   //for( auto [ tran, client ] : registry.CView< CTransform, ClientComponent >() )
    //{
    //   if( client.clientID != clientID )
    //      continue; // Skip if not the current client

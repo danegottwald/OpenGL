@@ -1,11 +1,8 @@
 #include "NetworkClient.h"
 
-#include "../Events/NetworkEvent.h"
-#include "../Game/World.h"
-#include <thread>
-#include <mutex>
-#include <queue>
-#include <atomic>
+// Project dependencies
+#include <Events/NetworkEvent.h>
+#include <World.h>
 
 namespace
 {

@@ -1,17 +1,15 @@
-
 #include "Network.h"
-
 // Local dependencies
 #include "NetworkClient.h"
 #include "NetworkHost.h"
 #include "Packet.h"
 
-// Relative dependencies
-#include "../Events/NetworkEvent.h"
-#include "../Game/World.h"
-#include "../Game/Core/GUIManager.h"
-#include "../Game/Core/Window.h"
-#include "../Input/Input.h"
+// Project dependencies
+#include <Core/GUIManager.h>
+#include <Core/Window.h>
+#include <Events/NetworkEvent.h>
+#include <Input/Input.h>
+#include <World.h>
 
 // ===================================================
 //      INetwork

@@ -1,8 +1,8 @@
 #pragma once
 
+// Project dependencies
+#include <Events/NetworkEvent.h>
 #include <FastNoiseLite/FastNoiseLite.h>
-
-#include "../Events/NetworkEvent.h"
 
 using GLuint = unsigned int;
 

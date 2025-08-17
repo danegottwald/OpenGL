@@ -1,5 +1,5 @@
 #pragma once
 
-struct CameraTag
+struct CCameraTag
 {
 };

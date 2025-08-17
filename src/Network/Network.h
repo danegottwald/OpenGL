@@ -4,8 +4,11 @@
 #include <winsock2.h>
 #pragma comment( lib, "ws2_32.lib" )
 
-#include "../Game/Core/GUIManager.h"
+// Local dependencies
 #include "Packet.h"
+
+// Project dependencies
+#include <Core/GUIManager.h>
 
 #define DEFAULT_ADDRESS "127.0.0.1"
 #define DEFAULT_PORT 8080

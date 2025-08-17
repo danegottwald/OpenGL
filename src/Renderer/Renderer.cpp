@@ -1,12 +1,20 @@
 #include "Renderer.h"
 
+// Local dependencies
+#include "VertexArray.h"
+#include "IndexBuffer.h"
+#include "Shader.h"
+
 Renderer::Renderer()
 {
    glEnable( GL_BLEND );
    glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
    glEnable( GL_DEPTH_TEST );
-   glClearColor( 0.0f, 0.0f, 0.0f, 0.0f );
+
+   // Clear color to cornflower blue
+   const float r = 100.0f / 255.0f, g = 147.0f / 255.0f, b = 237.0f / 255.0f;
+   glClearColor( r, g, b, 1.0f );
 
    //glMatrixMode( GL_MODELVIEW );
 

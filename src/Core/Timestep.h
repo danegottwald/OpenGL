@@ -1,22 +1,21 @@
 #pragma once
 
-// Timestep Class
-//      Usage
-//          Use Timestep to track delta time between frames and control fixed-tick updates.
-//          Call Step() once per frame to update the internal delta time.
-//          Call FTick() to check if enough time has passed to advance a fixed tick.
-//          Use GetDelta() for frame-based logic and GetCurrentTick() for tick-based logic.
-//          Example:
-//              Timestep timestep(20.0f); // 20 ticks per second
-//              while (game.IsRunning())
-//              {
-//                  timestep.Step(); // Update delta time
-//
-//                  if (timestep.FTick())
-//                      game.FixedUpdate(); // Called at fixed intervals
-//
-//                  game.Update(timestep.GetDelta()); // Called every frame
-//              }
+/**
+ * @brief Timestep class for managing time intervals and ticks.
+ * This class provides functionality to track the time elapsed between frames as well as manage fixed update ticks.
+ *
+ * @example
+ * Timestep timestep( 20.0f ); // 20 ticks per second
+ * while ( game.IsRunning() )
+ * {
+ *     timestep.Step(); // Update delta time
+ *
+ *     if ( timestep.FTick() )
+ *         game.Update(); // Called at fixed intervals
+ *
+ *     game.Update( timestep.GetDelta() ); // Called every frame
+ * }
+ */
 class Timestep
 {
 public:

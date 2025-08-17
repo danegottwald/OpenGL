@@ -1,5 +1,6 @@
 #pragma once
 
+// Local dependencies
 #include "VertexBufferLayout.h"
 
 class VertexBuffer

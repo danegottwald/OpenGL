@@ -1,5 +1,6 @@
 #pragma once
 
+// Local dependencies
 #include "Event.h"
 
 namespace Events

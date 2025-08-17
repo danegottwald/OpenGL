@@ -1,5 +1,5 @@
 #pragma once
 
-struct PlayerTag
+struct CPlayerTag
 {
 };

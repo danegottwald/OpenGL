@@ -1,7 +1,10 @@
 #pragma once
 
+// Local dependencies
 #include "Event.h"
-#include "../Input/Codes.h"
+
+// Project dependencies
+#include <Input/Codes.h>
 
 namespace Events
 {

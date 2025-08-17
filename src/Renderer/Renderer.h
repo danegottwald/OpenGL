@@ -1,8 +1,8 @@
 #pragma once
 
-#include "VertexArray.h"
-#include "IndexBuffer.h"
-#include "Shader.h"
+// Forward declarations
+class Shader;
+using GLuint = unsigned int;
 
 class Renderer
 {

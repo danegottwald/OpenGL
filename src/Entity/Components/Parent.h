@@ -5,11 +5,11 @@ namespace Entity
 using Entity = uint64_t;
 }
 
-struct ParentComponent
+struct CParent
 {
    Entity::Entity parent { 0 }; //{ Entity::InvalidEntityID };
-   ParentComponent() = default;
-   ParentComponent( Entity::Entity parent ) :
+   CParent() = default;
+   CParent( Entity::Entity parent ) :
       parent( parent )
    {}
 };

@@ -1,8 +1,13 @@
-
 #include "Window.h"
-#include "../../Input/Input.h"
 
+// Local dependencies
 #include "GUIManager.h"
+
+// Project dependencies
+#include <Events/ApplicationEvent.h>
+#include <Events/KeyEvent.h>
+#include <Events/MouseEvent.h>
+#include <Input/Input.h>
 
 Window::Window( const WindowData& winData ) :
    m_WindowData( winData )
@@ -83,8 +88,11 @@ void Window::Init()
       glEnable( GL_BLEND );                                // Enable blending
       glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA ); // Standard alpha blending
 
-      glShadeModel( GL_SMOOTH );              // Default shading model is smooth
-      glClearColor( 0.0f, 0.0f, 0.0f, 1.0f ); // Default clear color is black
+      glShadeModel( GL_SMOOTH ); // Default shading model is smooth
+
+      // Clear color to cornflower blue
+      const float r = 100.0f / 255.0f, g = 147.0f / 255.0f, b = 237.0f / 255.0f;
+      glClearColor( r, g, b, 1.0f );
    }
 
    // Set up necessary callbacks for input handling and window events

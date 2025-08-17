@@ -1,7 +1,8 @@
 #include "NetworkHost.h"
 
-#include "../Events/NetworkEvent.h"
-#include "../Game/World.h"
+// Project dependencies
+#include <Events/NetworkEvent.h>
+#include <World.h>
 
 constexpr size_t RECV_BUFFER_SIZE = 4096;
 

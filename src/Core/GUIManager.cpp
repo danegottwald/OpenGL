@@ -1,12 +1,13 @@
-
 #include "GUIManager.h"
 
+// Local dependencies
 #include "Window.h"
 
-#include "../Timestep.h"
-#include "../Entity/Registry.h"
-#include "../Entity/Components/TransformComponent.h"
-#include "../Entity/Components/VelocityComponent.h"
+// Project dependencies
+#include <Core/Timestep.h>
+#include <Entity/Registry.h>
+#include <Entity/Components/Transform.h>
+#include <Entity/Components/Velocity.h>
 
 // ========================================================================
 //      GUIManager
@@ -84,7 +85,7 @@ void DebugGUI::Draw()
       ImGui::Text( "Entity Count: %d", m_registry.GetEntityCount() );
 
       ImGui::NewLine();
-      auto [ pPlayerTran, pPlayerVel ] = m_registry.GetComponents< TransformComponent, VelocityComponent >( m_player );
+      auto [ pPlayerTran, pPlayerVel ] = m_registry.GetComponents< CTransform, CVelocity >( m_player );
       if( pPlayerTran && pPlayerVel )
       {
          ImGui::Text( "Player Entity: %d", m_player );
@@ -94,7 +95,7 @@ void DebugGUI::Draw()
          //ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
       }
 
-      if( TransformComponent* pCameraTran = m_registry.GetComponent< TransformComponent >( m_camera ) )
+      if( CTransform* pCameraTran = m_registry.GetComponent< CTransform >( m_camera ) )
       {
          ImGui::NewLine();
          ImGui::Text( "Camera Entity: %d", m_camera );

@@ -1,21 +1,28 @@
 #include "Application.h"
 
-#include "../Timestep.h"
-#include "../World.h"
-#include "../../Network/Network.h"
-#include "../../Input/Input.h"
+// Local dependencies
 #include "GUIManager.h"
+#include "Timestep.h"
+#include "Window.h"
+
+// Project dependencies
+#include <Events/ApplicationEvent.h>
+#include <Events/KeyEvent.h>
+#include <Events/MouseEvent.h>
+#include <Input/Input.h>
+#include <Network/Network.h>
+#include <World.h>
 
 // Component includes
-#include "../Entity/Registry.h"
-#include "../Entity/Components/TransformComponent.h"
-#include "../Entity/Components/VelocityComponent.h"
-#include "../Entity/Components/InputComponent.h"
-#include "../Entity/Components/CameraComponent.h"
-#include "../Entity/Components/PlayerTag.h"
-#include "../Entity/Components/CameraTag.h"
-#include "../Entity/Components/ParentComponent.h"
-#include "../Entity/Components/ChildrenComponent.h"
+#include <Entity/Registry.h>
+#include <Entity/Components/Transform.h>
+#include <Entity/Components/Velocity.h>
+#include <Entity/Components/Input.h>
+#include <Entity/Components/Camera.h>
+#include <Entity/Components/PlayerTag.h>
+#include <Entity/Components/CameraTag.h>
+#include <Entity/Components/Parent.h>
+#include <Entity/Components/Children.h>
 
 // ================ SYSTEMS ================
 constexpr float GRAVITY           = -32.0f;
@@ -30,7 +37,7 @@ constexpr float SPRINT_MODIFIER   = 1.5f;
 void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
    //PROFILE_SCOPE( "PlayerInputSystem" );
-   for( auto [ entity, tran, vel, input, tag ] : registry.ECView< TransformComponent, VelocityComponent, InputComponent, PlayerTag >() )
+   for( auto [ entity, tran, vel, input, tag ] : registry.ECView< CTransform, CVelocity, CInput, CPlayerTag >() )
    {
       // Apply Player Movement Inputs
       glm::vec3 wishdir( 0.0f );
@@ -83,7 +90,7 @@ void PlayerInputSystem( Entity::Registry& registry, float delta )
 
 void PlayerPhysicsSystem( Entity::Registry& registry, float delta, World& world )
 {
-   for( auto [ tran, vel, tag ] : registry.CView< TransformComponent, VelocityComponent, PlayerTag >() )
+   for( auto [ tran, vel, tag ] : registry.CView< CTransform, CVelocity, CPlayerTag >() )
    {
       vel.velocity.y += GRAVITY * delta;
       if( vel.velocity.y < TERMINAL_VELOCITY )
@@ -124,7 +131,7 @@ void CameraSystem( Entity::Registry& registry, Window& window )
       glfwSetCursorPos( nativeWindow, lastMousePos.x, lastMousePos.y );
    }
 
-   for( auto [ tran, cam, tag ] : registry.CView< TransformComponent, CameraComponent, CameraTag >() )
+   for( auto [ tran, cam, tag ] : registry.CView< CTransform, CCamera, CCameraTag >() )
    {
       if( fMouseCaptured )
       {
@@ -142,6 +149,21 @@ void CameraSystem( Entity::Registry& registry, Window& window )
    }
 }
 
+void RenderSystem( Entity::Registry& registry )
+{
+   //PROFILE_SCOPE( "RenderSystem" );
+   //for( auto [ tran, mesh ] : registry.ECView< CTransform, CMesh >() )
+   //{
+   //   if( !mesh.mesh )
+   //      continue;
+   //
+   //   mesh.mesh->SetPosition( tran.position );
+   //   mesh.mesh->SetRotation( tran.rotation );
+   //   mesh.mesh->SetScale( tran.scale );
+   //   mesh.mesh->Render( projectionView );
+   //}
+}
+
 void Application::Run()
 {
    Events::EventSubscriber eventSubscriber;
@@ -151,27 +173,27 @@ void Application::Run()
 
    // Create player entity
    Entity::Entity player = registry.Create();
-   registry.AddComponent< TransformComponent >( player, 0.0f, 128.0f, 0.0f );
-   registry.AddComponent< VelocityComponent >( player, 0.0f, 0.0f, 0.0f );
-   registry.AddComponent< InputComponent >( player );
-   registry.AddComponent< PlayerTag >( player );
+   registry.AddComponent< CTransform >( player, 0.0f, 128.0f, 0.0f );
+   registry.AddComponent< CVelocity >( player, 0.0f, 0.0f, 0.0f );
+   registry.AddComponent< CInput >( player );
+   registry.AddComponent< CPlayerTag >( player );
 
    // Create camera entity
    Entity::Entity camera = registry.Create();
-   registry.AddComponent< TransformComponent >( camera, 0.0f, 128.0f + PLAYER_HEIGHT, 0.0f );
-   registry.AddComponent< CameraTag >( camera );
+   registry.AddComponent< CTransform >( camera, 0.0f, 128.0f + PLAYER_HEIGHT, 0.0f );
+   registry.AddComponent< CCameraTag >( camera );
 
    {
       std::shared_ptr< Entity::EntityHandle > psEntity = registry.CreateWithHandle();
-      registry.AddComponent< TransformComponent >( psEntity->Get(), 0.0f, 128.0f, 0.0f );
-      registry.AddComponent< VelocityComponent >( psEntity->Get(), 0.0f, 0.0f, 0.0f );
-      registry.AddComponent< InputComponent >( psEntity->Get() );
+      registry.AddComponent< CTransform >( psEntity->Get(), 0.0f, 128.0f, 0.0f );
+      registry.AddComponent< CVelocity >( psEntity->Get(), 0.0f, 0.0f, 0.0f );
+      registry.AddComponent< CInput >( psEntity->Get() );
 
       //Entity::EntityHandle entitySame1( *psEntity );  // Create a reference to the same entity
       //Entity::EntityHandle entitySame2 = entitySame1; // Create a reference to the same entity
    }
 
-   if( CameraComponent* pCameraComp = &registry.AddComponent< CameraComponent >( camera ) )
+   if( CCamera* pCameraComp = &registry.AddComponent< CCamera >( camera ) )
       pCameraComp->projectionMatrix = glm::perspective( glm::radians( pCameraComp->fov ),
                                                         Window::Get().GetWindowData().Width / static_cast< float >( Window::Get().GetWindowData().Height ),
                                                         0.1f,
@@ -182,7 +204,7 @@ void Application::Run()
       if( e.GetHeight() == 0 )
          return;
 
-      if( CameraComponent* pCameraComp = registry.GetComponent< CameraComponent >( camera ); pCameraComp )
+      if( CCamera* pCameraComp = registry.GetComponent< CCamera >( camera ); pCameraComp )
       {
          float aspectRatio             = e.GetWidth() / static_cast< float >( e.GetHeight() );
          pCameraComp->projectionMatrix = glm::perspective( glm::radians( pCameraComp->fov ), aspectRatio, 0.1f, 1000.0f );
@@ -191,7 +213,7 @@ void Application::Run()
 
    eventSubscriber.Subscribe< Events::MouseScrolledEvent >( [ &registry, camera ]( const Events::MouseScrolledEvent& e ) noexcept
    {
-      if( CameraComponent* pCameraComp = registry.GetComponent< CameraComponent >( camera ); pCameraComp )
+      if( CCamera* pCameraComp = registry.GetComponent< CCamera >( camera ); pCameraComp )
       {
          pCameraComp->fov += -e.GetYOffset() * 5;
          pCameraComp->fov              = std::clamp( pCameraComp->fov, 10.0f, 90.0f );
@@ -215,10 +237,6 @@ void Application::Run()
    World world;
    world.Setup( registry );
 
-   // what if I made Entity::Entity a ref-counted obj and when it goes out of scope  it automatically removes itself from the registry?
-   // because if you lose track of an entity, you can't remove it from the registry, this will protect against that
-   //    or at least make it optional to get a ref-counted entity
-
    eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ &world, &registry ]( const Events::KeyPressedEvent& e ) noexcept
    {
       if( e.GetKeyCode() == Input::R )
@@ -228,14 +246,17 @@ void Application::Run()
    while( window.IsOpen() )
    {
       const float delta = timestep.Step();
+
       Events::ProcessQueuedEvents();
+
       PlayerInputSystem( registry, delta );
       PlayerPhysicsSystem( registry, delta, world );
       CameraSystem( registry, window );
+      RenderSystem( registry );
 
       // Camera follows player
-      auto* pPlayerTran = registry.GetComponent< TransformComponent >( player );
-      auto* pCameraTran = registry.GetComponent< TransformComponent >( camera );
+      auto* pPlayerTran = registry.GetComponent< CTransform >( player );
+      auto* pCameraTran = registry.GetComponent< CTransform >( camera );
       if( pPlayerTran && pCameraTran )
       {
          pCameraTran->position = pPlayerTran->position + glm::vec3( 0.0f, PLAYER_HEIGHT, 0.0f );
@@ -243,7 +264,7 @@ void Application::Run()
       }
 
       // Game Ticks
-      auto* pCameraComp = registry.GetComponent< CameraComponent >( camera );
+      auto* pCameraComp = registry.GetComponent< CCamera >( camera );
       if( pCameraTran /*pCameraComp*/ )
          world.Tick( delta, pCameraTran->position );
 

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "Window.h"
-
 enum ApplicationState
 {
    APP_STATE_NONE = 0,

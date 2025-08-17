@@ -1,7 +1,10 @@
 #pragma once
 
+// Local dependencies
 #include "Network.h"
-#include "../Events/NetworkEvent.h"
+
+// Project dependencies
+#include <Events/NetworkEvent.h>
 
 // ===================================================
 //      NetworkHost

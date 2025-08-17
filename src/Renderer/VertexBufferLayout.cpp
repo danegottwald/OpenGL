@@ -1,4 +1,3 @@
-
 #include "VertexBufferLayout.h"
 
 // Returns a string that represents the format of the current Vertex Buffer Layout

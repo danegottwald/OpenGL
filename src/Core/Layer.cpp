@@ -1,7 +1,9 @@
-
+// Local dependencies
 #include "Window.h"
-#include "../Renderer/Shader.h"
-#include "../Renderer/Texture.h"
+
+// Project dependencies
+#include <Renderer/Shader.h>
+#include <Renderer/Texture.h>
 
 std::vector< float >        v;
 std::vector< unsigned int > i;

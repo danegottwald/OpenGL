@@ -1,4 +1,3 @@
-
 #include "Registry.h"
 
 namespace Entity

@@ -1,5 +1,4 @@
-
-#include "Game/Core/Application.h"
+#include <Core/Application.h>
 
 //#include <fmt/format.h> // log library using this?
 
