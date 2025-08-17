@@ -95,7 +95,7 @@ void DebugGUI::Draw()
          //ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
       }
 
-      if( CTransform* pCameraTran = m_registry.GetComponent< CTransform >( m_camera ) )
+      if( const CTransform* pCameraTran = m_registry.GetComponent< CTransform >( m_camera ) )
       {
          ImGui::NewLine();
          ImGui::Text( "Camera Entity: %d", m_camera );

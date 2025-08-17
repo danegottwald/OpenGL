@@ -1,61 +1,67 @@
-#pragma once
+﻿#pragma once
 
 namespace Entity
 {
 
 using Entity = uint64_t;
 
+class Registry; // fwd
+
+// =============================================================
+// EntityHandle
+// =============================================================
 /**
  * @class EntityHandle
- * @brief A handle to an entity that manages its lifetime in the registry. Lightweight wrapper around an Entity.
+ * @brief Lightweight non-owning wrapper over an Entity ID with a binding to a Registry.
  *
- * This class provides a way to manage the lifetime of an entity in the registry.
- * It ensures that the entity is destroyed when the handle falls out of scope.
+ * The optimized registry no longer automatically unbinds external handles on destruction for raw speed.
+ * A handle simply exposes the numeric entity value and comparison operators. If the underlying entity
+ * is destroyed, the handle becomes stale (user code should re‑validate via Registry::FValid before use).
  */
 class EntityHandle
 {
 private:
-   // Only Registry can create EntityHandle instances
    friend class Registry;
    EntityHandle( Entity entity, Registry& registry ) :
       m_entity( entity ),
       m_pRegistry( &registry )
    {}
-
-   /*! @brief Unbinds the entity handle from the registry. Once unbound, the handle is no longer valid. */
+   /// @brief Internal: clear registry pointer so subsequent use can detect invalidation.
    void Unbind() noexcept { m_pRegistry = nullptr; }
 
 public:
    ~EntityHandle();
+   EntityHandle( const EntityHandle& )                = delete; ///< Copying disabled.
+   EntityHandle( EntityHandle&& ) noexcept            = delete; ///< Moving disabled (keep semantics simple).
+   EntityHandle& operator=( EntityHandle&& ) noexcept = delete; ///< Move assignment disabled.
+   EntityHandle& operator=( const EntityHandle& )     = delete; ///< Copy assignment disabled.
 
-   /*! @brief Delete copy constructor and move assignment operator, copying is not allowed. */
-   EntityHandle( const EntityHandle& )                = delete;
-   EntityHandle( EntityHandle&& ) noexcept            = delete;
-   EntityHandle& operator=( EntityHandle&& ) noexcept = delete;
-   EntityHandle& operator=( const EntityHandle& )     = delete;
-
-   /**
-    * @brief Gets the entity ID associated with this handle.
-    * @return The entity ID.
-    */
+   /** @return The raw Entity ID. */
    [[nodiscard]] Entity Get() const noexcept { return m_entity; }
-
-   // Operator overloads
+   /// @brief Implicit conversion to raw entity id.
    explicit operator Entity() const noexcept { return m_entity; }
-   bool     operator==( const EntityHandle& other ) const { return m_entity == other.m_entity; }
-   bool     operator!=( const EntityHandle& other ) const { return m_entity != other.m_entity; }
-   bool     operator==( Entity other ) const noexcept { return m_entity == other; }
-   bool     operator!=( Entity other ) const noexcept { return m_entity != other; }
-   bool     operator<( const EntityHandle& other ) const noexcept { return m_entity < other.m_entity; }
+
+   // Comparisons
+   bool operator==( const EntityHandle& other ) const noexcept { return m_entity == other.m_entity; }
+   bool operator!=( const EntityHandle& other ) const noexcept { return m_entity != other.m_entity; }
+   bool operator==( Entity other ) const noexcept { return m_entity == other; }
+   bool operator!=( Entity other ) const noexcept { return m_entity != other; }
+   bool operator<( const EntityHandle& other ) const noexcept { return m_entity < other.m_entity; }
 
 private:
-   const Entity m_entity { 0 };
-   Registry*    m_pRegistry;
+   const Entity m_entity { 0 };          ///< Stored entity id.
+   Registry*    m_pRegistry { nullptr }; ///< Pointer to owning registry (may be null after Unbind()).
 };
 
+// =============================================================
+// ViewType
+// =============================================================
 /**
  * @enum ViewType
- * @brief The different types of views for querying entities and components.
+ * @brief Enumerates the output tuple shape for a view iteration.
+ * - Entity: yields only the Entity id
+ * - Components: yields references to the requested components (tuple)
+ * - EntityAndComponents: yields (Entity, components...)
  */
 enum class ViewType
 {
@@ -64,294 +70,347 @@ enum class ViewType
    EntityAndComponents
 };
 
+// =============================================================
+// Registry
+// =============================================================
 /**
  * @class Registry
- * @brief A registry that manages entities and their associated components.
+ * @brief High‑performance ECS registry focused on fast iteration & cache locality.
  *
- * This class implements an Entity-Component-System (ECS) registry.
- * It manages the lifecycle of entities and their associated components, providing efficient creation,
- * destruction, and querying of entities and components. The registry supports adding, removing, and retrieving
- * components for entities, as well as iterating over entities with specific component sets using flexible view types.
- * Internally, it uses dense storage for components and recycles entities for performance and memory efficiency.
+ * Key differences vs the earlier version:
+ *  - Component type dispatch uses a compact, incremental type index instead of unordered_map / void* keys.
+ *  - Per entity component membership is encoded as a variable-length bit mask (vector<uint64_t>) enabling
+ *    O(1) membership tests with simple bit operations.
+ *  - Each component type uses a packed (SoA-like) storage: dense component array + parallel entity array + sparse index.
+ *  - Add / remove are O(1) swap-and-pop operations; iteration chooses the smallest component pool to minimize scans.
+ *  - No per-entity unordered_set of component types, eliminating hashing & dynamic allocations in hot paths.
  *
- * @note Do not store long-lived references or pointers to components obtained from the registry.
- *       Because components are stored contiguously, any operation that causes reallocation
- *       (like adding new components) can invalidate references or pointers. Instead, use the Entity
- *       to retrieve components from the registry as needed, or use handles provided by the ECS.
+ * Design objectives: minimal branching, predictable memory access, zero virtual calls in inner loops (except removal),
+ * and avoiding iterator adaptor overhead. The trade-off is that some safety features (like automatic handle unbinding)
+ * are reduced for raw speed.
+ *
+ * Usage notes:
+ *  - Always check FValid(entity) if using stored entity ids outside the frame they were created.
+ *  - Adding an already-present component overwrites it in-place (reconstruct assignment semantics).
+ *  - Removing a component invalidates references to the moved-from last element (swap/pop semantics).
  */
 class Registry
 {
 private:
-   using ComponentTypeKey = void*;
-
    template< ViewType TViewType, typename... TComponents >
    friend class View;
 
-public:
-   /*! @brief Default constructor. */
-   Registry() = default;
-
-   /*! @brief Destructor. */
-   ~Registry()
-   {
-      // Unbind all handles to prevent dangling references
-      for( auto& [ _, wkHandle ] : m_wkEntityHandles )
-      {
-         if( std::shared_ptr< EntityHandle > psHandle = wkHandle.lock() )
-            psHandle->Unbind();
-      }
-   }
-
-   /*! @brief Delete copy constructor and copy assignment operator, copying is not allowed. */
-   Registry( const Registry& )            = delete;
-   Registry& operator=( const Registry& ) = delete;
+   // ------------------------------------------------------------------
+   // Component type indexing
+   // ------------------------------------------------------------------
+   static inline size_t s_nextComponentTypeIndex = 0; ///< Monotonic counter assigning indices to component types.
 
    /**
-    * @brief Creates a new entity.
-    * @return The ID of the newly created entity.
+    * @brief Returns the stable unique index for the component type TComponent.
+    * @tparam TComponent Component type.
+    */
+   template< typename TComponent >
+   static size_t GetComponentTypeIndex() noexcept
+   {
+      static const size_t s_index = s_nextComponentTypeIndex++;
+      return s_index;
+   }
+
+   // Bit mask per entity (vector of 64-bit blocks); grows only when new component indices exceed capacity.
+   using ComponentMask = std::vector< uint64_t >;
+
+   // Base pool for type erasure during destruction.
+   struct Pool
+   {
+      virtual ~Pool()                        = default;
+      virtual void Remove( Entity ) noexcept = 0; ///< Remove component for entity if present.
+      virtual bool Empty() const noexcept    = 0; ///< @return true if storage contains zero components.
+   };
+
+   /**
+    * @brief Dense component storage with O(1) add/remove and sparse lookup.
+    * Layout:
+    *  - m_components: tightly packed component values.
+    *  - m_entities: parallel array mapping dense index -> entity.
+    *  - m_entityToIndex: sparse array mapping entity -> dense index (npos if absent).
+    */
+   template< typename TComponent >
+   struct ComponentStorage final : Pool
+   {
+      static constexpr size_t npos = ( std::numeric_limits< size_t >::max )();
+
+      std::vector< TComponent > m_components;    ///< Dense component values.
+      std::vector< Entity >     m_entities;      ///< Dense entity list aligned with m_components.
+      std::vector< size_t >     m_entityToIndex; ///< Sparse lookup: entity -> dense index or npos.
+
+      /** Ensure sparse index vector can address the given entity id. */
+      void EnsureEntityCapacity( Entity entity )
+      {
+         if( entity >= m_entityToIndex.size() )
+            m_entityToIndex.resize( static_cast< size_t >( entity ) + 1, npos );
+      }
+
+      /** Emplace pre-constructed component (move). */
+      TComponent& Emplace( Entity entity, TComponent&& value )
+      {
+         EnsureEntityCapacity( entity );
+         size_t index = m_components.size();
+         m_components.emplace_back( std::move( value ) );
+         m_entities.emplace_back( entity );
+         m_entityToIndex[ entity ] = index;
+         return m_components.back();
+      }
+
+      /** Construct component in-place with forwarded args. */
+      template< typename... Args >
+      TComponent& EmplaceConstruct( Entity entity, Args&&... args )
+      {
+         EnsureEntityCapacity( entity );
+         size_t index = m_components.size();
+         m_components.emplace_back( std::forward< Args >( args )... );
+         m_entities.emplace_back( entity );
+         m_entityToIndex[ entity ] = index;
+         return m_components.back();
+      }
+
+      /** @return Pointer to component for entity or nullptr if absent. */
+      TComponent* Get( Entity entity ) noexcept
+      {
+         if( entity >= m_entityToIndex.size() )
+            return nullptr;
+
+         size_t idx = m_entityToIndex[ entity ];
+         return idx == npos ? nullptr : &m_components[ idx ];
+      }
+
+      /** @overload const */
+      const TComponent* Get( Entity entity ) const noexcept { return Get( entity ); }
+
+      /**
+       * @brief Remove component for entity with swap-and-pop; O(1).
+       * Preserves contiguity but changes order. Updates sparse indices accordingly.
+       */
+      void Remove( Entity entity ) noexcept override
+      {
+         if( entity >= m_entityToIndex.size() )
+            return;
+
+         size_t idx = m_entityToIndex[ entity ];
+         if( idx == npos )
+            return;
+
+         size_t backIdx = m_components.size() - 1;
+         if( idx != backIdx )
+         {
+            m_components[ idx ]            = std::move( m_components[ backIdx ] );
+            Entity movedEntity             = m_entities[ backIdx ];
+            m_entities[ idx ]              = movedEntity;
+            m_entityToIndex[ movedEntity ] = idx;
+         }
+
+         m_components.pop_back();
+         m_entities.pop_back();
+         m_entityToIndex[ entity ] = npos;
+      }
+
+      bool Empty() const noexcept override { return m_components.empty(); }
+   };
+
+public:
+   Registry()  = default; ///< Default constructor.
+   ~Registry() = default; ///< Trivial destructor (fast, no handle sweeping).
+
+   Registry( const Registry& )            = delete; ///< Non-copyable.
+   Registry& operator=( const Registry& ) = delete; ///< Non-assignable.
+
+   // ---------------- Entity Management ----------------
+   /**
+    * @brief Create a new entity id (reusing recycled ids when available).
+    * @return Newly created entity id.
     */
    [[nodiscard]] Entity Create() noexcept
    {
-      Entity entity = !m_recycledEntities.empty() ? m_recycledEntities.front() : m_nextEntity++;
-      if( !m_recycledEntities.empty() )
-         m_recycledEntities.pop();
+      Entity entity = 0;
+      if( !m_recycled.empty() )
+      {
+         entity = m_recycled.front();
+         m_recycled.pop();
+      }
+      else
+         entity = m_nextEntity++;
 
-      m_entityComponentTypes[ entity ] = {}; // Initialize with an empty set of component types
+      if( entity >= m_entityAlive.size() )
+      {
+         m_entityAlive.resize( static_cast< size_t >( entity ) + 1, 0 );
+         m_entityMasks.resize( static_cast< size_t >( entity ) + 1 );
+      }
+
+      m_entityAlive[ entity ] = 1;
       return entity;
    }
 
    /**
-    * @brief Creates a new entity and returns an EntityHandle for it.
-    * @return An EntityHandle for the newly created entity.
+    * @brief Create an entity and wrap it in an EntityHandle.
+    * @warning Handle invalidation is not automatic on destruction for performance.
     */
-   [[nodiscard]] std::shared_ptr< EntityHandle > CreateWithHandle() noexcept
-   {
-      std::shared_ptr< EntityHandle > psEntityHandle( new EntityHandle( Create(), *this ) );
-      m_wkEntityHandles.insert( { psEntityHandle->Get(), psEntityHandle } );
-      return psEntityHandle;
-   }
+   [[nodiscard]] std::shared_ptr< EntityHandle > CreateWithHandle() noexcept { return std::shared_ptr< EntityHandle >( new EntityHandle( Create(), *this ) ); }
 
    /**
-    * @brief Destroys the entity and all its components.
-    * @param entity The entity to destroy.
+    * @brief Destroy an entity and all its components (O(#component types set)).
+    * @param entity Entity to destroy (ignored if invalid).
     */
-   void Destroy( Entity entity )
+   void Destroy( Entity entity ) noexcept
    {
-      auto compTypesIter = m_entityComponentTypes.find( entity );
-      if( compTypesIter == m_entityComponentTypes.end() )
-         return; // Entity does not exist, nothing to destroy
+      if( !FValid( entity ) )
+         return;
 
-      for( ComponentTypeKey typeKey : compTypesIter->second )
+      ComponentMask& mask = m_entityMasks[ entity ];
+      for( size_t blockIndex = 0; blockIndex < mask.size(); ++blockIndex )
       {
-         // The pool MUST exist at this point; otherwise, why do we have a record of the typeKey?
-         Pool* pPool = m_storagePools.at( typeKey ).get();
-         pPool->Remove( entity );
+         uint64_t bits = mask[ blockIndex ];
+         while( bits )
+         {
+            unsigned long bit;
+#if defined( _MSC_VER )
+            _BitScanForward64( &bit, bits );
+#else
+            bit = static_cast< unsigned long >( __builtin_ctzll( bits ) );
+#endif
 
-         // Will invalidate pPool pointer, do not use it after this point
-         if( pPool->FEmpty() )
-            m_storagePools.erase( typeKey ); // pPool is no longer valid after this point
+            size_t compIndex = blockIndex * 64 + bit;
+            if( compIndex < m_componentPools.size() )
+            {
+               if( Pool* pPool = m_componentPools[ compIndex ].get() )
+                  pPool->Remove( entity );
+            }
+
+            bits &= bits - 1; // clear lowest set bit
+         }
       }
 
-      if( auto it = m_wkEntityHandles.find( entity ); it != m_wkEntityHandles.end() )
-      {
-         if( auto psHandle = it->second.lock() )
-            psHandle->Unbind(); // Let the handle know it is no longer valid
-
-         m_wkEntityHandles.erase( it );
-      }
-
-      m_entityComponentTypes.erase( entity );
-      m_recycledEntities.push( entity ); // Recycle the entity for future use
+      mask.clear();
+      m_entityAlive[ entity ] = 0;
+      m_recycled.push( entity );
    }
 
-   /**
-    * @brief Checks if the entity is valid.
-    * @param entity The entity to check.
-    * @return True if the entity is valid, false otherwise.
-    */
-   [[nodiscard]] bool FValid( Entity entity ) const noexcept { return m_entityComponentTypes.contains( entity ); }
+   /** @return True if entity id is currently alive. */
+   [[nodiscard]] bool FValid( Entity entity ) const noexcept { return entity < m_entityAlive.size() && m_entityAlive[ entity ]; }
 
    /**
-    * @brief Gets the number of entities in the registry.
-    * @return The count of entities.
+    * @brief Approximate count of live entities.
+    * @note This subtracts recycled ids; may not match number of alive flags if fragmentation occurs.
     */
-   [[nodiscard]] size_t GetEntityCount() const noexcept { return m_entityComponentTypes.size(); }
+   [[nodiscard]] size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size() - 1; }
 
+   // ---------------- Component Management ----------------
    /**
-    * @brief Gets the number of components associated with the entity.
-    * @param entity The entity to check.
-    * @return The count of components associated with the entity.
-    */
-   [[nodiscard]] size_t GetEntityComponentCount( Entity entity ) const noexcept
-   {
-      auto it = m_entityComponentTypes.find( entity );
-      return ( it != m_entityComponentTypes.end() ) ? it->second.size() : 0;
-   }
-
-   /**
-    * @brief Adds a component of the specified type to the entity. Ensures that the entity does not already have the component.
-    * @tparam TComponent The type of the component to add.
-    * @param entity The entity to which the component will be added.
-    * @param args The arguments to construct the component.
-    * @return A reference to the added component.
-    *
-    * @note The returned reference should not be long-lived, as it may become invalid if the registry reallocates storage.
+    * @brief Add or replace a component on an entity.
+    * @tparam TComponent Component type.
+    * @param entity Target entity (must be valid).
+    * @param args Constructor arguments.
+    * @return Reference to (new or replaced) component.
     */
    template< typename TComponent, typename... TArgs >
    TComponent& AddComponent( Entity entity, TArgs&&... args )
    {
-      auto it = m_entityComponentTypes.find( entity );
-      if( it == m_entityComponentTypes.end() )
-         throw std::runtime_error( std::string( "Entity does not exist: " ) + std::to_string( entity ) );
+      assert( FValid( entity ) && "AddComponent on invalid entity" );
+      size_t compIndex = GetComponentTypeIndex< TComponent >();
+      EnsureComponentPool< TComponent >( compIndex );
+      SetMaskBit( entity, compIndex );
 
-      ComponentTypeKey typeKey = GetTypeKey< TComponent >();
-      if( it->second.contains( typeKey ) ) // Entity already has this component type
+      auto* pStorage = static_cast< ComponentStorage< TComponent >* >( m_componentPools[ compIndex ].get() );
+      if( TComponent* existing = pStorage->Get( entity ) )
       {
-         TComponent& component = *GetComponent< TComponent >( entity );
-         component             = TComponent( std::forward< TArgs >( args )... );
-         return component;
+         *existing = TComponent( std::forward< TArgs >( args )... );
+         return *existing;
       }
 
-      ComponentStorage< TComponent >* pStorage = nullptr;
-      if( auto itStorage = m_storagePools.find( typeKey ); itStorage != m_storagePools.end() )
-         pStorage = static_cast< ComponentStorage< TComponent >* >( itStorage->second.get() );
-      else
-         pStorage = static_cast< ComponentStorage< TComponent >* >(
-            m_storagePools.emplace( typeKey, std::make_unique< ComponentStorage< TComponent > >() ).first->second.get() );
-
-      pStorage->m_components.emplace_back( std::forward< TArgs >( args )... );
-      pStorage->m_entityAtIndex.push_back( entity );
-      pStorage->m_entityIndexMap[ entity ] = pStorage->m_components.size() - 1;
-      it->second.insert( typeKey );
-      return pStorage->m_components.back();
+      return pStorage->EmplaceConstruct( entity, std::forward< TArgs >( args )... );
    }
 
    /**
-    * @brief Adds multiple components of the specified types to the entity. Ensures that the entity does not already have any of the components.
-    * @tparam TComponents The types of the components to add.
-    * @param entity The entity to which the components will be added.
-    * @return A tuple of references to the added components.
-    *
-    * @note The returned references should not be long-lived, as they may become invalid if the registry reallocates storage.
-    */
-   template< typename... TComponents >
-   std::tuple< TComponents&... > AddComponents( Entity entity )
-   {
-      return std::tuple< TComponents&... > { AddComponent< TComponents >( entity )... };
-   }
-
-   /**
-    * @brief Removes a component from the entity.
-    * @tparam TComponent The type of the component to remove.
-    * @param entity The entity from which to remove the component.
+    * @brief Remove component TComponent from entity if present.
     */
    template< typename TComponent >
    void RemoveComponent( Entity entity ) noexcept
    {
-      ComponentStorage< TComponent >* pStorage = GetStorage< TComponent >();
-      if( !pStorage )
-         return; // Storage does not exist for this component type
+      if( !FValid( entity ) )
+         return;
 
-      pStorage->Remove( entity );
-      ComponentTypeKey typeKey = GetTypeKey< TComponent >();
-      m_entityComponentTypes[ entity ].erase( typeKey );
+      size_t compIndex = GetComponentTypeIndex< TComponent >();
+      if( compIndex >= m_componentPools.size() )
+         return;
 
-      if( pStorage->FEmpty() )
-         m_storagePools.erase( typeKey ); // pStorage is no longer valid after this point
+      if( auto* pPool = m_componentPools[ compIndex ].get() )
+         pPool->Remove( entity );
+
+      ClearMaskBit( entity, compIndex );
    }
 
-   /**
-    * @brief Removes multiple components from the entity.
-    * @tparam TComponents The types of the components to remove.
-    * @param entity The entity from which to remove the components.
-    */
-   template< typename... TComponents >
-   void RemoveComponents( Entity entity )
-   {
-      ( RemoveComponent< TComponents >( entity ), ... );
-   }
-
-   /**
-    * @brief Gets a component of the specified type from the entity.
-    * @tparam TComponent The type of the component.
-    * @param entity The entity from which to get the component.
-    * @return A pointer to the component if it exists, nullptr otherwise.
-    */
+   /** @return Pointer to component TComponent for entity or nullptr. */
    template< typename TComponent >
-   [[nodiscard]] TComponent* GetComponent( Entity entity ) const noexcept
+   [[nodiscard]] TComponent* GetComponent( Entity entity ) noexcept
    {
-      ComponentStorage< TComponent >* pStorage = GetStorage< TComponent >();
-      if( !pStorage )
-         return nullptr; // Storage does not exist for this component type
+      if( !FValid( entity ) )
+         return nullptr;
 
-      auto it = pStorage->m_entityIndexMap.find( entity );
-      return ( it != pStorage->m_entityIndexMap.end() ) ? &pStorage->m_components.at( it->second ) : nullptr;
+      size_t compIndex = GetComponentTypeIndex< TComponent >();
+      if( compIndex >= m_componentPools.size() )
+         return nullptr;
+
+      auto* storage = static_cast< ComponentStorage< TComponent >* >( m_componentPools[ compIndex ].get() );
+      return storage ? storage->Get( entity ) : nullptr;
    }
 
-   /**
-    * @brief Gets multiple components of the specified types from the entity.
-    * @tparam TComponents The types of the components.
-    * @param entity The entity from which to get the components.
-    * @return A tuple of pointers to the components if they exist, nullptr otherwise.
-    */
+   /** @overload const */
+   template< typename TComponent >
+   [[nodiscard]] const TComponent* GetComponent( Entity entity ) const noexcept
+   {
+      return const_cast< Registry* >( this )->GetComponent< TComponent >( entity );
+   }
+
+   /** @return Pointer to components TComponents... for entity as a tuple. Missing components yield nullptr. */
    template< typename... TComponents >
-   [[nodiscard]] auto GetComponents( Entity entity ) const noexcept
+   [[nodiscard]] std::tuple< TComponents*... > GetComponents( Entity entity ) noexcept
    {
       return std::tuple< TComponents*... > { GetComponent< TComponents >( entity )... };
    }
 
-   /**
-    * @brief Checks if the entity has a component of the specified type.
-    * @tparam TComponent The type of the component to check.
-    * @param entity The entity to check.
-    * @return True if the entity has the component, false otherwise.
-    */
+   /** @overload const */
+   template< typename... TComponents >
+   [[nodiscard]] std::tuple< const TComponents*... > GetComponents( Entity entity ) const noexcept
+   {
+      return std::tuple< const TComponents*... > { GetComponent< TComponents >( entity )... };
+   }
+
+   /** @return True if entity currently owns component TComponent. */
    template< typename TComponent >
    [[nodiscard]] bool FHasComponent( Entity entity ) const noexcept
    {
-      auto it = m_entityComponentTypes.find( entity );
-      return it != m_entityComponentTypes.end() && ( it->second.find( GetTypeKey< TComponent >() ) != it->second.end() );
+      return FValid( entity ) && FTestMaskBit( entity, GetComponentTypeIndex< TComponent >() );
    }
 
-   /**
-    * @brief Checks if the entity has all of the specified components.
-    * @tparam TComponents The types of the components to check.
-    * @param entity The entity to check.
-    * @return True if the entity has all of the components, false otherwise.
-    */
+   /** @return True if entity has all listed component types. */
    template< typename... TComponents >
    [[nodiscard]] bool FHasComponents( Entity entity ) const noexcept
    {
       return ( FHasComponent< TComponents >( entity ) && ... );
    }
 
-   /**
-    * @brief (Entity View) A view into the registry that iterates entities with the specified components, returning just the entity.
-    * @tparam TComponents The types of the components to filter by.
-    * @return An iterator over entities that have the specified components, returning just the entity.
-    */
+   // ---------------- Views ----------------
+   /** @brief Entity-only view for entities possessing all listed components. */
    template< typename... TComponents >
    [[nodiscard]] auto EView() noexcept
    {
       return View< ViewType::Entity, TComponents... >( *this );
    }
-
-   /**
-    * @brief (Component View) A view into the registry that iterates entities with the specified components, returning just the components as a tuple.
-    * @tparam TComponents The types of the components to filter by.
-    * @return An iterator over entities that have the specified components, returning just the components as a tuple.
-    */
+   /** @brief Component tuple view (returns references only). */
    template< typename... TComponents >
    [[nodiscard]] auto CView() noexcept
    {
       return View< ViewType::Components, TComponents... >( *this );
    }
-
-   /**
-    * @brief (Entity-Component View) A view into the registry that iterates entities with the specified components, returning both the entity and the components as a tuple.
-    * @tparam TComponents The types of the components to filter by.
-    * @return An iterator over entities that have the specified components, returning both the entity and the components as a tuple.
-    */
+   /** @brief (Entity, Components...) view. */
    template< typename... TComponents >
    [[nodiscard]] auto ECView() noexcept
    {
@@ -359,145 +418,154 @@ public:
    }
 
 private:
-   struct Pool
-   {
-      virtual ~Pool() noexcept               = default;
-      virtual void Remove( Entity ) noexcept = 0;
-      virtual bool FEmpty() const noexcept   = 0;
-   };
-
+   // ----- Internal helpers -----
    template< typename TComponent >
-   struct ComponentStorage : public Pool
+   void EnsureComponentPool( size_t index )
    {
-      std::vector< TComponent >            m_components;     // dense array of components
-      std::vector< Entity >                m_entityAtIndex;  // maps index -> entity ([index] = entity)
-      std::unordered_map< Entity, size_t > m_entityIndexMap; // maps entity -> index ([entity] = index)
+      if( index >= m_componentPools.size() )
+         m_componentPools.resize( index + 1 );
 
-      void Remove( Entity entity ) noexcept override
-      {
-         auto it = m_entityIndexMap.find( entity );
-         if( m_components.empty() || it == m_entityIndexMap.end() )
-            return;
-
-         size_t entityIndex          = it->second;
-         m_components[ entityIndex ] = std::move( m_components.back() ); // swap-and-pop component
-         m_components.pop_back();
-         m_entityAtIndex[ entityIndex ] = std::move( m_entityAtIndex.back() ); // swap-and-pop entity
-         m_entityAtIndex.pop_back();
-         m_entityIndexMap.erase( entity ); // remove the entity from the index map
-         if( !m_entityAtIndex.empty() && entityIndex < m_entityAtIndex.size() )
-            m_entityIndexMap[ m_entityAtIndex[ entityIndex ] ] = entityIndex;
-      }
-
-      bool FEmpty() const noexcept override { return m_components.empty(); }
-   };
-
-   // Uses the unique type address as a key to identify the component type
-   template< typename TComponent >
-   ComponentTypeKey GetTypeKey() const noexcept
-   {
-      static int typeKey;
-      return &typeKey;
+      if( !m_componentPools[ index ] )
+         m_componentPools[ index ] = std::make_unique< ComponentStorage< TComponent > >();
    }
 
-   template< typename TComponent >
-   ComponentStorage< TComponent >* GetStorage() const noexcept
+   void SetMaskBit( Entity entity, size_t compIndex )
    {
-      auto it = m_storagePools.find( GetTypeKey< TComponent >() );
-      return ( it != m_storagePools.end() ) ? static_cast< ComponentStorage< TComponent >* >( it->second.get() ) : nullptr;
+      ComponentMask& mask  = m_entityMasks[ entity ];
+      size_t         block = compIndex / 64;
+      if( block >= mask.size() )
+         mask.resize( block + 1, 0 );
+
+      mask[ block ] |= ( 1ull << ( compIndex & 63 ) );
+   }
+   void ClearMaskBit( Entity entity, size_t compIndex )
+   {
+      if( entity >= m_entityMasks.size() )
+         return;
+
+      ComponentMask& mask  = m_entityMasks[ entity ];
+      size_t         block = compIndex / 64;
+      if( block < mask.size() )
+         mask[ block ] &= ~( 1ull << ( compIndex & 63 ) );
    }
 
-   Entity               m_nextEntity { 1 };
-   std::queue< Entity > m_recycledEntities;
+   bool FTestMaskBit( Entity entity, size_t compIndex ) const noexcept
+   {
+      if( entity >= m_entityMasks.size() )
+         return false;
 
-   // Component and Entity <-> Component association mappings
-   std::unordered_map< ComponentTypeKey, std::unique_ptr< Pool > >      m_storagePools;
-   std::unordered_map< Entity, std::unordered_set< ComponentTypeKey > > m_entityComponentTypes;
+      const ComponentMask& mask  = m_entityMasks[ entity ];
+      size_t               block = compIndex / 64;
+      return block < mask.size() && ( mask[ block ] >> ( compIndex & 63 ) ) & 1ull;
+   }
 
-   // Maps Entity to their handle
-   std::unordered_map< Entity, std::weak_ptr< EntityHandle > > m_wkEntityHandles;
+   // ----- Data members -----
+   Entity                                 m_nextEntity { 1 }; ///< Next entity id to hand out.
+   std::queue< Entity >                   m_recycled;         ///< Recycled ids for reuse.
+   std::vector< uint8_t >                 m_entityAlive;      ///< Alive flags (0/1) per entity.
+   std::vector< ComponentMask >           m_entityMasks;      ///< Per-entity membership bit masks.
+   std::vector< std::unique_ptr< Pool > > m_componentPools;   ///< Indexed by component type index.
 };
 
+// =============================================================
+// View
+// =============================================================
 /**
  * @class View
- * @brief A view into an entity registry that provides iterative access to entities and their components.
+ * @brief Lightweight iterable for entities holding a set of components.
+ *
+ * Chooses the smallest component pool among the requested types as the driving range to minimize iteration cost.
+ * Each ++ skips entities missing any required component via fast bit tests (FHasComponents chain inlined / constexpr).
+ *
+ * @tparam TViewType Output tuple shape (see ViewType).
+ * @tparam TComponents Component types required for inclusion.
  */
 template< ViewType TViewType, typename... TComponents >
 class View
 {
 public:
-   View( Registry& registry ) noexcept :
+   explicit View( Registry& registry ) noexcept :
       m_registry( registry )
    {
-      size_t minSize = ( std::numeric_limits< size_t >::max )();
-      ( CheckPool< TComponents >( minSize, m_pEntityAtIndex ), ... );
+      SelectSmallestPool();
    }
 
+   /** @brief Forward iterator over the selected entity set. */
    struct Iterator
    {
-      Registry&              registry;
-      std::vector< Entity >* entityAtIndex;
-      size_t                 index;
+      Registry*              registry { nullptr }; ///< Owning registry.
+      size_t                 index { 0 };          ///< Current dense index in smallest pool.
+      std::vector< Entity >* entities { nullptr }; ///< Pointer to smallest entity vector.
 
-      Iterator( Registry& registry, std::vector< Entity >* entities, size_t index ) noexcept :
-         registry( registry ),
-         entityAtIndex( entities ),
-         index( index )
+      void Skip() noexcept
       {
-         SkipInvalid();
+         while( entities && index < entities->size() && !registry->template FHasComponents< TComponents... >( ( *entities )[ index ] ) )
+            ++index;
       }
-
       Iterator& operator++() noexcept
       {
          ++index;
-         SkipInvalid();
+         Skip();
          return *this;
       }
-      bool operator!=( const Iterator& other ) const noexcept { return index != other.index; }
+      bool operator!=( const Iterator& rhs ) const noexcept { return index != rhs.index; }
       auto operator*() const noexcept
       {
-         Entity entity = ( *entityAtIndex )[ index ];
+         Entity entity = ( *entities )[ index ];
          if constexpr( TViewType == ViewType::Entity )
             return entity;
          else if constexpr( TViewType == ViewType::Components )
-            return std::tuple< TComponents&... > { *( registry.GetComponent< TComponents >( entity ) )... };
-         else if constexpr( TViewType == ViewType::EntityAndComponents )
-            return std::tuple< Entity, TComponents&... > { entity, *( registry.GetComponent< TComponents >( entity ) )... };
-      }
-
-   private:
-      void SkipInvalid() noexcept
-      {
-         while( entityAtIndex && index < entityAtIndex->size() && !registry.FHasComponents< TComponents... >( ( *entityAtIndex )[ index ] ) )
-            ++index;
+            return std::tuple< TComponents&... > { *( registry->template GetComponent< TComponents >( entity ) )... };
+         else
+            return std::tuple< Entity, TComponents&... > { entity, *( registry->template GetComponent< TComponents >( entity ) )... };
       }
    };
 
-   Iterator begin() noexcept { return Iterator( m_registry, m_pEntityAtIndex, 0 ); }
-   Iterator end() noexcept { return Iterator( m_registry, m_pEntityAtIndex, m_pEntityAtIndex ? m_pEntityAtIndex->size() : 0 ); }
+   Iterator begin() noexcept
+   {
+      Iterator it { &m_registry, 0, m_smallestEntities };
+      it.Skip();
+      return it;
+   }
+   Iterator end() noexcept { return Iterator { &m_registry, m_smallestEntities ? m_smallestEntities->size() : 0, m_smallestEntities }; }
 
 private:
    template< typename TComponent >
-   void CheckPool( size_t& minSize, std::vector< Entity >*& pEntityAtIndex ) const noexcept
+   std::vector< Entity >* GetEntitiesVectorFor() const noexcept
    {
-      auto* storage = m_registry.GetStorage< TComponent >();
-      if( !storage || storage->m_entityAtIndex.size() >= minSize )
-         return; // No storage or not smaller than current minSize
+      size_t index = Registry::GetComponentTypeIndex< TComponent >();
+      if( index >= m_registry.m_componentPools.size() )
+         return nullptr;
 
-      minSize        = storage->m_entityAtIndex.size();
-      pEntityAtIndex = &storage->m_entityAtIndex;
+      auto* pPool = m_registry.m_componentPools[ index ].get();
+      return pPool ? &( static_cast< typename Registry::ComponentStorage< TComponent >* >( pPool )->m_entities ) : nullptr;
    }
 
-   Registry&              m_registry;
-   std::vector< Entity >* m_pEntityAtIndex = nullptr;
+   void SelectSmallestPool() noexcept
+   {
+      size_t minSize = ( std::numeric_limits< size_t >::max )();
+      ( SelectIfSmaller< TComponents >( minSize ), ... );
+   }
+
+   template< typename TComponent >
+   void SelectIfSmaller( size_t& minSize ) noexcept
+   {
+      if( auto* vec = GetEntitiesVectorFor< TComponent >(); vec && vec->size() < minSize )
+      {
+         minSize            = vec->size();
+         m_smallestEntities = vec;
+      }
+   }
+
+   Registry&              m_registry;                     ///< Referenced registry.
+   std::vector< Entity >* m_smallestEntities { nullptr }; ///< Driving dense entity list.
 };
 
 } // namespace Entity
 
-
-// Hash specialization for Entity::EntityHandle
+/** @brief std::hash specialization for EntityHandle enabling use in unordered containers. */
 template<>
 struct std::hash< Entity::EntityHandle >
 {
-   size_t operator()( const Entity::EntityHandle& handle ) const noexcept { return std::hash< Entity::Entity >()( handle.Get() ); }
+   size_t operator()( const Entity::EntityHandle& handle ) const noexcept { return std::hash< Entity::Entity > {}( handle.Get() ); }
 };
