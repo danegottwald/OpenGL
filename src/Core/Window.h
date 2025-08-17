@@ -9,8 +9,8 @@ struct GLFWwindow;
 struct WindowData
 {
    std::string Title  = "OpenGL";
-   uint16_t    Width  = 1280;
-   uint16_t    Height = 720;
+   uint16_t    Width  = 1600;
+   uint16_t    Height = 900;
    bool        VSync  = true;
 };
 
