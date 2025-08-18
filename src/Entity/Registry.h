@@ -69,7 +69,6 @@ private:
    {
       virtual ~Pool()                        = default;
       virtual void Remove( Entity ) noexcept = 0;
-      virtual bool FEmpty() const noexcept   = 0;
    };
 
    template< typename TType >
@@ -82,16 +81,12 @@ private:
       std::vector< Entity >         m_entities;
       std::vector< DenseIndexType > m_entityToIndex; // sparse
 
-      FORCE_INLINE void EnsureEntityCapacity( Entity entity )
-      {
-         if( entity >= m_entityToIndex.size() )
-            m_entityToIndex.resize( static_cast< size_t >( entity ) + 1, npos );
-      }
-
       template< typename... Args >
       FORCE_INLINE TType& EmplaceConstruct( Entity entity, Args&&... args )
       {
-         EnsureEntityCapacity( entity );
+         if( entity >= m_entityToIndex.size() )
+            m_entityToIndex.resize( static_cast< size_t >( entity ) + 1, npos );
+
          DenseIndexType index = static_cast< DenseIndexType >( m_components.size() );
          m_components.emplace_back( std::forward< Args >( args )... );
          m_entities.emplace_back( entity );
@@ -131,8 +126,6 @@ private:
             }
          }
       }
-
-      FORCE_INLINE bool FEmpty() const noexcept override { return m_components.empty(); }
    };
 
 public:
@@ -197,7 +190,7 @@ public:
    }
 
    [[nodiscard]] FORCE_INLINE bool   FValid( Entity entity ) const noexcept { return entity < m_entityAlive.size() && m_entityAlive[ entity ]; }
-   [[nodiscard]] FORCE_INLINE size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size() - 1; }
+   [[nodiscard]] FORCE_INLINE size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size(); }
 
    // ----- Component API -----
    template< typename TType, typename... TArgs >
@@ -343,7 +336,7 @@ private:
          m_componentPools[ index ] = std::make_unique< Storage< TType > >();
    }
 
-   Entity                                 m_nextEntity { 1 };
+   Entity                                 m_nextEntity { 0 };
    std::vector< Entity >                  m_recycled;
    std::vector< uint8_t >                 m_entityAlive;
    std::vector< std::unique_ptr< Pool > > m_componentPools;
