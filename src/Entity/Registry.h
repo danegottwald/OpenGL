@@ -65,12 +65,11 @@ private:
    FORCE_INLINE static size_t GetTypeIndex() noexcept { return TypeIndexHelper< std::remove_pointer_t< std::remove_reference_t< std::remove_cv_t< TType > > > >::Get(); }
    // clang-format on
 
-   // Type-erased pool record (replaces abstract Pool base)
+   // Storage pool for a specifc type
    struct StoragePool
    {
-      void* pStorage { nullptr };                               // points to Storage<T>
-      void ( *removeFn )( void*, Entity ) noexcept { nullptr }; // removes entity from storage
-      void ( *destroyFn )( void* ) noexcept { nullptr };        // destroys storage correctly
+      std::unique_ptr< void, void ( * )( void* ) > pStorage { nullptr, nullptr }; // owns Storage<T>
+      void ( *removeFn )( void*, Entity ) noexcept { nullptr };                   // removes entity from storage
    };
 
    template< typename TType >
@@ -131,16 +130,8 @@ private:
    };
 
 public:
-   Registry() = default;
-   ~Registry()
-   {
-      // destroy all storages
-      for( auto& rec : m_storagePools )
-      {
-         if( rec.destroyFn && rec.pStorage )
-            rec.destroyFn( rec.pStorage );
-      }
-   }
+   Registry()  = default;
+   ~Registry() = default;
 
    Registry( const Registry& )            = delete;
    Registry& operator=( const Registry& ) = delete;
@@ -191,7 +182,7 @@ public:
          {
             auto& rec = m_storagePools[ compIndex ];
             if( rec.removeFn )
-               rec.removeFn( rec.pStorage, entity );
+               rec.removeFn( rec.pStorage.get(), entity );
          }
       }
       comps.clear();
@@ -211,7 +202,7 @@ public:
       EnsureStoragePool< TType >( typeIndex );
 
       auto& rec      = m_storagePools[ typeIndex ];
-      auto* pStorage = static_cast< Storage< TType >* >( rec.pStorage );
+      auto* pStorage = static_cast< Storage< TType >* >( rec.pStorage.get() );
       auto& sparse   = pStorage->m_entityToIndex;
       if( entity < sparse.size() )
       {
@@ -244,7 +235,7 @@ public:
 
          auto& rec = m_storagePools[ compIndex ];
          if( rec.removeFn )
-            rec.removeFn( rec.pStorage, entity );
+            rec.removeFn( rec.pStorage.get(), entity );
 
          auto& owned = m_entityTypes[ entity ];
          if( auto it = std::find( owned.begin(), owned.end(), compIndex ); it != owned.end() )
@@ -252,7 +243,7 @@ public:
       };
 
       removeOne.template operator()< TType >();
-      ( removeOne.template operator()< TOthers >(), ... ); // fold over additional types
+      ( removeOne.template operator()< TOthers >(), ... );
    }
 
    template< typename TType, typename... TOthers >
@@ -271,7 +262,7 @@ public:
          if( !rec.pStorage )
             return nullptr;
 
-         auto* pStorage = static_cast< Storage< std::remove_const_t< Type > >* >( rec.pStorage );
+         auto* pStorage = static_cast< Storage< std::remove_const_t< Type > >* >( rec.pStorage.get() );
          return pStorage ? pStorage->Get( entity ) : nullptr;
       };
 
@@ -303,7 +294,7 @@ public:
          if( !rec.pStorage )
             return false;
 
-         auto* pStorage = static_cast< Storage< Type >* >( rec.pStorage );
+         auto* pStorage = static_cast< Storage< Type >* >( rec.pStorage.get() );
          return pStorage && entity < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ entity ] != Storage< Type >::npos;
       };
 
@@ -351,9 +342,8 @@ private:
       auto& rec = m_storagePools[ index ];
       if( !rec.pStorage )
       {
-         rec.pStorage  = new Storage< TType >();
-         rec.removeFn  = []( void* p, Entity e ) noexcept { static_cast< Storage< TType >* >( p )->Remove( e ); };
-         rec.destroyFn = []( void* p ) noexcept { delete static_cast< Storage< TType >* >( p ); };
+         rec.pStorage = { new Storage< TType >(), []( void* pStorage ) { delete static_cast< Storage< TType >* >( pStorage ); } };
+         rec.removeFn = []( void* pStorage, Entity e ) noexcept { static_cast< Storage< TType >* >( pStorage )->Remove( e ); };
       }
    }
 
@@ -459,7 +449,7 @@ private:
       if( !rec.pStorage )
          return nullptr;
 
-      auto* pStorage = static_cast< typename Registry::Storage< std::remove_const_t< TType > >* >( rec.pStorage );
+      auto* pStorage = static_cast< typename Registry::Storage< std::remove_const_t< TType > >* >( rec.pStorage.get() );
       return &pStorage->m_entities;
    }
 
@@ -488,7 +478,7 @@ private:
       {
          auto& rec = m_registry.m_storagePools[ index ];
          if( rec.pStorage )
-            std::get< StoragePtr< TType > >( m_typeStorages ) = static_cast< StoragePtr< TType > >( rec.pStorage );
+            std::get< StoragePtr< TType > >( m_typeStorages ) = static_cast< StoragePtr< TType > >( rec.pStorage.get() );
       }
    }
 
