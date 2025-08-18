@@ -62,7 +62,7 @@ private:
    template< typename TType >
    struct TypeIndexHelper { FORCE_INLINE static size_t Get() { static const size_t s_index = s_nextTypeIndex++; return s_index; } };
    template< typename TType >
-   FORCE_INLINE static size_t GetTypeIndex() noexcept { return TypeIndexHelper< std::remove_pointer_t< std::remove_reference_t< std::remove_cv_t< TType > > > >::Get(); }
+   FORCE_INLINE static size_t GetTypeIndex() noexcept { return TypeIndexHelper< std::remove_cv_t< std::remove_pointer_t< std::remove_reference_t< TType > > > >::Get(); }
    // clang-format on
 
    // Storage pool for a specifc type
@@ -101,9 +101,8 @@ private:
             return nullptr;
 
          DenseIndexType index = m_entityToIndex[ entity ];
-         return index == npos ? nullptr : &m_types[ index ];
+         return index != npos ? &m_types[ index ] : nullptr;
       }
-      FORCE_INLINE const TType* Get( Entity entity ) const noexcept { return const_cast< Storage* >( this )->Get( entity ); }
 
       FORCE_INLINE void Remove( Entity entity ) noexcept
       {
@@ -170,7 +169,7 @@ public:
       } );
    }
 
-   void Destroy( Entity entity ) noexcept
+   FORCE_INLINE void Destroy( Entity entity ) noexcept
    {
       if( !FValid( entity ) )
          return;
@@ -227,19 +226,19 @@ public:
       if( !FValid( entity ) )
          return;
 
-      auto removeOne = [ & ]< typename Type >()
+      auto removeOne = [ & ]< typename T >() -> void
       {
-         size_t compIndex = GetTypeIndex< Type >();
-         if( compIndex >= m_storagePools.size() )
-            return;
+         size_t compIndex = GetTypeIndex< T >();
+         if( compIndex < m_storagePools.size() )
+         {
+            auto& rec = m_storagePools[ compIndex ];
+            if( rec.removeFn )
+               rec.removeFn( rec.pStorage.get(), entity );
 
-         auto& rec = m_storagePools[ compIndex ];
-         if( rec.removeFn )
-            rec.removeFn( rec.pStorage.get(), entity );
-
-         auto& owned = m_entityTypes[ entity ];
-         if( auto it = std::find( owned.begin(), owned.end(), compIndex ); it != owned.end() )
-            owned.erase( it );
+            auto& owned = m_entityTypes[ entity ];
+            if( auto it = std::find( owned.begin(), owned.end(), compIndex ); it != owned.end() )
+               owned.erase( it );
+         }
       };
 
       removeOne.template operator()< TType >();
@@ -247,14 +246,14 @@ public:
    }
 
    template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto Get( Entity entity ) noexcept
+   [[nodiscard]] FORCE_INLINE auto TryGet( Entity entity ) noexcept
    {
-      auto getOne = [ & ]< typename Type >() -> Type*
+      auto getOnePtr = [ & ]< typename T >() -> T*
       {
          if( !FValid( entity ) )
             return nullptr;
 
-         size_t compIndex = GetTypeIndex< Type >();
+         size_t compIndex = GetTypeIndex< T >();
          if( compIndex >= m_storagePools.size() )
             return nullptr;
 
@@ -262,18 +261,40 @@ public:
          if( !rec.pStorage )
             return nullptr;
 
-         auto* pStorage = static_cast< Storage< std::remove_const_t< Type > >* >( rec.pStorage.get() );
+         auto* pStorage = static_cast< Storage< std::remove_cv_t< std::remove_pointer_t< std::remove_reference_t< T > > > >* >( rec.pStorage.get() );
          return pStorage ? pStorage->Get( entity ) : nullptr;
       };
 
       if constexpr( sizeof...( TOthers ) == 0 )
-         return getOne.template operator()< TType >();
+         return getOnePtr.template operator()< TType >();
       else
-         return std::tuple< TType*, TOthers*... > { getOne.template operator()< TType >(), getOne.template operator()< TOthers >()... };
+         return std::tuple< TType*, TOthers*... > { getOnePtr.template operator()< TType >(), getOnePtr.template operator()< TOthers >()... };
    }
 
    template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto Get( Entity entity ) const noexcept
+   [[nodiscard]] FORCE_INLINE auto TryGet( Entity entity ) const noexcept
+   {
+      return const_cast< Registry* >( this )->TryGet< const TType, const TOthers... >( entity );
+   }
+
+   template< typename TType, typename... TOthers >
+   [[nodiscard]] FORCE_INLINE decltype( auto ) Get( Entity entity )
+   {
+      assert( FValid( entity ) && "Get on invalid entity" );
+      auto getOneRef = [ & ]< typename T >() -> T&
+      {
+         using CType = std::remove_cv_t< std::remove_pointer_t< std::remove_reference_t< T > > >;
+         return *static_cast< Storage< CType >* >( m_storagePools[ GetTypeIndex< T >() ].pStorage.get() )->Get( entity );
+      };
+
+      if constexpr( sizeof...( TOthers ) == 0 )
+         return getOneRef.template operator()< TType >();
+      else
+         return std::tuple< TType&, TOthers&... > { getOneRef.template operator()< TType >(), getOneRef.template operator()< TOthers >()... };
+   }
+
+   template< typename TType, typename... TOthers >
+   [[nodiscard]] FORCE_INLINE decltype( auto ) Get( Entity entity ) const
    {
       return const_cast< Registry* >( this )->Get< const TType, const TOthers... >( entity );
    }
@@ -284,9 +305,9 @@ public:
       if( !FValid( entity ) )
          return false;
 
-      auto hasOne = [ & ]< typename Type >() -> bool
+      auto hasOne = [ & ]< typename T >() -> bool
       {
-         size_t compIndex = GetTypeIndex< Type >();
+         size_t compIndex = GetTypeIndex< T >();
          if( compIndex >= m_storagePools.size() )
             return false;
 
@@ -294,8 +315,8 @@ public:
          if( !rec.pStorage )
             return false;
 
-         auto* pStorage = static_cast< Storage< Type >* >( rec.pStorage.get() );
-         return pStorage && entity < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ entity ] != Storage< Type >::npos;
+         auto* pStorage = static_cast< Storage< T >* >( rec.pStorage.get() );
+         return pStorage && entity < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ entity ] != Storage< T >::npos;
       };
 
       return hasOne.template operator()< TType >() && ( hasOne.template operator()< TOthers >() && ... );
@@ -361,7 +382,7 @@ template< ViewType TViewType, typename TType, typename... TOthers >
 class View
 {
    template< typename T >
-   using StoragePtr = typename Registry::Storage< std::remove_const_t< T > >*;
+   using StoragePtr = typename Registry::Storage< std::remove_cv_t< std::remove_pointer_t< std::remove_reference_t< T > > > >*;
 
 public:
    explicit View( Registry& registry ) noexcept :
@@ -377,22 +398,20 @@ public:
       std::vector< Entity >*                                       pEntities { nullptr };
       std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... >& storages;
 
-      template< typename TType >
-      FORCE_INLINE static bool FHas( Entity e, StoragePtr< TType > pStorage ) noexcept
-      {
-         return pStorage && e < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ e ] != Registry::Storage< std::remove_const_t< TType > >::npos;
-      }
-
-      FORCE_INLINE bool FHasAll( Entity e ) const noexcept
-      {
-         return FHas< TType >( e, std::get< StoragePtr< TType > >( storages ) ) &&
-                ( FHas< TOthers >( e, std::get< StoragePtr< TOthers > >( storages ) ) && ... );
-      }
-
       FORCE_INLINE void Skip() noexcept
       {
-         while( pEntities && index < pEntities->size() && !FHasAll( ( *pEntities )[ index ] ) )
+         auto has = []< typename T >( Entity e, auto pStorage ) -> bool
+         { return pStorage && e < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ e ] != Registry::Storage< T >::npos; };
+
+         while( pEntities && index < pEntities->size() )
+         {
+            Entity e = ( *pEntities )[ index ];
+            if( ( has.template operator()< TType >( e, std::get< StoragePtr< TType > >( storages ) ) && ... &&
+                  has.template operator()< TOthers >( e, std::get< StoragePtr< TOthers > >( storages ) ) ) )
+               break; // If the entity has all required components, stop skipping
+
             ++index;
+         }
       }
 
       FORCE_INLINE Iterator& operator++() noexcept
@@ -431,17 +450,13 @@ public:
       it.Skip();
       return it;
    }
-   FORCE_INLINE Iterator end() noexcept
-   {
-      Iterator it { m_pSmallestEntities ? m_pSmallestEntities->size() : 0, m_pSmallestEntities, m_typeStorages };
-      return it;
-   }
+   FORCE_INLINE Iterator end() noexcept { return Iterator { m_pSmallestEntities ? m_pSmallestEntities->size() : 0, m_pSmallestEntities, m_typeStorages }; }
 
 private:
    template< typename TType >
    FORCE_INLINE std::vector< Entity >* GetEntitiesVectorFor() const noexcept
    {
-      size_t index = Registry::GetTypeIndex< std::remove_const_t< TType > >();
+      size_t index = Registry::GetTypeIndex< TType >();
       if( index >= m_registry.m_storagePools.size() )
          return nullptr;
 
@@ -449,7 +464,7 @@ private:
       if( !rec.pStorage )
          return nullptr;
 
-      auto* pStorage = static_cast< typename Registry::Storage< std::remove_const_t< TType > >* >( rec.pStorage.get() );
+      auto* pStorage = static_cast< StoragePtr< TType > >( rec.pStorage.get() );
       return &pStorage->m_entities;
    }
 
@@ -463,7 +478,7 @@ private:
       }
    }
 
-   void SelectSmallestPool() noexcept
+   FORCE_INLINE void SelectSmallestPool() noexcept
    {
       size_t minSize = ( std::numeric_limits< size_t >::max )();
       SelectIfSmaller< TType >( minSize );
@@ -473,7 +488,7 @@ private:
    template< typename TType >
    FORCE_INLINE void CacheStorage() noexcept
    {
-      size_t index = Registry::GetTypeIndex< std::remove_const_t< TType > >();
+      size_t index = Registry::GetTypeIndex< TType >();
       if( index < m_registry.m_storagePools.size() )
       {
          auto& rec = m_registry.m_storagePools[ index ];

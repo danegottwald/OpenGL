@@ -43,7 +43,7 @@ World::World( Entity::Registry& registry )
          return; // Client not found
       }
 
-      CTransform* pClientTransform = registry.Get< CTransform >( it->second->Get() );
+      CTransform* pClientTransform = registry.TryGet< CTransform >( it->second->Get() );
       if( !pClientTransform )
       {
          std::println( std::cerr, "Transform component not found for client ID {}", e.GetClientID() );
@@ -51,7 +51,7 @@ World::World( Entity::Registry& registry )
       }
 
       glm::vec3 meshOffset( 0.0f, 1.0f, 0.0f ); // Offset for the mesh position
-      if( CMesh* pClientMesh = registry.Get< CMesh >( it->second->Get() ) )
+      if( CMesh* pClientMesh = registry.TryGet< CMesh >( it->second->Get() ) )
          meshOffset.y = pClientMesh->mesh->GetCenterToBottomDistance();
 
       pClientTransform->position = e.GetPosition() + meshOffset; // position is at feet level, so adjust for height

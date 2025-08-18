@@ -226,15 +226,13 @@ void Application::Run()
       if( e.GetHeight() == 0 )
          return;
 
-      if( CCamera* pCameraComp = registry.Get< CCamera >( camera ); pCameraComp )
-      {
+      if( CCamera* pCameraComp = registry.TryGet< CCamera >( camera ) )
          pCameraComp->projection = glm::perspective( glm::radians( pCameraComp->fov ), e.GetWidth() / static_cast< float >( e.GetHeight() ), 0.1f, 1000.0f );
-      }
    } );
 
    eventSubscriber.Subscribe< Events::MouseScrolledEvent >( [ &registry, camera ]( const Events::MouseScrolledEvent& e ) noexcept
    {
-      if( CCamera* pCameraComp = registry.Get< CCamera >( camera ); pCameraComp )
+      if( CCamera* pCameraComp = registry.TryGet< CCamera >( camera ) )
       {
          pCameraComp->fov        = std::clamp( pCameraComp->fov - ( e.GetYOffset() * 5 ), 10.0f, 90.0f );
          pCameraComp->projection = glm::perspective( glm::radians( pCameraComp->fov ),
@@ -270,9 +268,9 @@ void Application::Run()
    {
       const float delta = timestep.Step();
 
-      CTransform* pPlayerTran = registry.Get< CTransform >( player );
-      CTransform* pCameraTran = registry.Get< CTransform >( camera );
-      CCamera*    pCameraComp = registry.Get< CCamera >( camera );
+      CTransform* pPlayerTran = registry.TryGet< CTransform >( player );
+      CTransform* pCameraTran = registry.TryGet< CTransform >( camera );
+      CCamera*    pCameraComp = registry.TryGet< CCamera >( camera );
 
       {
          Events::ProcessQueuedEvents();

@@ -85,7 +85,7 @@ void DebugGUI::Draw()
       ImGui::Text( "Entity Count: %d", m_registry.GetEntityCount() );
 
       ImGui::NewLine();
-      auto [ pPlayerTran, pPlayerVel ] = m_registry.Get< CTransform, CVelocity >( m_player );
+      auto [ pPlayerTran, pPlayerVel ] = m_registry.TryGet< CTransform, CVelocity >( m_player );
       if( pPlayerTran && pPlayerVel )
       {
          ImGui::Text( "Player Entity: %d", m_player );
@@ -95,7 +95,7 @@ void DebugGUI::Draw()
          //ImGui::Text( "Player Acceleration: %.2f, %.2f, %.2f", m_player.GetAcceleration().x, m_player.GetAcceleration().y, m_player.GetAcceleration().z );
       }
 
-      if( const CTransform* pCameraTran = m_registry.Get< CTransform >( m_camera ) )
+      if( const CTransform* pCameraTran = m_registry.TryGet< CTransform >( m_camera ) )
       {
          ImGui::NewLine();
          ImGui::Text( "Camera Entity: %d", m_camera );
