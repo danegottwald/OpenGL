@@ -3,8 +3,14 @@
 namespace Entity
 {
 
-using Entity = uint64_t;
+// Hot-path inlining
+#if defined( _MSC_VER )
+#define ECS_FORCE_INLINE __forceinline
+#else
+#define ECS_FORCE_INLINE inline __attribute__( ( always_inline ) )
+#endif
 
+using Entity = uint64_t;
 class Registry; // fwd
 
 // =============================================================
@@ -110,7 +116,7 @@ private:
     * @tparam TComponent Component type.
     */
    template< typename TComponent >
-   static size_t GetComponentTypeIndex() noexcept
+   ECS_FORCE_INLINE static size_t GetComponentTypeIndex() noexcept
    {
       static const size_t s_index = s_nextComponentTypeIndex++;
       return s_index;
@@ -137,24 +143,25 @@ private:
    template< typename TComponent >
    struct ComponentStorage final : Pool
    {
-      static constexpr size_t npos = ( std::numeric_limits< size_t >::max )();
+      using DenseIndexType                 = uint32_t; // more cache friendly than size_t for large sparse arrays
+      static constexpr DenseIndexType npos = ( std::numeric_limits< DenseIndexType >::max )();
 
-      std::vector< TComponent > m_components;    ///< Dense component values.
-      std::vector< Entity >     m_entities;      ///< Dense entity list aligned with m_components.
-      std::vector< size_t >     m_entityToIndex; ///< Sparse lookup: entity -> dense index or npos.
+      std::vector< TComponent >     m_components;    ///< Dense component values.
+      std::vector< Entity >         m_entities;      ///< Dense entity list aligned with m_components.
+      std::vector< DenseIndexType > m_entityToIndex; ///< Sparse lookup: entity -> dense index or npos.
 
       /** Ensure sparse index vector can address the given entity id. */
-      void EnsureEntityCapacity( Entity entity )
+      ECS_FORCE_INLINE void EnsureEntityCapacity( Entity entity )
       {
          if( entity >= m_entityToIndex.size() )
             m_entityToIndex.resize( static_cast< size_t >( entity ) + 1, npos );
       }
 
       /** Emplace pre-constructed component (move). */
-      TComponent& Emplace( Entity entity, TComponent&& value )
+      ECS_FORCE_INLINE TComponent& Emplace( Entity entity, TComponent&& value )
       {
          EnsureEntityCapacity( entity );
-         size_t index = m_components.size();
+         DenseIndexType index = static_cast< DenseIndexType >( m_components.size() );
          m_components.emplace_back( std::move( value ) );
          m_entities.emplace_back( entity );
          m_entityToIndex[ entity ] = index;
@@ -163,10 +170,10 @@ private:
 
       /** Construct component in-place with forwarded args. */
       template< typename... Args >
-      TComponent& EmplaceConstruct( Entity entity, Args&&... args )
+      ECS_FORCE_INLINE TComponent& EmplaceConstruct( Entity entity, Args&&... args )
       {
          EnsureEntityCapacity( entity );
-         size_t index = m_components.size();
+         DenseIndexType index = static_cast< DenseIndexType >( m_components.size() );
          m_components.emplace_back( std::forward< Args >( args )... );
          m_entities.emplace_back( entity );
          m_entityToIndex[ entity ] = index;
@@ -174,12 +181,12 @@ private:
       }
 
       /** @return Pointer to component for entity or nullptr if absent. */
-      TComponent* Get( Entity entity ) noexcept
+      ECS_FORCE_INLINE TComponent* Get( Entity entity ) noexcept
       {
          if( entity >= m_entityToIndex.size() )
             return nullptr;
 
-         size_t idx = m_entityToIndex[ entity ];
+         DenseIndexType idx = m_entityToIndex[ entity ];
          return idx == npos ? nullptr : &m_components[ idx ];
       }
 
@@ -190,16 +197,16 @@ private:
        * @brief Remove component for entity with swap-and-pop; O(1).
        * Preserves contiguity but changes order. Updates sparse indices accordingly.
        */
-      void Remove( Entity entity ) noexcept override
+      ECS_FORCE_INLINE void Remove( Entity entity ) noexcept override
       {
          if( entity >= m_entityToIndex.size() )
             return;
 
-         size_t idx = m_entityToIndex[ entity ];
+         DenseIndexType idx = m_entityToIndex[ entity ];
          if( idx == npos )
             return;
 
-         size_t backIdx = m_components.size() - 1;
+         DenseIndexType backIdx = static_cast< DenseIndexType >( m_components.size() - 1 );
          if( idx != backIdx )
          {
             m_components[ idx ]            = std::move( m_components[ backIdx ] );
@@ -213,7 +220,7 @@ private:
          m_entityToIndex[ entity ] = npos;
       }
 
-      bool Empty() const noexcept override { return m_components.empty(); }
+      ECS_FORCE_INLINE bool Empty() const noexcept override { return m_components.empty(); }
    };
 
 public:
@@ -228,9 +235,9 @@ public:
     * @brief Create a new entity id (reusing recycled ids when available).
     * @return Newly created entity id.
     */
-   [[nodiscard]] Entity Create() noexcept
+   [[nodiscard]] ECS_FORCE_INLINE Entity Create() noexcept
    {
-      Entity entity = 0;
+      Entity entity;
       if( !m_recycled.empty() )
       {
          entity = m_recycled.back();
@@ -264,43 +271,40 @@ public:
       if( !FValid( entity ) )
          return;
 
-      ComponentMask& mask = m_entityMasks[ entity ];
+      ComponentMask&                     mask      = m_entityMasks[ entity ];
+      std::unique_ptr< Registry::Pool >* pPools    = m_componentPools.data(); // pointer to first unique_ptr
+      const size_t                       poolCount = m_componentPools.size();
       for( size_t blockIndex = 0; blockIndex < mask.size(); ++blockIndex )
       {
          uint64_t bits = mask[ blockIndex ];
          while( bits )
          {
-            unsigned long bit;
-#if defined( _MSC_VER )
-            _BitScanForward64( &bit, bits );
-#else
-            bit = static_cast< unsigned long >( __builtin_ctzll( bits ) );
-#endif
-
-            size_t compIndex = blockIndex * 64 + bit;
-            if( compIndex < m_componentPools.size() )
+            size_t compIndex = ( blockIndex * 64 ) + std::countr_zero( bits );
+            if( compIndex < poolCount )
             {
-               if( Pool* pPool = m_componentPools[ compIndex ].get() )
+               Pool* pPool = pPools[ compIndex ].get();
+               if( pPool )
                   pPool->Remove( entity );
             }
 
             bits &= bits - 1; // clear lowest set bit
          }
+         mask[ blockIndex ] = 0; // keep capacity, zero out (avoids reallocation on reuse)
       }
 
-      mask.clear();
+      // retain capacity instead of mask.clear() to reduce future reallocations (micro-optimization)
       m_entityAlive[ entity ] = 0;
       m_recycled.push_back( entity );
    }
 
    /** @return True if entity id is currently alive. */
-   [[nodiscard]] bool FValid( Entity entity ) const noexcept { return entity < m_entityAlive.size() && m_entityAlive[ entity ]; }
+   [[nodiscard]] ECS_FORCE_INLINE bool FValid( Entity entity ) const noexcept { return entity < m_entityAlive.size() && m_entityAlive[ entity ]; }
 
    /**
     * @brief Approximate count of live entities.
     * @note This subtracts recycled ids; may not match number of alive flags if fragmentation occurs.
     */
-   [[nodiscard]] size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size() - 1; }
+   [[nodiscard]] ECS_FORCE_INLINE size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size() - 1; }
 
    // ---------------- Component Management ----------------
    /**
@@ -311,7 +315,7 @@ public:
     * @return Reference to (new or replaced) component.
     */
    template< typename TComponent, typename... TArgs >
-   TComponent& AddComponent( Entity entity, TArgs&&... args )
+   ECS_FORCE_INLINE TComponent& AddComponent( Entity entity, TArgs&&... args )
    {
       assert( FValid( entity ) && "AddComponent on invalid entity" );
       size_t compIndex = GetComponentTypeIndex< TComponent >();
@@ -319,10 +323,15 @@ public:
       SetMaskBit( entity, compIndex );
 
       auto* pStorage = static_cast< ComponentStorage< TComponent >* >( m_componentPools[ compIndex ].get() );
-      if( TComponent* existing = pStorage->Get( entity ) )
+      auto& sparse   = pStorage->m_entityToIndex;
+      if( entity < sparse.size() )
       {
-         *existing = TComponent( std::forward< TArgs >( args )... );
-         return *existing;
+         auto dense = sparse[ entity ];
+         if( dense != ComponentStorage< TComponent >::npos )
+         {
+            pStorage->m_components[ dense ] = TComponent( std::forward< TArgs >( args )... );
+            return pStorage->m_components[ dense ];
+         }
       }
 
       return pStorage->EmplaceConstruct( entity, std::forward< TArgs >( args )... );
@@ -332,7 +341,7 @@ public:
     * @brief Remove component TComponent from entity if present.
     */
    template< typename TComponent >
-   void RemoveComponent( Entity entity ) noexcept
+   ECS_FORCE_INLINE void RemoveComponent( Entity entity ) noexcept
    {
       if( !FValid( entity ) )
          return;
@@ -349,7 +358,7 @@ public:
 
    /** @return Pointer to component TComponent for entity or nullptr. */
    template< typename TComponent >
-   [[nodiscard]] TComponent* GetComponent( Entity entity ) noexcept
+   [[nodiscard]] ECS_FORCE_INLINE TComponent* GetComponent( Entity entity ) noexcept
    {
       if( !FValid( entity ) )
          return nullptr;
@@ -371,28 +380,28 @@ public:
 
    /** @return Pointer to components TComponents... for entity as a tuple. Missing components yield nullptr. */
    template< typename... TComponents >
-   [[nodiscard]] std::tuple< TComponents*... > GetComponents( Entity entity ) noexcept
+   [[nodiscard]] ECS_FORCE_INLINE std::tuple< TComponents*... > GetComponents( Entity entity ) noexcept
    {
       return std::tuple< TComponents*... > { GetComponent< TComponents >( entity )... };
    }
 
    /** @overload const */
    template< typename... TComponents >
-   [[nodiscard]] std::tuple< const TComponents*... > GetComponents( Entity entity ) const noexcept
+   [[nodiscard]] ECS_FORCE_INLINE std::tuple< const TComponents*... > GetComponents( Entity entity ) const noexcept
    {
       return std::tuple< const TComponents*... > { GetComponent< TComponents >( entity )... };
    }
 
    /** @return True if entity currently owns component TComponent. */
    template< typename TComponent >
-   [[nodiscard]] bool FHasComponent( Entity entity ) const noexcept
+   [[nodiscard]] ECS_FORCE_INLINE bool FHasComponent( Entity entity ) const noexcept
    {
       return FValid( entity ) && FTestMaskBit( entity, GetComponentTypeIndex< TComponent >() );
    }
 
    /** @return True if entity has all listed component types. */
    template< typename... TComponents >
-   [[nodiscard]] bool FHasComponents( Entity entity ) const noexcept
+   [[nodiscard]] ECS_FORCE_INLINE bool FHasComponents( Entity entity ) const noexcept
    {
       return ( FHasComponent< TComponents >( entity ) && ... );
    }
@@ -400,19 +409,19 @@ public:
    // ---------------- Views ----------------
    /** @brief Entity-only view for entities possessing all listed components. */
    template< typename... TComponents >
-   [[nodiscard]] auto EView() noexcept
+   [[nodiscard]] ECS_FORCE_INLINE auto EView() noexcept
    {
       return View< ViewType::Entity, TComponents... >( *this );
    }
    /** @brief Component tuple view (returns references only). */
    template< typename... TComponents >
-   [[nodiscard]] auto CView() noexcept
+   [[nodiscard]] ECS_FORCE_INLINE auto CView() noexcept
    {
       return View< ViewType::Components, TComponents... >( *this );
    }
    /** @brief (Entity, Components...) view. */
    template< typename... TComponents >
-   [[nodiscard]] auto ECView() noexcept
+   [[nodiscard]] ECS_FORCE_INLINE auto ECView() noexcept
    {
       return View< ViewType::EntityAndComponents, TComponents... >( *this );
    }
@@ -420,7 +429,7 @@ public:
 private:
    // ----- Internal helpers -----
    template< typename TComponent >
-   void EnsureComponentPool( size_t index )
+   ECS_FORCE_INLINE void EnsureComponentPool( size_t index )
    {
       if( index >= m_componentPools.size() )
          m_componentPools.resize( index + 1 );
@@ -429,7 +438,7 @@ private:
          m_componentPools[ index ] = std::make_unique< ComponentStorage< TComponent > >();
    }
 
-   void SetMaskBit( Entity entity, size_t compIndex )
+   ECS_FORCE_INLINE void SetMaskBit( Entity entity, size_t compIndex )
    {
       ComponentMask& mask  = m_entityMasks[ entity ];
       size_t         block = compIndex / 64;
@@ -438,7 +447,8 @@ private:
 
       mask[ block ] |= ( 1ull << ( compIndex & 63 ) );
    }
-   void ClearMaskBit( Entity entity, size_t compIndex )
+
+   ECS_FORCE_INLINE void ClearMaskBit( Entity entity, size_t compIndex )
    {
       if( entity >= m_entityMasks.size() )
          return;
@@ -449,7 +459,7 @@ private:
          mask[ block ] &= ~( 1ull << ( compIndex & 63 ) );
    }
 
-   bool FTestMaskBit( Entity entity, size_t compIndex ) const noexcept
+   ECS_FORCE_INLINE bool FTestMaskBit( Entity entity, size_t compIndex ) const noexcept
    {
       if( entity >= m_entityMasks.size() )
          return false;
@@ -499,6 +509,9 @@ public:
       BuildRequirements();
       SelectSmallestPool();
       CacheStorages();
+
+      m_requirementsPtr  = m_requirements.empty() ? nullptr : m_requirements.data();
+      m_requirementCount = m_requirements.size();
    }
 
    /** @brief Forward iterator over the selected entity set. */
@@ -508,35 +521,48 @@ public:
       size_t                 index { 0 };
       std::vector< Entity >* entities { nullptr };
 
-      const std::vector< BitRequirement >*                                 requirements { nullptr };
-      std::tuple< typename Registry::ComponentStorage< TComponents >*... > storages; // filled in view
+      const BitRequirement*                                                reqPtr { nullptr }; ///< raw pointer to requirements array
+      size_t                                                               reqCount { 0 };     ///< number of requirement entries
+      std::tuple< typename Registry::ComponentStorage< TComponents >*... > storages;           // filled in view
 
-      bool HasAll( Entity e ) const noexcept
+      ECS_FORCE_INLINE bool HasAll( Entity e ) const noexcept
       {
+         if( reqCount == 0 )
+            return true;
+
          const auto& maskVec = registry->m_entityMasks[ e ];
-         for( const auto& req : *requirements )
+         if( reqCount == 1 ) // single-block fast path
          {
-            if( req.block >= maskVec.size() )
+            const auto& r = reqPtr[ 0 ];
+            return r.block < maskVec.size() && ( maskVec[ r.block ] & r.mask ) == r.mask;
+         }
+
+         for( size_t i = 0; i < reqCount; ++i )
+         {
+            const auto& r = reqPtr[ i ];
+            if( r.block >= maskVec.size() )
                return false;
-            if( ( maskVec[ req.block ] & req.mask ) != req.mask )
+
+            if( ( maskVec[ r.block ] & r.mask ) != r.mask )
                return false;
          }
+
          return true;
       }
 
-      void Skip() noexcept
+      ECS_FORCE_INLINE void Skip() noexcept
       {
          while( entities && index < entities->size() && !HasAll( ( *entities )[ index ] ) )
             ++index;
       }
-      Iterator& operator++() noexcept
+      ECS_FORCE_INLINE Iterator& operator++() noexcept
       {
          ++index;
          Skip();
          return *this;
       }
-      bool operator!=( const Iterator& rhs ) const noexcept { return index != rhs.index; }
-      auto operator*() const noexcept
+      ECS_FORCE_INLINE bool operator!=( const Iterator& rhs ) const noexcept { return index != rhs.index; }
+      ECS_FORCE_INLINE auto operator*() const noexcept
       {
          Entity entity = ( *entities )[ index ];
          if constexpr( TViewType == ViewType::Entity )
@@ -548,29 +574,29 @@ public:
       }
 
       template< std::size_t... I >
-      auto DerefComponents( Entity e, std::index_sequence< I... > ) const noexcept
+      ECS_FORCE_INLINE auto DerefComponents( Entity e, std::index_sequence< I... > ) const noexcept
       {
          return std::tuple< TComponents&... > { *GetComponentRef< TComponents >( e, std::get< I >( storages ) )... };
       }
 
       template< typename TComp >
-      static TComp* GetComponentRef( Entity e, typename Registry::ComponentStorage< TComp >* storage ) noexcept
+      ECS_FORCE_INLINE static TComp* GetComponentRef( Entity e, typename Registry::ComponentStorage< TComp >* storage ) noexcept
       {
-         size_t idx = storage->m_entityToIndex[ e ];
+         auto idx = storage->m_entityToIndex[ e ];
          return &storage->m_components[ idx ];
       }
    };
 
-   Iterator begin() noexcept
+   ECS_FORCE_INLINE Iterator begin() noexcept
    {
-      Iterator it { &m_registry, 0, m_smallestEntities, &m_requirements };
+      Iterator it { &m_registry, 0, m_smallestEntities, m_requirementsPtr, m_requirementCount };
       it.storages = m_componentStorages; // copy pre-cached storages
       it.Skip();
       return it;
    }
-   Iterator end() noexcept
+   ECS_FORCE_INLINE Iterator end() noexcept
    {
-      Iterator it { &m_registry, m_smallestEntities ? m_smallestEntities->size() : 0, m_smallestEntities, &m_requirements };
+      Iterator it { &m_registry, m_smallestEntities ? m_smallestEntities->size() : 0, m_smallestEntities, m_requirementsPtr, m_requirementCount };
       it.storages = m_componentStorages;
       return it;
    }
@@ -578,26 +604,27 @@ public:
 private:
    void BuildRequirements() noexcept
    {
-      // Aggregate per-block bit masks for all requested components
+      m_requirements.reserve( sizeof...( TComponents ) );
       ( AddRequirementFor< TComponents >(), ... );
-
-      // Compress: combine duplicate blocks
-      std::sort( m_requirements.begin(), m_requirements.end(), []( const BitRequirement& a, const BitRequirement& b ) { return a.block < b.block; } );
-      std::vector< BitRequirement > compact;
-      compact.reserve( m_requirements.size() );
-      for( const auto& r : m_requirements )
+      if constexpr( sizeof...( TComponents ) > 1 )
       {
-         if( compact.empty() || compact.back().block != r.block )
-            compact.push_back( r );
-         else
-            compact.back().mask |= r.mask;
-      }
+         std::sort( m_requirements.begin(), m_requirements.end(), []( const BitRequirement& a, const BitRequirement& b ) { return a.block < b.block; } );
+         std::vector< BitRequirement > compact;
+         compact.reserve( m_requirements.size() );
+         for( const auto& r : m_requirements )
+         {
+            if( compact.empty() || compact.back().block != r.block )
+               compact.push_back( r );
+            else
+               compact.back().mask |= r.mask;
+         }
 
-      m_requirements.swap( compact );
+         m_requirements.swap( compact );
+      }
    }
 
    template< typename TComponent >
-   void AddRequirementFor() noexcept
+   ECS_FORCE_INLINE void AddRequirementFor() noexcept
    {
       size_t   compIndex = Registry::GetComponentTypeIndex< TComponent >();
       size_t   block     = compIndex / 64;
@@ -606,7 +633,7 @@ private:
    }
 
    template< typename TComponent >
-   std::vector< Entity >* GetEntitiesVectorFor() const noexcept
+   ECS_FORCE_INLINE std::vector< Entity >* GetEntitiesVectorFor() const noexcept
    {
       size_t index = Registry::GetComponentTypeIndex< TComponent >();
       if( index >= m_registry.m_componentPools.size() )
@@ -616,14 +643,8 @@ private:
       return pPool ? &( static_cast< typename Registry::ComponentStorage< TComponent >* >( pPool )->m_entities ) : nullptr;
    }
 
-   void SelectSmallestPool() noexcept
-   {
-      size_t minSize = ( std::numeric_limits< size_t >::max )();
-      ( SelectIfSmaller< TComponents >( minSize ), ... );
-   }
-
    template< typename TComponent >
-   void SelectIfSmaller( size_t& minSize ) noexcept
+   ECS_FORCE_INLINE void SelectIfSmaller( size_t& minSize ) noexcept
    {
       if( auto* vec = GetEntitiesVectorFor< TComponent >(); vec && vec->size() < minSize )
       {
@@ -632,10 +653,14 @@ private:
       }
    }
 
-   void CacheStorages() noexcept { ( CacheStorage< TComponents >(), ... ); }
+   void SelectSmallestPool() noexcept
+   {
+      size_t minSize = ( std::numeric_limits< size_t >::max )();
+      ( SelectIfSmaller< TComponents >( minSize ), ... );
+   }
 
    template< typename TComponent >
-   void CacheStorage() noexcept
+   ECS_FORCE_INLINE void CacheStorage() noexcept
    {
       size_t index = Registry::GetComponentTypeIndex< TComponent >();
       if( index < m_registry.m_componentPools.size() )
@@ -646,10 +671,14 @@ private:
       }
    }
 
+   ECS_FORCE_INLINE void CacheStorages() noexcept { ( CacheStorage< TComponents >(), ... ); }
+
    Registry&                                                            m_registry;
    std::vector< Entity >*                                               m_smallestEntities { nullptr };
-   std::vector< BitRequirement >                                        m_requirements;
-   std::tuple< typename Registry::ComponentStorage< TComponents >*... > m_componentStorages {};
+   const BitRequirement*                                                m_requirementsPtr { nullptr }; ///< raw pointer for iteration
+   size_t                                                               m_requirementCount { 0 };      ///< count of requirement entries
+   std::vector< BitRequirement >                                        m_requirements;                ///< owned requirements
+   std::tuple< typename Registry::ComponentStorage< TComponents >*... > m_componentStorages {};        ///< cached storages
 };
 
 } // namespace Entity
