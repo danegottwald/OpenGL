@@ -58,26 +58,28 @@ private:
    friend class View;
 
    // clang-format off
-   static inline size_t s_nextComponentTypeIndex = 0;
+   static inline size_t s_nextTypeIndex = 0;
    template< typename TType >
-   struct TypeIndexHelper { FORCE_INLINE static size_t Get() { static const size_t s_index = s_nextComponentTypeIndex++; return s_index; } };
+   struct TypeIndexHelper { FORCE_INLINE static size_t Get() { static const size_t s_index = s_nextTypeIndex++; return s_index; } };
    template< typename TType >
    FORCE_INLINE static size_t GetTypeIndex() noexcept { return TypeIndexHelper< std::remove_pointer_t< std::remove_reference_t< std::remove_cv_t< TType > > > >::Get(); }
    // clang-format on
 
-   struct Pool
+   // Type-erased pool record (replaces abstract Pool base)
+   struct StoragePool
    {
-      virtual ~Pool()                        = default;
-      virtual void Remove( Entity ) noexcept = 0;
+      void* pStorage { nullptr };                               // points to Storage<T>
+      void ( *removeFn )( void*, Entity ) noexcept { nullptr }; // removes entity from storage
+      void ( *destroyFn )( void* ) noexcept { nullptr };        // destroys storage correctly
    };
 
    template< typename TType >
-   struct Storage final : Pool
+   struct Storage
    {
       using DenseIndexType                 = uint32_t;
       static constexpr DenseIndexType npos = ( std::numeric_limits< DenseIndexType >::max )();
 
-      std::vector< TType >          m_components;
+      std::vector< TType >          m_types;
       std::vector< Entity >         m_entities;
       std::vector< DenseIndexType > m_entityToIndex; // sparse
 
@@ -87,11 +89,11 @@ private:
          if( entity >= m_entityToIndex.size() )
             m_entityToIndex.resize( static_cast< size_t >( entity ) + 1, npos );
 
-         DenseIndexType index = static_cast< DenseIndexType >( m_components.size() );
-         m_components.emplace_back( std::forward< Args >( args )... );
+         DenseIndexType index = static_cast< DenseIndexType >( m_types.size() );
+         m_types.emplace_back( std::forward< Args >( args )... );
          m_entities.emplace_back( entity );
          m_entityToIndex[ entity ] = index;
-         return m_components.back();
+         return m_types.back();
       }
 
       FORCE_INLINE TType* Get( Entity entity ) noexcept
@@ -100,27 +102,27 @@ private:
             return nullptr;
 
          DenseIndexType index = m_entityToIndex[ entity ];
-         return index == npos ? nullptr : &m_components[ index ];
+         return index == npos ? nullptr : &m_types[ index ];
       }
-      FORCE_INLINE const TType* Get( Entity entity ) const noexcept { return Get( entity ); }
+      FORCE_INLINE const TType* Get( Entity entity ) const noexcept { return const_cast< Storage* >( this )->Get( entity ); }
 
-      FORCE_INLINE void Remove( Entity entity ) noexcept override
+      FORCE_INLINE void Remove( Entity entity ) noexcept
       {
          if( entity < m_entityToIndex.size() )
          {
             DenseIndexType index = m_entityToIndex[ entity ];
             if( index != npos )
             {
-               DenseIndexType backIndex = static_cast< DenseIndexType >( m_components.size() - 1 );
+               DenseIndexType backIndex = static_cast< DenseIndexType >( m_types.size() - 1 );
                if( index != backIndex )
                {
-                  m_components[ index ]    = std::move( m_components[ backIndex ] );
+                  m_types[ index ]         = std::move( m_types[ backIndex ] );
                   Entity moved             = m_entities[ backIndex ];
                   m_entities[ index ]      = moved;
                   m_entityToIndex[ moved ] = index;
                }
 
-               m_components.pop_back();
+               m_types.pop_back();
                m_entities.pop_back();
                m_entityToIndex[ entity ] = npos;
             }
@@ -129,8 +131,16 @@ private:
    };
 
 public:
-   Registry()  = default;
-   ~Registry() = default;
+   Registry() = default;
+   ~Registry()
+   {
+      // destroy all storages
+      for( auto& rec : m_storagePools )
+      {
+         if( rec.destroyFn && rec.pStorage )
+            rec.destroyFn( rec.pStorage );
+      }
+   }
 
    Registry( const Registry& )            = delete;
    Registry& operator=( const Registry& ) = delete;
@@ -150,10 +160,10 @@ public:
       if( entity >= m_entityAlive.size() )
       {
          m_entityAlive.resize( static_cast< size_t >( entity ) + 1, 0 );
-         m_entityComponentTypes.resize( static_cast< size_t >( entity ) + 1 );
+         m_entityTypes.resize( static_cast< size_t >( entity ) + 1 );
       }
       else
-         m_entityComponentTypes[ entity ].clear();
+         m_entityTypes[ entity ].clear();
 
       m_entityAlive[ entity ] = 1;
       return entity;
@@ -174,13 +184,14 @@ public:
       if( !FValid( entity ) )
          return;
 
-      auto& comps = m_entityComponentTypes[ entity ];
+      auto& comps = m_entityTypes[ entity ];
       for( size_t compIndex : comps )
       {
-         if( compIndex < m_componentPools.size() )
+         if( compIndex < m_storagePools.size() )
          {
-            if( auto* pPool = m_componentPools[ compIndex ].get() )
-               pPool->Remove( entity );
+            auto& rec = m_storagePools[ compIndex ];
+            if( rec.removeFn )
+               rec.removeFn( rec.pStorage, entity );
          }
       }
       comps.clear();
@@ -192,29 +203,29 @@ public:
    [[nodiscard]] FORCE_INLINE bool   FValid( Entity entity ) const noexcept { return entity < m_entityAlive.size() && m_entityAlive[ entity ]; }
    [[nodiscard]] FORCE_INLINE size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size(); }
 
-   // ----- Component API -----
    template< typename TType, typename... TArgs >
    FORCE_INLINE TType& Add( Entity entity, TArgs&&... args )
    {
       assert( FValid( entity ) && "Add on invalid entity" );
-      size_t compIndex = GetTypeIndex< TType >();
-      EnsureComponentPool< TType >( compIndex );
+      size_t typeIndex = GetTypeIndex< TType >();
+      EnsureStoragePool< TType >( typeIndex );
 
-      auto* pStorage = static_cast< Storage< TType >* >( m_componentPools[ compIndex ].get() );
+      auto& rec      = m_storagePools[ typeIndex ];
+      auto* pStorage = static_cast< Storage< TType >* >( rec.pStorage );
       auto& sparse   = pStorage->m_entityToIndex;
       if( entity < sparse.size() )
       {
          auto dense = sparse[ entity ];
          if( dense != Storage< TType >::npos )
          {
-            pStorage->m_components[ dense ] = TType( std::forward< TArgs >( args )... );
-            return pStorage->m_components[ dense ];
+            pStorage->m_types[ dense ] = TType( std::forward< TArgs >( args )... );
+            return pStorage->m_types[ dense ];
          }
       }
 
-      auto& owned = m_entityComponentTypes[ entity ];
-      if( std::find( owned.begin(), owned.end(), compIndex ) == owned.end() )
-         owned.push_back( compIndex );
+      auto& owned = m_entityTypes[ entity ];
+      if( std::find( owned.begin(), owned.end(), typeIndex ) == owned.end() )
+         owned.push_back( typeIndex );
 
       return pStorage->EmplaceConstruct( entity, std::forward< TArgs >( args )... );
    }
@@ -228,13 +239,14 @@ public:
       auto removeOne = [ & ]< typename Type >()
       {
          size_t compIndex = GetTypeIndex< Type >();
-         if( compIndex >= m_componentPools.size() )
+         if( compIndex >= m_storagePools.size() )
             return;
 
-         if( auto* pPool = m_componentPools[ compIndex ].get() )
-            pPool->Remove( entity );
+         auto& rec = m_storagePools[ compIndex ];
+         if( rec.removeFn )
+            rec.removeFn( rec.pStorage, entity );
 
-         auto& owned = m_entityComponentTypes[ entity ];
+         auto& owned = m_entityTypes[ entity ];
          if( auto it = std::find( owned.begin(), owned.end(), compIndex ); it != owned.end() )
             owned.erase( it );
       };
@@ -252,10 +264,14 @@ public:
             return nullptr;
 
          size_t compIndex = GetTypeIndex< Type >();
-         if( compIndex >= m_componentPools.size() )
+         if( compIndex >= m_storagePools.size() )
             return nullptr;
 
-         auto* pStorage = static_cast< Storage< std::remove_const_t< Type > >* >( m_componentPools[ compIndex ].get() );
+         auto& rec = m_storagePools[ compIndex ];
+         if( !rec.pStorage )
+            return nullptr;
+
+         auto* pStorage = static_cast< Storage< std::remove_const_t< Type > >* >( rec.pStorage );
          return pStorage ? pStorage->Get( entity ) : nullptr;
       };
 
@@ -277,17 +293,17 @@ public:
       if( !FValid( entity ) )
          return false;
 
-      auto hasOne = []< typename Type >()
+      auto hasOne = [ & ]< typename Type >() -> bool
       {
          size_t compIndex = GetTypeIndex< Type >();
-         if( compIndex >= m_componentPools.size() )
+         if( compIndex >= m_storagePools.size() )
             return false;
 
-         auto* pPool = m_componentPools[ compIndex ].get();
-         if( !pPool )
+         auto& rec = m_storagePools[ compIndex ];
+         if( !rec.pStorage )
             return false;
 
-         auto* pStorage = static_cast< Storage< Type >* >( pPool );
+         auto* pStorage = static_cast< Storage< Type >* >( rec.pStorage );
          return pStorage && entity < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ entity ] != Storage< Type >::npos;
       };
 
@@ -327,20 +343,25 @@ public:
 
 private:
    template< typename TType >
-   FORCE_INLINE void EnsureComponentPool( size_t index )
+   FORCE_INLINE void EnsureStoragePool( size_t index )
    {
-      if( index >= m_componentPools.size() )
-         m_componentPools.resize( index + 1 );
+      if( index >= m_storagePools.size() )
+         m_storagePools.resize( index + 1 );
 
-      if( !m_componentPools[ index ] )
-         m_componentPools[ index ] = std::make_unique< Storage< TType > >();
+      auto& rec = m_storagePools[ index ];
+      if( !rec.pStorage )
+      {
+         rec.pStorage  = new Storage< TType >();
+         rec.removeFn  = []( void* p, Entity e ) noexcept { static_cast< Storage< TType >* >( p )->Remove( e ); };
+         rec.destroyFn = []( void* p ) noexcept { delete static_cast< Storage< TType >* >( p ); };
+      }
    }
 
-   Entity                                 m_nextEntity { 0 };
-   std::vector< Entity >                  m_recycled;
-   std::vector< uint8_t >                 m_entityAlive;
-   std::vector< std::unique_ptr< Pool > > m_componentPools;
-   std::vector< std::vector< size_t > >   m_entityComponentTypes;
+   Entity                               m_nextEntity { 0 };
+   std::vector< Entity >                m_recycled;
+   std::vector< uint8_t >               m_entityAlive;
+   std::vector< StoragePool >           m_storagePools; // type-erased pools
+   std::vector< std::vector< size_t > > m_entityTypes;
 };
 
 // =============================================================
@@ -410,19 +431,19 @@ public:
       template< typename TType >
       FORCE_INLINE static TType& GetRef( Entity e, StoragePtr< TType > pStorage ) noexcept
       {
-         return pStorage->m_components[ pStorage->m_entityToIndex[ e ] ];
+         return pStorage->m_types[ pStorage->m_entityToIndex[ e ] ];
       }
    };
 
    FORCE_INLINE Iterator begin() noexcept
    {
-      Iterator it { 0, m_pSmallestEntities, m_componentStorages };
+      Iterator it { 0, m_pSmallestEntities, m_typeStorages };
       it.Skip();
       return it;
    }
    FORCE_INLINE Iterator end() noexcept
    {
-      Iterator it { m_pSmallestEntities ? m_pSmallestEntities->size() : 0, m_pSmallestEntities, m_componentStorages };
+      Iterator it { m_pSmallestEntities ? m_pSmallestEntities->size() : 0, m_pSmallestEntities, m_typeStorages };
       return it;
    }
 
@@ -431,11 +452,15 @@ private:
    FORCE_INLINE std::vector< Entity >* GetEntitiesVectorFor() const noexcept
    {
       size_t index = Registry::GetTypeIndex< std::remove_const_t< TType > >();
-      if( index >= m_registry.m_componentPools.size() )
+      if( index >= m_registry.m_storagePools.size() )
          return nullptr;
 
-      auto* pPool = m_registry.m_componentPools[ index ].get();
-      return pPool ? &( static_cast< Registry::Storage< std::remove_const_t< TType > >* >( pPool )->m_entities ) : nullptr;
+      auto& rec = m_registry.m_storagePools[ index ];
+      if( !rec.pStorage )
+         return nullptr;
+
+      auto* pStorage = static_cast< typename Registry::Storage< std::remove_const_t< TType > >* >( rec.pStorage );
+      return &pStorage->m_entities;
    }
 
    template< typename TType >
@@ -459,10 +484,11 @@ private:
    FORCE_INLINE void CacheStorage() noexcept
    {
       size_t index = Registry::GetTypeIndex< std::remove_const_t< TType > >();
-      if( index < m_registry.m_componentPools.size() )
+      if( index < m_registry.m_storagePools.size() )
       {
-         if( auto* pPool = m_registry.m_componentPools[ index ].get() )
-            std::get< StoragePtr< TType > >( m_componentStorages ) = static_cast< StoragePtr< TType > >( pPool );
+         auto& rec = m_registry.m_storagePools[ index ];
+         if( rec.pStorage )
+            std::get< StoragePtr< TType > >( m_typeStorages ) = static_cast< StoragePtr< TType > >( rec.pStorage );
       }
    }
 
@@ -474,7 +500,7 @@ private:
 
    Registry&                                                   m_registry;
    std::vector< Entity >*                                      m_pSmallestEntities { nullptr };
-   std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... > m_componentStorages {};
+   std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... > m_typeStorages {};
 };
 
 
