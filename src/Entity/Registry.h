@@ -19,7 +19,6 @@ namespace Entity
 #endif
 
 using Entity = uint64_t;
-class Registry; // fwd
 
 class EntityHandle
 {
@@ -27,13 +26,11 @@ private:
    friend class Registry;
    EntityHandle( Entity entity, Registry& registry ) :
       m_entity( entity ),
-      m_pRegistry( &registry )
+      m_registry( registry )
    {}
-   void Unbind() noexcept { m_pRegistry = nullptr; }
+   ~EntityHandle() = default;
 
 public:
-   ~EntityHandle();
-
    EntityHandle( const EntityHandle& )                = delete;
    EntityHandle( EntityHandle&& ) noexcept            = delete;
    EntityHandle& operator=( EntityHandle&& ) noexcept = delete;
@@ -50,7 +47,7 @@ public:
 
 private:
    const Entity m_entity { 0 };
-   Registry*    m_pRegistry { nullptr };
+   Registry&    m_registry;
 };
 
 enum class ViewType
@@ -61,36 +58,36 @@ enum class ViewType
 };
 
 // =============================================
-// Registry (mask-less unlimited components)
+// Registry
 // =============================================
 class Registry
 {
 private:
-   template< ViewType TViewType, typename... TComponents >
+   template< ViewType TViewType, typename TType, typename... TOthers >
    friend class View;
 
    static inline size_t s_nextComponentTypeIndex = 0;
-   template< typename TComponent >
-   ECS_FORCE_INLINE static size_t GetComponentTypeIndex() noexcept
+   template< typename TType >
+   ECS_FORCE_INLINE static size_t GetTypeIndex() noexcept
    {
       static const size_t s_index = s_nextComponentTypeIndex++;
-      return s_index; // unbounded
+      return s_index;
    }
 
    struct Pool
    {
       virtual ~Pool()                        = default;
       virtual void Remove( Entity ) noexcept = 0;
-      virtual bool Empty() const noexcept    = 0;
+      virtual bool FEmpty() const noexcept   = 0;
    };
 
-   template< typename TComponent >
-   struct ComponentStorage final : Pool
+   template< typename TType >
+   struct Storage final : Pool
    {
       using DenseIndexType                 = uint32_t;
       static constexpr DenseIndexType npos = ( std::numeric_limits< DenseIndexType >::max )();
 
-      std::vector< TComponent >     m_components;
+      std::vector< TType >          m_components;
       std::vector< Entity >         m_entities;
       std::vector< DenseIndexType > m_entityToIndex; // sparse
 
@@ -100,7 +97,7 @@ private:
             m_entityToIndex.resize( static_cast< size_t >( entity ) + 1, npos );
       }
 
-      ECS_FORCE_INLINE TComponent& Emplace( Entity entity, TComponent&& value )
+      ECS_FORCE_INLINE TType& Emplace( Entity entity, TType&& value )
       {
          EnsureEntityCapacity( entity );
          DenseIndexType index = static_cast< DenseIndexType >( m_components.size() );
@@ -111,7 +108,7 @@ private:
       }
 
       template< typename... Args >
-      ECS_FORCE_INLINE TComponent& EmplaceConstruct( Entity entity, Args&&... args )
+      ECS_FORCE_INLINE TType& EmplaceConstruct( Entity entity, Args&&... args )
       {
          EnsureEntityCapacity( entity );
          DenseIndexType index = static_cast< DenseIndexType >( m_components.size() );
@@ -121,7 +118,7 @@ private:
          return m_components.back();
       }
 
-      ECS_FORCE_INLINE TComponent* Get( Entity entity ) noexcept
+      ECS_FORCE_INLINE TType* Get( Entity entity ) noexcept
       {
          if( entity >= m_entityToIndex.size() )
             return nullptr;
@@ -129,7 +126,7 @@ private:
          DenseIndexType idx = m_entityToIndex[ entity ];
          return idx == npos ? nullptr : &m_components[ idx ];
       }
-      ECS_FORCE_INLINE const TComponent* Get( Entity entity ) const noexcept { return Get( entity ); }
+      ECS_FORCE_INLINE const TType* Get( Entity entity ) const noexcept { return Get( entity ); }
 
       ECS_FORCE_INLINE void Remove( Entity entity ) noexcept override
       {
@@ -148,12 +145,13 @@ private:
             m_entities[ index ]      = moved;
             m_entityToIndex[ moved ] = index;
          }
+
          m_components.pop_back();
          m_entities.pop_back();
          m_entityToIndex[ entity ] = npos;
       }
 
-      ECS_FORCE_INLINE bool Empty() const noexcept override { return m_components.empty(); }
+      ECS_FORCE_INLINE bool FEmpty() const noexcept override { return m_components.empty(); }
    };
 
 public:
@@ -187,7 +185,15 @@ public:
       return entity;
    }
 
-   [[nodiscard]] std::shared_ptr< EntityHandle > CreateWithHandle() noexcept { return std::shared_ptr< EntityHandle >( new EntityHandle( Create(), *this ) ); }
+   [[nodiscard]] std::shared_ptr< EntityHandle > CreateWithHandle() noexcept
+   {
+      return std::shared_ptr< EntityHandle >( new EntityHandle( Create(), *this ),
+                                              []( EntityHandle* pPtr )
+      {
+         pPtr->m_registry.Destroy( pPtr->m_entity );
+         delete pPtr;
+      } );
+   }
 
    void Destroy( Entity entity ) noexcept
    {
@@ -213,21 +219,21 @@ public:
    [[nodiscard]] ECS_FORCE_INLINE size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size() - 1; }
 
    // ----- Component API -----
-   template< typename TComponent, typename... TArgs >
-   ECS_FORCE_INLINE TComponent& AddComponent( Entity entity, TArgs&&... args )
+   template< typename TType, typename... TArgs >
+   ECS_FORCE_INLINE TType& AddComponent( Entity entity, TArgs&&... args )
    {
       assert( FValid( entity ) && "AddComponent on invalid entity" );
-      size_t compIndex = GetComponentTypeIndex< TComponent >();
-      EnsureComponentPool< TComponent >( compIndex );
+      size_t compIndex = GetTypeIndex< TType >();
+      EnsureComponentPool< TType >( compIndex );
 
-      auto* pStorage = static_cast< ComponentStorage< TComponent >* >( m_componentPools[ compIndex ].get() );
+      auto* pStorage = static_cast< Storage< TType >* >( m_componentPools[ compIndex ].get() );
       auto& sparse   = pStorage->m_entityToIndex;
       if( entity < sparse.size() )
       {
          auto dense = sparse[ entity ];
-         if( dense != ComponentStorage< TComponent >::npos )
+         if( dense != Storage< TType >::npos )
          {
-            pStorage->m_components[ dense ] = TComponent( std::forward< TArgs >( args )... );
+            pStorage->m_components[ dense ] = TType( std::forward< TArgs >( args )... );
             return pStorage->m_components[ dense ];
          }
       }
@@ -239,13 +245,13 @@ public:
       return pStorage->EmplaceConstruct( entity, std::forward< TArgs >( args )... );
    }
 
-   template< typename TComponent >
+   template< typename TType >
    ECS_FORCE_INLINE void RemoveComponent( Entity entity ) noexcept
    {
       if( !FValid( entity ) )
          return;
 
-      size_t compIndex = GetComponentTypeIndex< TComponent >();
+      size_t compIndex = GetTypeIndex< TType >();
       if( compIndex >= m_componentPools.size() )
          return;
 
@@ -257,130 +263,130 @@ public:
          owned.erase( it );
    }
 
-   template< typename TComponent >
-   [[nodiscard]] ECS_FORCE_INLINE TComponent* GetComponent( Entity entity ) noexcept
+   template< typename TType >
+   [[nodiscard]] ECS_FORCE_INLINE TType* Get( Entity entity ) noexcept
    {
       if( !FValid( entity ) )
          return nullptr;
 
-      size_t compIndex = GetComponentTypeIndex< TComponent >();
+      size_t compIndex = GetTypeIndex< TType >();
       if( compIndex >= m_componentPools.size() )
          return nullptr;
 
-      auto* storage = static_cast< ComponentStorage< TComponent >* >( m_componentPools[ compIndex ].get() );
+      auto* storage = static_cast< Storage< TType >* >( m_componentPools[ compIndex ].get() );
       return storage ? storage->Get( entity ) : nullptr;
    }
-   template< typename TComponent >
-   [[nodiscard]] ECS_FORCE_INLINE const TComponent* GetComponent( Entity entity ) const noexcept
+   template< typename TType >
+   [[nodiscard]] ECS_FORCE_INLINE const TType* Get( Entity entity ) const noexcept
    {
-      return const_cast< Registry* >( this )->GetComponent< TComponent >( entity );
+      return const_cast< Registry* >( this )->Get< TType >( entity );
    }
 
-   template< typename... TComponents >
-   [[nodiscard]] ECS_FORCE_INLINE std::tuple< TComponents*... > GetComponents( Entity entity ) noexcept
+   // --- Multi-component helpers (require at least one component type) ---
+   template< typename TType, typename... TOthers >
+   [[nodiscard]] ECS_FORCE_INLINE std::tuple< TType*, TOthers*... > GetComponents( Entity entity ) noexcept
    {
-      return std::tuple< TComponents*... >( GetComponent< TComponents >( entity )... );
+      return std::tuple< TType*, TOthers*... >( Get< TType >( entity ), Get< TOthers >( entity )... );
    }
-   template< typename... TComponents >
-   [[nodiscard]] ECS_FORCE_INLINE std::tuple< const TComponents*... > GetComponents( Entity entity ) const noexcept
+   template< typename TType, typename... TOthers >
+   [[nodiscard]] ECS_FORCE_INLINE std::tuple< const TType*, const TOthers*... > GetComponents( Entity entity ) const noexcept
    {
-      return std::tuple< const TComponents*... >( GetComponent< TComponents >( entity )... );
+      return std::tuple< const TType*, const TOthers*... >( Get< TType >( entity ), Get< TOthers >( entity )... );
    }
 
-   template< typename TComponent >
-   [[nodiscard]] ECS_FORCE_INLINE bool FHasComponent( Entity entity ) const noexcept
+   template< typename TType >
+   [[nodiscard]] ECS_FORCE_INLINE bool FHas( Entity entity ) const noexcept
    {
       if( !FValid( entity ) )
          return false;
-      size_t compIndex = GetComponentTypeIndex< TComponent >();
+
+      size_t compIndex = GetTypeIndex< TType >();
       if( compIndex >= m_componentPools.size() )
          return false;
+
       auto* pool = m_componentPools[ compIndex ].get();
       if( !pool )
          return false;
-      auto* storage = static_cast< ComponentStorage< TComponent >* >( pool );
-      return entity < storage->m_entityToIndex.size() && storage->m_entityToIndex[ entity ] != ComponentStorage< TComponent >::npos;
+
+      auto* storage = static_cast< Storage< TType >* >( pool );
+      return entity < storage->m_entityToIndex.size() && storage->m_entityToIndex[ entity ] != Storage< TType >::npos;
    }
-   template< typename... TComponents >
+   template< typename TType, typename... TOthers >
    [[nodiscard]] ECS_FORCE_INLINE bool FHasComponents( Entity entity ) const noexcept
    {
-      return ( FHasComponent< TComponents >( entity ) && ... );
+      return FHas< TType >( entity ) && ( FHas< TOthers >( entity ) && ... );
    }
 
-   template< typename... TComponents >
+   template< typename TType, typename... TOthers >
    [[nodiscard]] ECS_FORCE_INLINE auto EView() noexcept
    {
-      return View< ViewType::Entity, TComponents... >( *this );
+      return View< ViewType::Entity, TType, TOthers... >( *this );
    }
-   template< typename... TComponents >
+   template< typename TType, typename... TOthers >
    [[nodiscard]] ECS_FORCE_INLINE auto CView() noexcept
    {
-      return View< ViewType::Components, TComponents... >( *this );
+      return View< ViewType::Components, TType, TOthers... >( *this );
    }
-   template< typename... TComponents >
+   template< typename TType, typename... TOthers >
    [[nodiscard]] ECS_FORCE_INLINE auto ECView() noexcept
    {
-      return View< ViewType::EntityAndComponents, TComponents... >( *this );
+      return View< ViewType::EntityAndComponents, TType, TOthers... >( *this );
    }
 
 private:
-   template< typename TComponent >
+   template< typename TType >
    ECS_FORCE_INLINE void EnsureComponentPool( size_t index )
    {
       if( index >= m_componentPools.size() )
          m_componentPools.resize( index + 1 );
 
       if( !m_componentPools[ index ] )
-         m_componentPools[ index ] = std::make_unique< ComponentStorage< TComponent > >();
+         m_componentPools[ index ] = std::make_unique< Storage< TType > >();
    }
 
-   // ----- Data members -----
    Entity                                 m_nextEntity { 1 };
    std::vector< Entity >                  m_recycled;
    std::vector< uint8_t >                 m_entityAlive;
-   std::vector< std::unique_ptr< Pool > > m_componentPools;       ///< Indexed by component type index.
-   std::vector< std::vector< size_t > >   m_entityComponentTypes; ///< Per-entity owned component indices.
+   std::vector< std::unique_ptr< Pool > > m_componentPools;
+   std::vector< std::vector< size_t > >   m_entityComponentTypes;
 };
 
 // =============================================================
-// View (mask-less variant)
+// View
 // =============================================================
-
-template< ViewType TViewType, typename... TComponents >
+template< ViewType TViewType, typename TType, typename... TOthers >
 class View
 {
 public:
    explicit View( Registry& registry ) noexcept :
       m_registry( registry )
    {
-      if constexpr( ( sizeof...( TComponents ) == 0 ) && ( TViewType != ViewType::Entity ) )
-         static_assert( sizeof...( TComponents ) > 0 || TViewType == ViewType::Entity, "CView/ECView require at least one component type" );
-
       SelectSmallestPool();
       CacheStorages();
    }
 
    struct Iterator
    {
-      Registry*                                                            registry { nullptr };
-      size_t                                                               index { 0 };
-      std::vector< Entity >*                                               entities { nullptr };
-      std::tuple< typename Registry::ComponentStorage< TComponents >*... > storages;
+      Registry*                                                                                     registry { nullptr };
+      size_t                                                                                        index { 0 };
+      std::vector< Entity >*                                                                        entities { nullptr };
+      std::tuple< typename Registry::Storage< TType >*, typename Registry::Storage< TOthers >*... > storages;
 
-      template< typename TComp >
-      ECS_FORCE_INLINE static bool Has( Entity e, typename Registry::ComponentStorage< TComp >* pStorage ) noexcept
+      template< typename TType >
+      ECS_FORCE_INLINE static bool FHas( Entity e, typename Registry::Storage< TType >* pStorage ) noexcept
       {
-         return pStorage && e < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ e ] != Registry::ComponentStorage< TComp >::npos;
+         return pStorage && e < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ e ] != Registry::Storage< TType >::npos;
       }
 
-      ECS_FORCE_INLINE bool HasAll( Entity e ) const noexcept
+      ECS_FORCE_INLINE bool FHasAll( Entity e ) const noexcept
       {
-         return ( Has< TComponents >( e, std::get< Registry::ComponentStorage< TComponents >* >( storages ) ) && ... );
+         return FHas< TType >( e, std::get< Registry::Storage< TType >* >( storages ) ) &&
+                ( FHas< TOthers >( e, std::get< Registry::Storage< TOthers >* >( storages ) ) && ... );
       }
 
       ECS_FORCE_INLINE void Skip() noexcept
       {
-         while( entities && index < entities->size() && !HasAll( ( *entities )[ index ] ) )
+         while( entities && index < entities->size() && !FHasAll( ( *entities )[ index ] ) )
             ++index;
       }
       ECS_FORCE_INLINE Iterator& operator++() noexcept
@@ -396,19 +402,17 @@ public:
          if constexpr( TViewType == ViewType::Entity )
             return entity;
          else if constexpr( TViewType == ViewType::Components )
-            return DerefComponents( entity, std::index_sequence_for< TComponents... > {} );
+            return std::tuple< TType&, TOthers&... >( *GetRef< TType >( entity, std::get< Registry::Storage< TType >* >( storages ) ),
+                                                      *GetRef< TOthers >( entity, std::get< Registry::Storage< TOthers >* >( storages ) )... );
          else if constexpr( TViewType == ViewType::EntityAndComponents )
-            return std::tuple_cat( std::make_tuple( entity ), DerefComponents( entity, std::index_sequence_for< TComponents... > {} ) );
+            return std::tuple_cat( std::make_tuple( entity ),
+                                   std::tuple< TType&, TOthers&... >( *GetRef< TType >( entity, std::get< Registry::Storage< TType >* >( storages ) ),
+                                                                      *GetRef< TOthers >( entity,
+                                                                                          std::get< Registry::Storage< TOthers >* >( storages ) )... ) );
       }
 
-      template< std::size_t... I >
-      ECS_FORCE_INLINE auto DerefComponents( Entity e, std::index_sequence< I... > ) const noexcept
-      {
-         return std::tuple< TComponents&... >( *GetRef< TComponents >( e, std::get< I >( storages ) )... );
-      }
-
-      template< typename TComp >
-      ECS_FORCE_INLINE static TComp* GetRef( Entity e, typename Registry::ComponentStorage< TComp >* storage ) noexcept
+      template< typename TType >
+      ECS_FORCE_INLINE static TType* GetRef( Entity e, typename Registry::Storage< TType >* storage ) noexcept
       {
          return &storage->m_components[ storage->m_entityToIndex[ e ] ];
       }
@@ -416,32 +420,34 @@ public:
 
    ECS_FORCE_INLINE Iterator begin() noexcept
    {
-      Iterator it { &m_registry, 0, m_smallestEntities, m_componentStorages };
+      Iterator it { &m_registry, 0, m_smallestEntities };
+      it.storages = m_componentStorages;
       it.Skip();
       return it;
    }
    ECS_FORCE_INLINE Iterator end() noexcept
    {
-      Iterator it { &m_registry, m_smallestEntities ? m_smallestEntities->size() : 0, m_smallestEntities, m_componentStorages };
+      Iterator it { &m_registry, m_smallestEntities ? m_smallestEntities->size() : 0, m_smallestEntities };
+      it.storages = m_componentStorages;
       return it;
    }
 
 private:
-   template< typename TComponent >
+   template< typename TType >
    ECS_FORCE_INLINE std::vector< Entity >* GetEntitiesVectorFor() const noexcept
    {
-      size_t index = Registry::GetComponentTypeIndex< TComponent >();
+      size_t index = Registry::GetTypeIndex< TType >();
       if( index >= m_registry.m_componentPools.size() )
          return nullptr;
 
       auto* pPool = m_registry.m_componentPools[ index ].get();
-      return pPool ? &( static_cast< typename Registry::ComponentStorage< TComponent >* >( pPool )->m_entities ) : nullptr;
+      return pPool ? &( static_cast< typename Registry::Storage< TType >* >( pPool )->m_entities ) : nullptr;
    }
 
-   template< typename TComponent >
+   template< typename TType >
    ECS_FORCE_INLINE void SelectIfSmaller( size_t& minSize ) noexcept
    {
-      if( auto* vec = GetEntitiesVectorFor< TComponent >(); vec && vec->size() < minSize )
+      if( auto* vec = GetEntitiesVectorFor< TType >(); vec && vec->size() < minSize )
       {
          minSize            = vec->size();
          m_smallestEntities = vec;
@@ -450,37 +456,36 @@ private:
 
    void SelectSmallestPool() noexcept
    {
-      if constexpr( sizeof...( TComponents ) > 0 )
-      {
-         size_t minSize = ( std::numeric_limits< size_t >::max )();
-         ( SelectIfSmaller< TComponents >( minSize ), ... );
-      }
+      size_t minSize = ( std::numeric_limits< size_t >::max )();
+      SelectIfSmaller< TType >( minSize );
+      ( SelectIfSmaller< TOthers >( minSize ), ... );
    }
 
-   template< typename TComponent >
+   template< typename TType >
    ECS_FORCE_INLINE void CacheStorage() noexcept
    {
-      size_t index = Registry::GetComponentTypeIndex< TComponent >();
+      size_t index = Registry::GetTypeIndex< TType >();
       if( index < m_registry.m_componentPools.size() )
       {
          if( auto* pPool = m_registry.m_componentPools[ index ].get() )
-            std::get< Registry::ComponentStorage< TComponent >* >( m_componentStorages ) = static_cast< Registry::ComponentStorage< TComponent >* >( pPool );
+            std::get< typename Registry::Storage< TType >* >( m_componentStorages ) = static_cast< typename Registry::Storage< TType >* >( pPool );
       }
    }
 
    ECS_FORCE_INLINE void CacheStorages() noexcept
    {
-      if constexpr( sizeof...( TComponents ) > 0 )
-         ( CacheStorage< TComponents >(), ... );
+      CacheStorage< TType >();
+      ( CacheStorage< TOthers >(), ... );
    }
 
-   Registry&                                                            m_registry;                     ///< Referenced registry.
-   std::vector< Entity >*                                               m_smallestEntities { nullptr }; ///< Driving entity vector.
-   std::tuple< typename Registry::ComponentStorage< TComponents >*... > m_componentStorages {};         ///< Cached storages.
+   Registry&                                                                                     m_registry;                     ///< Referenced registry.
+   std::vector< Entity >*                                                                        m_smallestEntities { nullptr }; ///< Driving entity vector.
+   std::tuple< typename Registry::Storage< TType >*, typename Registry::Storage< TOthers >*... > m_componentStorages {};         ///< Cached storages.
 };
 
 } // namespace Entity
 
+// hash specialization
 template<>
 struct std::hash< Entity::EntityHandle >
 {
