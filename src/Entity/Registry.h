@@ -233,8 +233,8 @@ public:
       Entity entity = 0;
       if( !m_recycled.empty() )
       {
-         entity = m_recycled.front();
-         m_recycled.pop();
+         entity = m_recycled.back();
+         m_recycled.pop_back();
       }
       else
          entity = m_nextEntity++;
@@ -290,7 +290,7 @@ public:
 
       mask.clear();
       m_entityAlive[ entity ] = 0;
-      m_recycled.push( entity );
+      m_recycled.push_back( entity );
    }
 
    /** @return True if entity id is currently alive. */
@@ -460,11 +460,11 @@ private:
    }
 
    // ----- Data members -----
-   Entity                                 m_nextEntity { 1 }; ///< Next entity id to hand out.
-   std::queue< Entity >                   m_recycled;         ///< Recycled ids for reuse.
-   std::vector< uint8_t >                 m_entityAlive;      ///< Alive flags (0/1) per entity.
-   std::vector< ComponentMask >           m_entityMasks;      ///< Per-entity membership bit masks.
-   std::vector< std::unique_ptr< Pool > > m_componentPools;   ///< Indexed by component type index.
+   Entity                                 m_nextEntity { 1 };
+   std::vector< Entity >                  m_recycled;
+   std::vector< uint8_t >                 m_entityAlive;
+   std::vector< ComponentMask >           m_entityMasks;
+   std::vector< std::unique_ptr< Pool > > m_componentPools;
 };
 
 // =============================================================
@@ -477,29 +477,56 @@ private:
  * Chooses the smallest component pool among the requested types as the driving range to minimize iteration cost.
  * Each ++ skips entities missing any required component via fast bit tests (FHasComponents chain inlined / constexpr).
  *
+ * Optimized view: precomputes component indices, aggregated bit requirements per 64-bit block,
+ * and direct pointers to component storages so iteration avoids repeated virtual/lookups.
+ *
  * @tparam TViewType Output tuple shape (see ViewType).
  * @tparam TComponents Component types required for inclusion.
  */
 template< ViewType TViewType, typename... TComponents >
 class View
 {
+   struct BitRequirement
+   {
+      size_t   block; ///< 64-bit block index
+      uint64_t mask;  ///< aggregated bits required in this block
+   };
+
 public:
    explicit View( Registry& registry ) noexcept :
       m_registry( registry )
    {
+      BuildRequirements();
       SelectSmallestPool();
+      CacheStorages();
    }
 
    /** @brief Forward iterator over the selected entity set. */
    struct Iterator
    {
-      Registry*              registry { nullptr }; ///< Owning registry.
-      size_t                 index { 0 };          ///< Current dense index in smallest pool.
-      std::vector< Entity >* entities { nullptr }; ///< Pointer to smallest entity vector.
+      Registry*              registry { nullptr };
+      size_t                 index { 0 };
+      std::vector< Entity >* entities { nullptr };
+
+      const std::vector< BitRequirement >*                                 requirements { nullptr };
+      std::tuple< typename Registry::ComponentStorage< TComponents >*... > storages; // filled in view
+
+      bool HasAll( Entity e ) const noexcept
+      {
+         const auto& maskVec = registry->m_entityMasks[ e ];
+         for( const auto& req : *requirements )
+         {
+            if( req.block >= maskVec.size() )
+               return false;
+            if( ( maskVec[ req.block ] & req.mask ) != req.mask )
+               return false;
+         }
+         return true;
+      }
 
       void Skip() noexcept
       {
-         while( entities && index < entities->size() && !registry->template FHasComponents< TComponents... >( ( *entities )[ index ] ) )
+         while( entities && index < entities->size() && !HasAll( ( *entities )[ index ] ) )
             ++index;
       }
       Iterator& operator++() noexcept
@@ -515,21 +542,69 @@ public:
          if constexpr( TViewType == ViewType::Entity )
             return entity;
          else if constexpr( TViewType == ViewType::Components )
-            return std::tuple< TComponents&... > { *( registry->template GetComponent< TComponents >( entity ) )... };
-         else
-            return std::tuple< Entity, TComponents&... > { entity, *( registry->template GetComponent< TComponents >( entity ) )... };
+            return DerefComponents( entity, std::index_sequence_for< TComponents... > {} );
+         else if constexpr( TViewType == ViewType::EntityAndComponents )
+            return std::tuple_cat( std::tuple< Entity > { entity }, DerefComponents( entity, std::index_sequence_for< TComponents... > {} ) );
+      }
+
+      template< std::size_t... I >
+      auto DerefComponents( Entity e, std::index_sequence< I... > ) const noexcept
+      {
+         return std::tuple< TComponents&... > { *GetComponentRef< TComponents >( e, std::get< I >( storages ) )... };
+      }
+
+      template< typename TComp >
+      static TComp* GetComponentRef( Entity e, typename Registry::ComponentStorage< TComp >* storage ) noexcept
+      {
+         size_t idx = storage->m_entityToIndex[ e ];
+         return &storage->m_components[ idx ];
       }
    };
 
    Iterator begin() noexcept
    {
-      Iterator it { &m_registry, 0, m_smallestEntities };
+      Iterator it { &m_registry, 0, m_smallestEntities, &m_requirements };
+      it.storages = m_componentStorages; // copy pre-cached storages
       it.Skip();
       return it;
    }
-   Iterator end() noexcept { return Iterator { &m_registry, m_smallestEntities ? m_smallestEntities->size() : 0, m_smallestEntities }; }
+   Iterator end() noexcept
+   {
+      Iterator it { &m_registry, m_smallestEntities ? m_smallestEntities->size() : 0, m_smallestEntities, &m_requirements };
+      it.storages = m_componentStorages;
+      return it;
+   }
 
 private:
+   void BuildRequirements() noexcept
+   {
+      // Aggregate per-block bit masks for all requested components
+      ( AddRequirementFor< TComponents >(), ... );
+
+      // Compress: combine duplicate blocks
+      std::sort( m_requirements.begin(), m_requirements.end(), []( const BitRequirement& a, const BitRequirement& b ) { return a.block < b.block; } );
+      std::vector< BitRequirement > compact;
+      compact.reserve( m_requirements.size() );
+      for( const auto& r : m_requirements )
+      {
+         if( compact.empty() || compact.back().block != r.block )
+            compact.push_back( r );
+         else
+            compact.back().mask |= r.mask;
+      }
+
+      m_requirements.swap( compact );
+   }
+
+   template< typename TComponent >
+   void AddRequirementFor() noexcept
+   {
+      size_t   compIndex = Registry::GetComponentTypeIndex< TComponent >();
+      size_t   block     = compIndex / 64;
+      uint64_t bit       = 1ull << ( compIndex & 63 );
+      m_requirements.push_back( { block, bit } );
+   }
+
    template< typename TComponent >
    std::vector< Entity >* GetEntitiesVectorFor() const noexcept
    {
@@ -557,8 +632,24 @@ private:
       }
    }
 
-   Registry&              m_registry;                     ///< Referenced registry.
-   std::vector< Entity >* m_smallestEntities { nullptr }; ///< Driving dense entity list.
+   void CacheStorages() noexcept { ( CacheStorage< TComponents >(), ... ); }
+
+   template< typename TComponent >
+   void CacheStorage() noexcept
+   {
+      size_t index = Registry::GetComponentTypeIndex< TComponent >();
+      if( index < m_registry.m_componentPools.size() )
+      {
+         auto* pPool = m_registry.m_componentPools[ index ].get();
+         if( pPool )
+            std::get< Registry::ComponentStorage< TComponent >* >( m_componentStorages ) = static_cast< Registry::ComponentStorage< TComponent >* >( pPool );
+      }
+   }
+
+   Registry&                                                            m_registry;
+   std::vector< Entity >*                                               m_smallestEntities { nullptr };
+   std::vector< BitRequirement >                                        m_requirements;
+   std::tuple< typename Registry::ComponentStorage< TComponents >*... > m_componentStorages {};
 };
 
 } // namespace Entity
