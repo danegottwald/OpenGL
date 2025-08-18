@@ -19,11 +19,11 @@ World::World( Entity::Registry& registry )
    m_eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ & ]( const Events::NetworkClientConnectEvent& e ) noexcept
    {
       std::shared_ptr< Entity::EntityHandle > psNewClient = registry.CreateWithHandle();
-      registry.AddComponent< CTransform >( psNewClient->Get(), 0.0f, 128.0f, 0.0f );
+      registry.Add< CTransform >( psNewClient->Get(), 0.0f, 128.0f, 0.0f );
 
       std::shared_ptr< CapsuleMesh > psClientMesh = std::make_shared< CapsuleMesh >();
       psClientMesh->SetColor( glm::vec3( 100.0f / 255.0f, 147.0f / 255.0f, 237.0f / 255.0f ) ); // cornflower blue
-      registry.AddComponent< CMesh >( psNewClient->Get(), psClientMesh );
+      registry.Add< CMesh >( psNewClient->Get(), psClientMesh );
 
       m_playerHandles.insert( { e.GetClientID(), std::move( psNewClient ) } );
    } );
@@ -43,7 +43,7 @@ World::World( Entity::Registry& registry )
          return; // Client not found
       }
 
-      CTransform* pClientTransform = registry.GetComponent< CTransform >( it->second->Get() );
+      CTransform* pClientTransform = registry.Get< CTransform >( it->second->Get() );
       if( !pClientTransform )
       {
          std::println( std::cerr, "Transform component not found for client ID {}", e.GetClientID() );
@@ -51,7 +51,7 @@ World::World( Entity::Registry& registry )
       }
 
       glm::vec3 meshOffset( 0.0f, 1.0f, 0.0f ); // Offset for the mesh position
-      if( CMesh* pClientMesh = registry.GetComponent< CMesh >( it->second->Get() ) )
+      if( CMesh* pClientMesh = registry.Get< CMesh >( it->second->Get() ) )
          meshOffset.y = pClientMesh->mesh->GetCenterToBottomDistance();
 
       pClientTransform->position = e.GetPosition() + meshOffset; // position is at feet level, so adjust for height
@@ -308,15 +308,15 @@ void World::Setup( Entity::Registry& registry )
          psChunkMesh->Finalize();
 
          std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
-         registry.AddComponent< CTransform >( psChunk->Get(), chunkStartPos.x, 0.0f, chunkStartPos.z );
-         registry.AddComponent< CMesh >( psChunk->Get(), psChunkMesh );
+         registry.Add< CTransform >( psChunk->Get(), chunkStartPos.x, 0.0f, chunkStartPos.z );
+         registry.Add< CMesh >( psChunk->Get(), psChunkMesh );
          m_entityHandles.push_back( psChunk );
       }
    }
 
    std::shared_ptr< Entity::EntityHandle > psSun = registry.CreateWithHandle();
-   registry.AddComponent< CTransform >( psSun->Get(), 0.0f, 76.0f, 0.0f );
-   registry.AddComponent< CMesh >( psSun->Get(), std::make_shared< SphereMesh >() );
+   registry.Add< CTransform >( psSun->Get(), 0.0f, 76.0f, 0.0f );
+   registry.Add< CMesh >( psSun->Get(), std::make_shared< SphereMesh >() );
 
    m_entityHandles.push_back( psSun );
 }

@@ -204,24 +204,17 @@ void Application::Run()
 
    // Create player entity
    Entity::Entity player = registry.Create();
-   registry.AddComponent< CTransform >( player, 0.0f, 128.0f, 0.0f );
-   registry.AddComponent< CVelocity >( player, 0.0f, 0.0f, 0.0f );
-   registry.AddComponent< CInput >( player );
-   registry.AddComponent< CPlayerTag >( player );
+   registry.Add< CTransform >( player, 0.0f, 128.0f, 0.0f );
+   registry.Add< CVelocity >( player, 0.0f, 0.0f, 0.0f );
+   registry.Add< CInput >( player );
+   registry.Add< CPlayerTag >( player );
 
    // Create camera entity
    Entity::Entity camera = registry.Create();
-   registry.AddComponent< CTransform >( camera, 0.0f, 128.0f + PLAYER_HEIGHT, 0.0f );
-   registry.AddComponent< CCameraTag >( camera );
+   registry.Add< CTransform >( camera, 0.0f, 128.0f + PLAYER_HEIGHT, 0.0f );
+   registry.Add< CCameraTag >( camera );
 
-   {
-      std::shared_ptr< Entity::EntityHandle > psEntity = registry.CreateWithHandle();
-      registry.AddComponent< CTransform >( psEntity->Get(), 0.0f, 128.0f, 0.0f );
-      registry.AddComponent< CVelocity >( psEntity->Get(), 0.0f, 0.0f, 0.0f );
-      registry.AddComponent< CInput >( psEntity->Get() );
-   }
-
-   if( CCamera* pCameraComp = &registry.AddComponent< CCamera >( camera ) )
+   if( CCamera* pCameraComp = &registry.Add< CCamera >( camera ) )
       pCameraComp->projection = glm::perspective( glm::radians( pCameraComp->fov ),
                                                   Window::Get().GetWindowData().Width / static_cast< float >( Window::Get().GetWindowData().Height ),
                                                   0.1f,
@@ -233,7 +226,7 @@ void Application::Run()
       if( e.GetHeight() == 0 )
          return;
 
-      if( CCamera* pCameraComp = registry.GetComponent< CCamera >( camera ); pCameraComp )
+      if( CCamera* pCameraComp = registry.Get< CCamera >( camera ); pCameraComp )
       {
          pCameraComp->projection = glm::perspective( glm::radians( pCameraComp->fov ), e.GetWidth() / static_cast< float >( e.GetHeight() ), 0.1f, 1000.0f );
       }
@@ -241,7 +234,7 @@ void Application::Run()
 
    eventSubscriber.Subscribe< Events::MouseScrolledEvent >( [ &registry, camera ]( const Events::MouseScrolledEvent& e ) noexcept
    {
-      if( CCamera* pCameraComp = registry.GetComponent< CCamera >( camera ); pCameraComp )
+      if( CCamera* pCameraComp = registry.Get< CCamera >( camera ); pCameraComp )
       {
          pCameraComp->fov        = std::clamp( pCameraComp->fov - ( e.GetYOffset() * 5 ), 10.0f, 90.0f );
          pCameraComp->projection = glm::perspective( glm::radians( pCameraComp->fov ),
@@ -277,9 +270,9 @@ void Application::Run()
    {
       const float delta = timestep.Step();
 
-      CTransform* pPlayerTran = registry.GetComponent< CTransform >( player );
-      CTransform* pCameraTran = registry.GetComponent< CTransform >( camera );
-      CCamera*    pCameraComp = registry.GetComponent< CCamera >( camera );
+      CTransform* pPlayerTran = registry.Get< CTransform >( player );
+      CTransform* pCameraTran = registry.Get< CTransform >( camera );
+      CCamera*    pCameraComp = registry.Get< CCamera >( camera );
 
       {
          Events::ProcessQueuedEvents();
