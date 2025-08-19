@@ -240,7 +240,6 @@ public:
                owned.erase( it );
          }
       };
-
       removeOne.template operator()< TType >();
       ( removeOne.template operator()< TOthers >(), ... );
    }
@@ -389,7 +388,8 @@ public:
       m_registry( registry )
    {
       SelectSmallestPool();
-      CacheStorages();
+      if( m_pSmallestEntities )
+         CacheStorages(); // only cache storages if we have a smallest pool
    }
 
    struct Iterator
@@ -426,21 +426,17 @@ public:
       FORCE_INLINE auto operator*() const noexcept
       {
          Entity entity = ( *pEntities )[ index ];
+         auto   getRef = [ & ]< typename T >( StoragePtr< T > pStorage ) -> T& { return pStorage->m_types[ pStorage->m_entityToIndex[ entity ] ]; };
+
          if constexpr( TViewType == ViewType::Entity )
             return entity;
          else if constexpr( TViewType == ViewType::Components )
-            return std::tuple< TType&, TOthers&... >( GetRef< TType >( entity, std::get< StoragePtr< TType > >( storages ) ),
-                                                      GetRef< TOthers >( entity, std::get< StoragePtr< TOthers > >( storages ) )... );
+            return std::tuple< TType&, TOthers&... >( getRef.template operator()< TType >( std::get< StoragePtr< TType > >( storages ) ),
+                                                      getRef.template operator()< TOthers >( std::get< StoragePtr< TOthers > >( storages ) )... );
          else if constexpr( TViewType == ViewType::EntityAndComponents )
             return std::tuple< Entity, TType&, TOthers&... >( entity,
-                                                              GetRef< TType >( entity, std::get< StoragePtr< TType > >( storages ) ),
-                                                              GetRef< TOthers >( entity, std::get< StoragePtr< TOthers > >( storages ) )... );
-      }
-
-      template< typename TType >
-      FORCE_INLINE static TType& GetRef( Entity e, StoragePtr< TType > pStorage ) noexcept
-      {
-         return pStorage->m_types[ pStorage->m_entityToIndex[ e ] ];
+                                                              getRef.template operator()< TType >( std::get< StoragePtr< TType > >( storages ) ),
+                                                              getRef.template operator()< TOthers >( std::get< StoragePtr< TOthers > >( storages ) )... );
       }
    };
 
@@ -453,54 +449,46 @@ public:
    FORCE_INLINE Iterator end() noexcept { return Iterator { m_pSmallestEntities ? m_pSmallestEntities->size() : 0, m_pSmallestEntities, m_typeStorages }; }
 
 private:
-   template< typename TType >
-   FORCE_INLINE std::vector< Entity >* GetEntitiesVectorFor() const noexcept
-   {
-      size_t index = Registry::GetTypeIndex< TType >();
-      if( index >= m_registry.m_storagePools.size() )
-         return nullptr;
-
-      auto& rec = m_registry.m_storagePools[ index ];
-      if( !rec.pStorage )
-         return nullptr;
-
-      auto* pStorage = static_cast< StoragePtr< TType > >( rec.pStorage.get() );
-      return &pStorage->m_entities;
-   }
-
-   template< typename TType >
-   FORCE_INLINE void SelectIfSmaller( size_t& minSize ) noexcept
-   {
-      if( auto* pVec = GetEntitiesVectorFor< TType >(); pVec && pVec->size() < minSize )
-      {
-         minSize             = pVec->size();
-         m_pSmallestEntities = pVec;
-      }
-   }
-
    FORCE_INLINE void SelectSmallestPool() noexcept
    {
-      size_t minSize = ( std::numeric_limits< size_t >::max )();
-      SelectIfSmaller< TType >( minSize );
-      ( SelectIfSmaller< TOthers >( minSize ), ... );
-   }
-
-   template< typename TType >
-   FORCE_INLINE void CacheStorage() noexcept
-   {
-      size_t index = Registry::GetTypeIndex< TType >();
-      if( index < m_registry.m_storagePools.size() )
+      size_t minSize         = ( std::numeric_limits< size_t >::max )();
+      auto   selectIfSmaller = [ & ]< typename T >() noexcept -> void
       {
-         auto& rec = m_registry.m_storagePools[ index ];
-         if( rec.pStorage )
-            std::get< StoragePtr< TType > >( m_typeStorages ) = static_cast< StoragePtr< TType > >( rec.pStorage.get() );
-      }
+         if( minSize == 0 )
+            return;
+
+         size_t          index = Registry::GetTypeIndex< T >();
+         StoragePtr< T > pPool = index < m_registry.m_storagePools.size() ? static_cast< StoragePtr< T > >( m_registry.m_storagePools[ index ].pStorage.get() )
+                                                                          : nullptr;
+         if( !pPool || pPool->m_entities.empty() )
+         {
+            minSize             = 0;
+            m_pSmallestEntities = nullptr; // smallest pool is empty or does not exist, no iteration needed
+         }
+         else if( pPool && pPool->m_entities.size() < minSize )
+         {
+            minSize             = pPool->m_entities.size();
+            m_pSmallestEntities = &pPool->m_entities;
+         }
+      };
+      selectIfSmaller.template operator()< TType >();
+      ( selectIfSmaller.template operator()< TOthers >(), ... );
    }
 
    FORCE_INLINE void CacheStorages() noexcept
    {
-      CacheStorage< TType >();
-      ( CacheStorage< TOthers >(), ... );
+      auto cacheStorage = [ & ]< typename T >() noexcept
+      {
+         size_t index = Registry::GetTypeIndex< T >();
+         if( index < m_registry.m_storagePools.size() )
+         {
+            auto& rec = m_registry.m_storagePools[ index ];
+            if( rec.pStorage )
+               std::get< StoragePtr< T > >( m_typeStorages ) = static_cast< StoragePtr< T > >( rec.pStorage.get() );
+         }
+      };
+      cacheStorage.template operator()< TType >();
+      ( cacheStorage.template operator()< TOthers >(), ... );
    }
 
    Registry&                                                   m_registry;
