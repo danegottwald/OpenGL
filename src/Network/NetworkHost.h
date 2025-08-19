@@ -37,15 +37,25 @@ private:
    void DisconnectClient( uint64_t clientID );
    void Shutdown();
 
+   // UDP specific
+   void InitUDP( uint16_t port );
+   void UDPRecvThread();
+   void SendUDPPacket( const Packet& packet, const sockaddr_in& addr );
+
    std::string                                          m_ipAddress;
    std::atomic< bool >                                  m_fRunning { false };
    std::thread                                          m_acceptThread;
-   std::unordered_map< uint64_t, SOCKET >               m_clientSockets;
+   std::unordered_map< uint64_t, SOCKET >               m_clientSockets;  // TCP sockets
+   std::unordered_map< uint64_t, sockaddr_in >          m_clientUdpAddrs; // learned via UDPRegister
    std::unordered_map< uint64_t, std::thread >          m_clientThreads;
-   std::unordered_map< uint64_t, std::queue< Packet > > m_outgoingQueues;
+   std::unordered_map< uint64_t, std::queue< Packet > > m_outgoingQueues; // TCP outgoing
    std::unordered_map< uint64_t, std::mutex >           m_queueMutexes;
    std::condition_variable                              m_queueCV;
    std::mutex                                           m_clientsMutex;
+
+   // UDP
+   SOCKET      m_udpSocket { INVALID_SOCKET };
+   std::thread m_udpRecvThread;
 
    Events::EventSubscriber m_eventSubscriber;
 
