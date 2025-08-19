@@ -79,8 +79,8 @@ private:
       static constexpr DenseIndexType npos = ( std::numeric_limits< DenseIndexType >::max )();
 
       std::vector< TType >          m_types;
-      std::vector< Entity >         m_entities;
-      std::vector< DenseIndexType > m_entityToIndex; // sparse
+      std::vector< Entity >         m_entities;      // dense entity list (parallel to m_types)
+      std::vector< DenseIndexType > m_entityToIndex; // sparse mapping entity -> dense index
 
       template< typename... Args >
       FORCE_INLINE TType& EmplaceConstruct( Entity entity, Args&&... args )
@@ -389,17 +389,20 @@ public:
    {
       SelectSmallestPool();
       if( m_pSmallestEntities )
-         CacheStorages(); // only cache storages if we have a smallest pool
+         CacheStorages();
    }
 
    struct Iterator
    {
       size_t                                                       index { 0 };
-      std::vector< Entity >*                                       pEntities { nullptr };
+      std::vector< Entity >*                                       pEntities { nullptr }; // dense entity list of smallest pool
       std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... >& storages;
 
       FORCE_INLINE void Skip() noexcept
       {
+         if constexpr( sizeof...( TOthers ) == 0 )
+            return; // No skipping needed: single type iteration
+
          auto has = []< typename T >( Entity e, auto pStorage ) -> bool
          { return pStorage && e < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ e ] != Registry::Storage< T >::npos; };
 
@@ -408,8 +411,7 @@ public:
             Entity e = ( *pEntities )[ index ];
             if( ( has.template operator()< TType >( e, std::get< StoragePtr< TType > >( storages ) ) && ... &&
                   has.template operator()< TOthers >( e, std::get< StoragePtr< TOthers > >( storages ) ) ) )
-               break; // If the entity has all required components, stop skipping
-
+               break; // entity has all required components
             ++index;
          }
       }
@@ -425,6 +427,9 @@ public:
 
       FORCE_INLINE auto operator*() const noexcept
       {
+         if constexpr( sizeof...( TOthers ) == 0 ) // fast path for single type iteration
+            return std::tuple< TType& >( std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
+
          Entity entity = ( *pEntities )[ index ];
          auto   getRef = [ & ]< typename T >( StoragePtr< T > pStorage ) -> T& { return pStorage->m_types[ pStorage->m_entityToIndex[ entity ] ]; };
 
@@ -463,9 +468,9 @@ private:
          if( !pPool || pPool->m_entities.empty() )
          {
             minSize             = 0;
-            m_pSmallestEntities = nullptr; // smallest pool is empty or does not exist, no iteration needed
+            m_pSmallestEntities = nullptr; // empty -> no iteration
          }
-         else if( pPool && pPool->m_entities.size() < minSize )
+         else if( pPool->m_entities.size() < minSize )
          {
             minSize             = pPool->m_entities.size();
             m_pSmallestEntities = &pPool->m_entities;
@@ -492,8 +497,8 @@ private:
    }
 
    Registry&                                                   m_registry;
-   std::vector< Entity >*                                      m_pSmallestEntities { nullptr };
-   std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... > m_typeStorages {};
+   std::vector< Entity >*                                      m_pSmallestEntities { nullptr }; // points to entity list of smallest pool
+   std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... > m_typeStorages {};               // cached storage pointers
 };
 
 
