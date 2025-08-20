@@ -412,6 +412,7 @@ public:
             if( ( has.template operator()< TType >( e, std::get< StoragePtr< TType > >( storages ) ) && ... &&
                   has.template operator()< TOthers >( e, std::get< StoragePtr< TOthers > >( storages ) ) ) )
                break; // entity has all required components
+
             ++index;
          }
       }
@@ -427,21 +428,29 @@ public:
 
       FORCE_INLINE auto operator*() const noexcept
       {
-         if constexpr( sizeof...( TOthers ) == 0 ) // fast path for single type iteration
-            return std::tuple< TType& >( std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
-
          Entity entity = ( *pEntities )[ index ];
-         auto   getRef = [ & ]< typename T >( StoragePtr< T > pStorage ) -> T& { return pStorage->m_types[ pStorage->m_entityToIndex[ entity ] ]; };
+         auto   getRef = [ & ]( auto* pStorage ) -> decltype( auto ) { return pStorage->m_types[ pStorage->m_entityToIndex[ entity ] ]; };
 
+         if constexpr( sizeof...( TOthers ) == 0 ) // fast path for single type iteration
+         {
+            if constexpr( TViewType == ViewType::Entity )
+               return entity;
+            else if constexpr( TViewType == ViewType::Components )
+            return std::tuple< TType& >( std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
+            else if constexpr( TViewType == ViewType::EntityAndComponents )
+               return std::tuple< Entity, TType& >( entity, std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
+         }
+
+         // General path for multiple types
          if constexpr( TViewType == ViewType::Entity )
             return entity;
          else if constexpr( TViewType == ViewType::Components )
-            return std::tuple< TType&, TOthers&... >( getRef.template operator()< TType >( std::get< StoragePtr< TType > >( storages ) ),
-                                                      getRef.template operator()< TOthers >( std::get< StoragePtr< TOthers > >( storages ) )... );
+            return std::tuple< TType&, TOthers&... >( getRef( std::get< StoragePtr< TType > >( storages ) ),
+                                                      getRef( std::get< StoragePtr< TOthers > >( storages ) )... );
          else if constexpr( TViewType == ViewType::EntityAndComponents )
             return std::tuple< Entity, TType&, TOthers&... >( entity,
-                                                              getRef.template operator()< TType >( std::get< StoragePtr< TType > >( storages ) ),
-                                                              getRef.template operator()< TOthers >( std::get< StoragePtr< TOthers > >( storages ) )... );
+                                                              getRef( std::get< StoragePtr< TType > >( storages ) ),
+                                                              getRef( std::get< StoragePtr< TOthers > >( storages ) )... );
       }
    };
 
