@@ -94,11 +94,10 @@ void PlayerPhysicsSystem( Entity::Registry& registry, float delta, World& world 
    //PROFILE_SCOPE( "PlayerPhysicsSystem" );
    for( auto [ tran, vel, tag ] : registry.CView< CTransform, CVelocity, CPlayerTag >() )
    {
-      vel.velocity.y += GRAVITY * delta;
-      if( vel.velocity.y < TERMINAL_VELOCITY )
-         vel.velocity.y = TERMINAL_VELOCITY;
-
+      // apply gravity (not exceeding terminal velocity) and integrate position
+      vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
       tran.position += vel.velocity * delta;
+
       float edgeHeight   = ( std::max )( { world.GetHeightAtPos( tran.position.x + 0.5f, tran.position.z ),
                                            world.GetHeightAtPos( tran.position.x - 0.5f, tran.position.z ),
                                            world.GetHeightAtPos( tran.position.x, tran.position.z + 0.5f ),

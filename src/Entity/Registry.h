@@ -60,9 +60,9 @@ private:
    // clang-format off
    static inline size_t s_nextTypeIndex = 0;
    template< typename TType >
-   struct TypeIndexHelper { FORCE_INLINE static size_t Get() { static const size_t s_index = s_nextTypeIndex++; return s_index; } };
+   struct TypeIndexHelper { FORCE_INLINE static size_t Get() noexcept { static const size_t s_index = s_nextTypeIndex++; return s_index; } };
    template< typename TType >
-   FORCE_INLINE static size_t GetTypeIndex() noexcept { return TypeIndexHelper< std::remove_cv_t< std::remove_pointer_t< std::remove_reference_t< TType > > > >::Get(); }
+   FORCE_INLINE static constexpr size_t GetTypeIndex() noexcept { return TypeIndexHelper< std::remove_cv_t< std::remove_pointer_t< std::remove_reference_t< TType > > > >::Get(); }
    // clang-format on
 
    // Storage pool for a specifc type
@@ -192,6 +192,7 @@ public:
 
    [[nodiscard]] FORCE_INLINE bool   FValid( Entity entity ) const noexcept { return entity < m_entityAlive.size() && m_entityAlive[ entity ]; }
    [[nodiscard]] FORCE_INLINE size_t GetEntityCount() const noexcept { return m_nextEntity - m_recycled.size(); }
+   [[nodiscard]] FORCE_INLINE size_t GetComponentCount( Entity entity ) const noexcept { return FValid( entity ) ? m_entityTypes[ entity ].size() : 0; }
 
    template< typename TType, typename... TArgs >
    FORCE_INLINE TType& Add( Entity entity, TArgs&&... args )
@@ -321,36 +322,34 @@ public:
       return hasOne.template operator()< TType >() && ( hasOne.template operator()< TOthers >() && ... );
    }
 
-   template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto EView() noexcept
-   {
-      return View< ViewType::Entity, TType, TOthers... >( *this );
-   }
-   template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto EView() const noexcept
-   {
-      return const_cast< Registry* >( this )->EView< const TType, const TOthers... >();
-   }
-   template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto CView() noexcept
-   {
-      return View< ViewType::Components, TType, TOthers... >( *this );
-   }
-   template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto CView() const noexcept
-   {
-      return const_cast< Registry* >( this )->CView< const TType, const TOthers... >();
-   }
-   template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto ECView() noexcept
-   {
-      return View< ViewType::EntityAndComponents, TType, TOthers... >( *this );
-   }
-   template< typename TType, typename... TOthers >
-   [[nodiscard]] FORCE_INLINE auto ECView() const noexcept
-   {
-      return const_cast< Registry* >( this )->ECView< const TType, const TOthers... >();
-   }
+   // clang-format off
+   /**
+    * @brief Creates a view for iterating over entities with the specified component types.
+    * @tparam TType The first component type to include in the view.
+    * @tparam TOthers Additional component types to include in the view.
+    * @return A view object that allows iteration over entities with the specified components.
+    */
+   template<typename TType, typename... TOthers> [[nodiscard]] FORCE_INLINE auto EView() noexcept { return View< ViewType::Entity, TType, TOthers... >( *this ); }
+   template<typename TType, typename... TOthers> [[nodiscard]] FORCE_INLINE auto EView() const noexcept { return const_cast< Registry* >( this )->EView< const TType, const TOthers... >(); }
+
+   /**
+    * @brief Creates a view for iterating over entities with the specified component types, returning only the components.
+    * @tparam TType The first component type to include in the view.
+    * @tparam TOthers Additional component types to include in the view.
+    * @return A view object that allows iteration over components of entities with the specified components.
+    */
+   template<typename TType, typename... TOthers> [[nodiscard]] FORCE_INLINE auto CView() noexcept { return View< ViewType::Components, TType, TOthers... >( *this ); }
+   template<typename TType, typename... TOthers> [[nodiscard]] FORCE_INLINE auto CView() const noexcept { return const_cast< Registry* >( this )->CView< const TType, const TOthers... >(); }
+
+   /**
+    * @brief Creates a view for iterating over entities with the specified component types, returning both the entity and components.
+    * @tparam TType The first component type to include in the view.
+    * @tparam TOthers Additional component types to include in the view.
+    * @return A view object that allows iteration over entities and their components with the specified types.
+    */
+   template<typename TType, typename... TOthers> [[nodiscard]] FORCE_INLINE auto ECView() noexcept { return View< ViewType::EntityAndComponents, TType, TOthers... >( *this ); }
+   template<typename TType, typename... TOthers> [[nodiscard]] FORCE_INLINE auto ECView() const noexcept { return const_cast< Registry* >( this )->ECView< const TType, const TOthers... >(); }
+   // clang-format on
 
 private:
    template< typename TType >
@@ -436,7 +435,7 @@ public:
             if constexpr( TViewType == ViewType::Entity )
                return entity;
             else if constexpr( TViewType == ViewType::Components )
-            return std::tuple< TType& >( std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
+               return std::tuple< TType& >( std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
             else if constexpr( TViewType == ViewType::EntityAndComponents )
                return std::tuple< Entity, TType& >( entity, std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
          }
