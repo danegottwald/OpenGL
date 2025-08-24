@@ -40,7 +40,7 @@ constexpr float SPRINT_MODIFIER   = 1.5f;
 void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
    //PROFILE_SCOPE( "PlayerInputSystem" );
-   for( auto [ entity, tran, vel, input, tag ] : registry.ECView< CTransform, CVelocity, CInput, CPlayerTag >() )
+   for( auto [ tran, vel, input, tag ] : registry.CView< CTransform, CVelocity, CInput, CPlayerTag >() )
    {
       // Apply Player Movement Inputs
       glm::vec3 wishdir( 0.0f );
@@ -142,7 +142,7 @@ void CameraSystem( Entity::Registry& registry, Window& window )
       }
 
       cam.view = glm::mat4( 1.0f );
-      cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.x ), { 1, 0, 0 } ); // maybe tran rotation
+      cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.x ), { 1, 0, 0 } );
       cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.y ), { 0, 1, 0 } );
       cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.z ), { 0, 0, 1 } );
       cam.view = glm::translate( cam.view, -tran.position );
@@ -159,10 +159,9 @@ void RenderSystem( Entity::Registry& registry, const glm::vec3& camPosition, con
    // hack to get working
    static std::unique_ptr< Shader > pShader = std::make_unique< Shader >();
 
-   pShader->Bind();                                 // Bind the shader program
-   pShader->SetUniform( "u_MVP", viewProjection );  // Set Model-View-Projection matrix
-   pShader->SetUniform( "u_viewPos", camPosition ); // Set camera position
-   //pShader->SetUniform( "u_color", 0.5f, 0.0f, 0.0f );         // Set color (example: red)
+   pShader->Bind();                                  // Bind the shader program
+   pShader->SetUniform( "u_MVP", viewProjection );   // Set Model-View-Projection matrix
+   pShader->SetUniform( "u_viewPos", camPosition );  // Set camera position
    pShader->SetUniform( "u_lightPos", camPosition ); // Set light position at camera position
 
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); // clear color and depth buffers

@@ -248,9 +248,10 @@ public:
    template< typename TType, typename... TOthers >
    [[nodiscard]] FORCE_INLINE auto TryGet( Entity entity ) noexcept
    {
+      bool fValid    = FValid( entity );
       auto getOnePtr = [ & ]< typename T >() -> T*
       {
-         if( !FValid( entity ) )
+         if( !fValid )
             return nullptr;
 
          size_t compIndex = GetTypeIndex< T >();

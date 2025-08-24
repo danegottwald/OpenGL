@@ -82,3 +82,8 @@ Example of a game engine architecture using subsystems and systems:
           ├─ InventoryUISystem
           ├─ TooltipSystem
           └─ NotificationSystem
+
+Networking
+    Use LZ4 compression for packets
+        Should everything use LZ4 compression? What about small packets? Is it still worth it?
+    Proper use of UDP/TCP
