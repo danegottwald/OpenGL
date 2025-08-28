@@ -1,36 +1,73 @@
-# OpenGL Playground – Graphics, Game Programming, and Networking
+# OpenGL Playground  Real-Time Rendering, Game Architecture, ECS & Networking
 
-This repository is a personal learning project focused on exploring and implementing core concepts in **OpenGL**, modern **game programming design patterns**, and **networking (multiplayer)**. The codebase is structured to help me (and others) understand how real-time rendering, game architecture, and networked multiplayer systems work together in a C++ environment.
+This repository is a personal learning / showcase project exploring and implementing core concepts in:
 
-## Project Goals
+- Modern **OpenGL** rendering (GLFW + glad + GLM)
+- **Game loop & modular engine-style architecture**
+- A custom, **high-performance Entity Component System (ECS)**
+- **Multiplayer networking** (client/host, packet serialization, real-time sync)
+- **ImGui** driven in-engine tooling / debug UI
 
-- **Learn and apply OpenGL fundamentals**: Rendering, shaders, camera systems, and 3D math.
-- **Experiment with game programming patterns**: Entity-Component-System (ECS), event-driven architecture, and modular design.
-- **Implement multiplayer networking**: Client-server model, packet serialization, and real-time data synchronization.
+---
+## High-Performance ECS Overview
+The project implements a custom ECS focused on: 
 
-## Features
+- O(1) average Add / Remove / Get for components
+- Tight, cache-friendly contiguous storage per component type
+- Zero virtual calls in hot paths (compile-time dispatch + type erasure only at registration)
+- Fast multi-component iteration via a heuristic (iterate the *smallest* involved component pool)
+- Low fragmentation, stable `Entity` identifiers (recycled indices) & optional owning `EntityHandle`
+- Headeronly, no external dependency
 
-- **OpenGL Rendering**: Custom rendering pipeline using modern OpenGL (GLFW, glad, GLM).
-- **Game Loop & Architecture**: Modular structure with clear separation of concerns (core, entities, world, input, GUI).
-- **Entity System**: Basic player and world entities, extensible for more game objects.
-- **Event System**: Decoupled event handling for game and network events.
-- **Multiplayer Networking**: 
-  - Client and host/server implementations.
-  - Packet-based communication and serialization.
-  - Real-time position updates and chat messages.
-- **ImGui Integration**: In-game GUI for debugging and controls.
+### Complexity (Amortized)
+- Create entity: `O(1)`
+- Destroy entity: `O(k)` where `k` = number of components on that entity
+- Add component: `O(1)` (append + sparse map write; potential `vector` reallocation)
+- Remove component: `O(1)`
+- Get / Has: `O(1)`
+- View iteration `(T1...Tn)`: `O(|SmallestPool| + Skips)`  (skip cost is cheap sparse check)
 
-## Libraries Used
+### Benchmark Results
 
-- [GLFW](https://www.glfw.org/) – Window/context/input management
-- [glad](https://github.com/Dav1dde/glad/tree/glad2) – OpenGL function loader
-- [GLM](https://github.com/g-truc/glm) – Math library for graphics
-- [STB](https://github.com/nothings/stb/blob/master/stb_image.h) – Image loading
-- [ImGui](https://github.com/ocornut/imgui) – Immediate mode GUI
-- [FastNoiseLite](https://github.com/Auburn/FastNoiseLite) - Noise generation
+| Test Case                                | Custom ECS (ms) | EnTT (ms) | Speedup (EnTT/Custom) |
+|------------------------------------------|----------------:|----------:|----------------------:|
+| Add/Remove (25% of entities)             | 7.38            | 11.33     | 1.44×                |
+| Add/Remove + Zero Component              | 4.43            | 6.48      | 1.46×                |
+| Create + Destroy Entities (50k per run)  | 0.87            | 2.84      | 3.28×                |
+| Iterate (single component)               | 4.72            | 5.01      | 1.06×                |
+| Iterate (single, read-only)              | 3.95            | 4.73      | 1.20×                |
+| Iterate (two components)                 | 7.25            | 8.88      | 1.22×                |
+| Iterate (two components, branchy)        | 24.82           | 33.53     | 1.35×                |
+| Iterate (two components, dual write)     | 7.58            | 9.49      | 1.25×                |
+| Iterate (three components, 0% present)   | 0.00            | 0.00      | 1.00×               |
+| Iterate (three components, 25% present)  | 2.24            | 2.90      | 1.29×                |
+| Iterate (three components, 50% present)  | 4.62            | 6.01      | 1.30×                |
+| Iterate (three components, 75% present)  | 3.53            | 4.50      | 1.28×                |
+| Iterate (three components, 100% present) | 3.90            | 5.19      | 1.33×                |
+| Random Destroy + Create (10k per run)    | 3.27            | 5.63      | 1.73×                |
+| Random Get (1k+ ops)                     | 0.07            | 0.26      | 3.71×                |
 
-## Learning Resources
 
+---
+## Rendering & Engine Structure
+High-level modules (directory names may vary slightly):
+
+- Core: Application, Window, Layer system, Timestep abstraction, GUI integration.
+- Renderer: Shader, Texture, Mesh utilities, VAO/VBO management.
+- Entity: ECS (Registry + component definitions).
+- World / Game: Higher-level orchestration (world state, spawning, gameplay logic).
+- Events: Decoupled event base + specific network/game events.
+- Network: Host & Client, packet serialization / dispatch.
+- GUI: ImGui manager for debug overlays & tweaking.
+
+---
+## Networking Overview
+- Client / host roles separated (`NetworkHost`, `NetworkClient`).
+- Packet layer: explicit packet struct(s) & serialization.
+- Event system integration for decoupled propagation to gameplay / UI.
+
+---
+## Learning References
 - [docs.GL](http://docs.gl/#)
 - [LearnOpenGL](https://learnopengl.com/Introduction)
 - [Learning Modern 3D Graphics Programming](https://nicolbolas.github.io/oldtut/)

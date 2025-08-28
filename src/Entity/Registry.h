@@ -254,11 +254,11 @@ public:
          if( !fValid )
             return nullptr;
 
-         size_t compIndex = GetTypeIndex< T >();
-         if( compIndex >= m_storagePools.size() )
+         size_t typeIndex = GetTypeIndex< T >();
+         if( typeIndex >= m_storagePools.size() )
             return nullptr;
 
-         auto& rec = m_storagePools[ compIndex ];
+         auto& rec = m_storagePools[ typeIndex ];
          if( !rec.pStorage )
             return nullptr;
 
