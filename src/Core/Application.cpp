@@ -28,21 +28,53 @@
 #include <Entity/Components/Mesh.h>
 
 // ================ SYSTEMS ================
-constexpr float GRAVITY           = -32.0f;
-constexpr float TERMINAL_VELOCITY = -48.0f;
-constexpr float JUMP_VELOCITY     = 9.0f;
-constexpr float PLAYER_HEIGHT     = 1.9f;
-constexpr float GROUND_MAXSPEED   = 12.0f;
-constexpr float AIR_MAXSPEED      = 10.0f;
-constexpr float AIR_CONTROL       = 0.3f;
-constexpr float SPRINT_MODIFIER   = 1.5f;
+constexpr float GRAVITY             = -32.0f;
+constexpr float TERMINAL_VELOCITY   = -48.0f;
+constexpr float JUMP_VELOCITY       = 9.0f;
+constexpr float PLAYER_HEIGHT       = 1.9f;
+constexpr float GROUND_MAXSPEED     = 12.0f;
+constexpr float SPRINT_MODIFIER     = 1.5f;
+constexpr float DOUBLE_TAP_WINDOW_S = 0.5f; // seconds for space double tap
+constexpr float FLIGHT_ASCEND_SPEED = 12.0f;
+constexpr float FLIGHT_DESCEND_SPEED= 12.0f;
+constexpr float FLIGHT_HORIZONTAL_SPEED = 14.0f; // slightly faster while flying
 
 void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
-   //PROFILE_SCOPE( "PlayerInputSystem" );
    for( auto [ entity, tran, vel, input, tag ] : registry.ECView< CTransform, CVelocity, CInput, CPlayerTag >() )
    {
-      // Apply Player Movement Inputs
+      // --- Double tap space to toggle flight mode ---
+      if( input.spaceTapTimer > 0.0f )
+         input.spaceTapTimer -= delta;
+
+      bool spacePressed = Input::IsKeyPressed( Input::Space );
+      if( spacePressed && !input.prevSpacePressed ) // rising edge
+      {
+         if( input.spaceTapTimer > 0.0f )
+         {
+            // second tap inside window -> toggle flight mode
+            input.flightMode   = !input.flightMode;
+            input.spaceTapTimer = 0.0f; // reset
+            if( input.flightMode )
+            {
+               // zero vertical velocity when entering flight for smooth control
+               vel.velocity.y = 0.0f;
+            }
+         }
+         else
+         {
+            // first tap: start timer and perform normal jump if grounded & not already flying
+            input.spaceTapTimer = DOUBLE_TAP_WINDOW_S;
+            if( !input.flightMode && input.grounded )
+            {
+               vel.velocity.y = JUMP_VELOCITY;
+               input.grounded = false;
+            }
+         }
+      }
+      input.prevSpacePressed = spacePressed;
+
+      // Apply horizontal movement inputs
       glm::vec3 wishdir( 0.0f );
       if( Input::IsKeyPressed( Input::W ) )
       {
@@ -67,38 +99,43 @@ void PlayerInputSystem( Entity::Registry& registry, float delta )
       if( glm::length( wishdir ) > 0.0f )
          wishdir = glm::normalize( wishdir );
 
-      float maxSpeed = GROUND_MAXSPEED;
+      float maxSpeed = input.flightMode ? FLIGHT_HORIZONTAL_SPEED : GROUND_MAXSPEED;
       if( Input::IsKeyPressed( Input::LeftShift ) )
          maxSpeed *= SPRINT_MODIFIER;
 
       vel.velocity.x = wishdir.x * maxSpeed;
       vel.velocity.z = wishdir.z * maxSpeed;
 
-      // this needs to be per-component, not static which affects all
-      static bool wasJumping = false;
-      if( Input::IsKeyPressed( Input::Space ) )
+      // Flight vertical control
+      if( input.flightMode )
       {
-         if( !wasJumping )
-         {
-            vel.velocity.y = JUMP_VELOCITY;
-            wasJumping     = true;
-         }
+         // disable gravity effect while in flight (handled in physics)
+         if( Input::IsKeyPressed( Input::Space ) )
+            vel.velocity.y = FLIGHT_ASCEND_SPEED;
+         else if( Input::IsKeyPressed( Input::LeftControl ) || Input::IsKeyPressed( Input::RightControl ) )
+            vel.velocity.y = -FLIGHT_DESCEND_SPEED;
+         else
+            vel.velocity.y = 0.0f; // hover
       }
-      else
-         wasJumping = false;
    }
 }
 
 void PlayerPhysicsSystem( Entity::Registry& registry, float delta, World& world )
 {
-   //PROFILE_SCOPE( "PlayerPhysicsSystem" );
-   for( auto [ tran, vel, tag ] : registry.CView< CTransform, CVelocity, CPlayerTag >() )
+   for( auto [ entity, tran, vel, input, tag ] : registry.ECView< CTransform, CVelocity, CInput, CPlayerTag >() )
    {
-      vel.velocity.y += GRAVITY * delta;
-      if( vel.velocity.y < TERMINAL_VELOCITY )
-         vel.velocity.y = TERMINAL_VELOCITY;
+      // Apply gravity only when not in flight mode
+      if( !input.flightMode )
+      {
+         vel.velocity.y += GRAVITY * delta;
+         if( vel.velocity.y < TERMINAL_VELOCITY )
+            vel.velocity.y = TERMINAL_VELOCITY;
+      }
 
+      // Integrate position
       tran.position += vel.velocity * delta;
+
+      // Ground collision logic only relevant when not in flight mode
       float edgeHeight   = ( std::max )( { world.GetHeightAtPos( tran.position.x + 0.5f, tran.position.z ),
                                            world.GetHeightAtPos( tran.position.x - 0.5f, tran.position.z ),
                                            world.GetHeightAtPos( tran.position.x, tran.position.z + 0.5f ),
@@ -108,18 +145,29 @@ void PlayerPhysicsSystem( Entity::Registry& registry, float delta, World& world 
                                            world.GetHeightAtPos( tran.position.x + 0.25f, tran.position.z - 0.25f ),
                                            world.GetHeightAtPos( tran.position.x - 0.25f, tran.position.z - 0.25f ) } );
       float groundHeight = ( std::max )( edgeHeight, cornerHeight );
-      bool  inAir        = ( tran.position.y ) > groundHeight + 0.01f;
-      if( !inAir )
+
+      if( !input.flightMode )
       {
-         tran.position.y = groundHeight;
-         vel.velocity.y  = 0.0f;
+         bool grounded = tran.position.y <= groundHeight + 0.01f;
+         if( grounded )
+         {
+            tran.position.y = groundHeight;
+            vel.velocity.y  = 0.0f;
+         }
+         input.grounded = grounded;
+      }
+      else
+      {
+         // While flying we are not grounded; prevent accidental landing snap unless below ground
+         if( tran.position.y < groundHeight )
+            tran.position.y = groundHeight + 0.01f; // keep slightly above terrain
+         input.grounded = false;
       }
    }
 }
 
 void CameraSystem( Entity::Registry& registry, Window& window )
 {
-   //PROFILE_SCOPE( "CameraSystem" );
    GLFWwindow* nativeWindow   = window.GetNativeWindow();
    bool        fMouseCaptured = glfwGetInputMode( nativeWindow, GLFW_CURSOR ) == GLFW_CURSOR_DISABLED;
 
@@ -143,7 +191,7 @@ void CameraSystem( Entity::Registry& registry, Window& window )
       }
 
       cam.view = glm::mat4( 1.0f );
-      cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.x ), { 1, 0, 0 } ); // maybe tran rotation
+      cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.x ), { 1, 0, 0 } );
       cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.y ), { 0, 1, 0 } );
       cam.view = glm::rotate( cam.view, glm::radians( tran.rotation.z ), { 0, 0, 1 } );
       cam.view = glm::translate( cam.view, -tran.position );
@@ -154,40 +202,19 @@ void CameraSystem( Entity::Registry& registry, Window& window )
 
 void RenderSystem( Entity::Registry& registry, const glm::vec3& camPosition, const glm::mat4& viewProjection )
 {
-   //PROFILE_SCOPE( "RenderSystem" );
-   // TODO - refactor this system, Shader should be within component data for entity
-
-   // hack to get working
    static std::unique_ptr< Shader > pShader = std::make_unique< Shader >();
 
-   pShader->Bind();                                 // Bind the shader program
-   pShader->SetUniform( "u_MVP", viewProjection );  // Set Model-View-Projection matrix
-   pShader->SetUniform( "u_viewPos", camPosition ); // Set camera position
-   //pShader->SetUniform( "u_color", 0.5f, 0.0f, 0.0f );         // Set color (example: red)
-   pShader->SetUniform( "u_lightPos", camPosition ); // Set light position at camera position
+   pShader->Bind();
+   pShader->SetUniform( "u_MVP", viewProjection );
+   pShader->SetUniform( "u_viewPos", camPosition );
+   pShader->SetUniform( "u_lightPos", camPosition );
 
-   glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); // clear color and depth buffers
+   glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
    for( auto [ tran, mesh ] : registry.CView< CTransform, CMesh >() )
    {
-      // TODO - perform culling check, skip if culled (maybe this should be a separate system?)
-
       pShader->SetUniform( "u_color", mesh.mesh->GetColor() );
-
-      mesh.mesh->SetPosition( tran.position ); // this shouldn't be here
+      mesh.mesh->SetPosition( tran.position );
       mesh.mesh->Render();
-
-      //glm::mat4 modelMatrix = glm::translate( glm::mat4( 1.0f ), tran.position ) * glm::mat4_cast( tran.rotation ) *
-      //                        glm::scale( glm::mat4( 1.0f ), tran.scale );
-      //glm::mat4 mvpMatrix = viewProjection * modelMatrix;
-
-      // Bind material shader and set uniforms
-      //glUseProgram( pMaterial->shaderProgram );
-      //glUniformMatrix4fv( glGetUniformLocation( pMaterial->shaderProgram, "uMVP" ), 1, GL_FALSE, glm::value_ptr( mvpMatrix ) );
-      //glUniform3fv( glGetUniformLocation( pMaterial->shaderProgram, "uColor" ), 1, glm::value_ptr( pMaterial->color ) );
-
-      // Bind mesh and draw
-      //glBindVertexArray( pMesh->vao );
-      //glDrawElements( GL_TRIANGLES, pMesh->indexCount, GL_UNSIGNED_INT, 0 );
    }
 
    pShader->Unbind();
@@ -195,7 +222,6 @@ void RenderSystem( Entity::Registry& registry, const glm::vec3& camPosition, con
 
 void TickingSystem( Entity::Registry& /*registry*/, float /*delta*/ )
 {
-   //PROFILE_SCOPE( "TickingSystem" );
 }
 
 void Application::Run()
@@ -241,15 +267,13 @@ void Application::Run()
                                                      1000.0f );
       }
    } );
-   // -----------------------------------
 
-   // Initialize things
    Window& window = Window::Get();
    window.Init();
    GUIManager::Init();
    INetwork::RegisterGUI();
 
-   Timestep timestep( 20 /*tickrate*/ );
+   Timestep timestep( 20 );
    GUIManager::Attach( std::make_shared< DebugGUI >( registry, player, camera, timestep ) );
 
    World world( registry );
@@ -259,7 +283,7 @@ void Application::Run()
    {
       switch( e.GetKeyCode() )
       {
-         case Input::R: world.Setup( registry ); break; // regen world
+         case Input::R: world.Setup( registry ); break;
          default:       break;
       }
    } );
@@ -274,7 +298,6 @@ void Application::Run()
 
       {
          Events::ProcessQueuedEvents();
-         // ProcessQueuedNetworkEvents(); - maybe do this here?
 
          PlayerInputSystem( registry, delta );
          PlayerPhysicsSystem( registry, delta, world );
@@ -282,14 +305,12 @@ void Application::Run()
 
          if( timestep.FTick() )
          {
-            TickingSystem( registry, delta ); // TODO: implement this system (with CTick component)
-
-            // remove this eventually
+            TickingSystem( registry, delta );
             if( INetwork* pNetwork = INetwork::Get(); pNetwork && pPlayerTran )
                pNetwork->Poll( pPlayerTran->position );
          }
 
-         if( pPlayerTran && pCameraTran ) // hacky way to set camera position to follow player (update before render, will change)
+         if( pPlayerTran && pCameraTran )
          {
             pCameraTran->position = pPlayerTran->position + glm::vec3( 0.0f, PLAYER_HEIGHT, 0.0f );
             pPlayerTran->rotation = pCameraTran->rotation;
@@ -305,6 +326,5 @@ void Application::Run()
       window.OnUpdate();
    }
 
-   // Shutdown everything
    GUIManager::Shutdown();
 }
