@@ -1,24 +1,89 @@
-This is needed for the C++ redistributable
-    https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170
+﻿https://docs.unity3d.com/2017.1/Documentation/Manual/Components.html (older documentation 2017.1))
+https://docs.unity3d.com/Manual/Components.html
 
-When a client terminates connection to server, it should clear all clients itself
+Example of a game engine architecture using subsystems and systems:
 
-Server Packet Schema
-    Client to Server
-        PacketSize - 2 bytes
-        ClientID - 2 bytes
-            This is ignored when received by the Server, can leave 0x00, 0x00. The server has authority for assigning IDs
-        PacketType - 1 byte
-        PacketData - n bytes
+    GameLoop
+     ├─ InputSubsystem
+     │    ├─ KeyboardInputSystem
+     │    ├─ MouseInputSystem
+     │    └─ GamepadInputSystem
+     │
+     ├─ AISubsystem
+     │    ├─ DecisionMakingSystem
+     │    ├─ PathfindingSystem
+     │    ├─ BehaviorTreeSystem
+     │    └─ Faction/RelationshipSystem
+     │
+     ├─ PhysicsSubsystem
+     │    ├─ CollisionSystem
+     │    ├─ RigidBodySystem
+     │    ├─ CharacterControllerSystem
+     │    └─ PhysicsTriggerSystem
+     │
+     ├─ MovementSubsystem
+     │    ├─ PlayerMovementSystem
+     │    ├─ NPCMovementSystem
+     │    └─ VehicleMovementSystem
+     │
+     ├─ AnimationSubsystem
+     │    ├─ SkeletalAnimationSystem
+     │    ├─ BlendShapeSystem
+     │    └─ StateMachineAnimationSystem
+     │
+     ├─ HealthSubsystem
+     │    ├─ BuffSystem               // poison, regen, shields
+     │    ├─ DamageSystem             // apply queued damage/heals
+     │    └─ DeathSystem              // remove dead entities, trigger effects
+     │
+     ├─ CombatSubsystem
+     │    ├─ MeleeAttackSystem
+     │    ├─ RangedAttackSystem
+     │    ├─ AbilitySystem
+     │    └─ CooldownSystem
+     │
+     ├─ TickingSubsystem
+     │    ├─ ScheduledTickSystem      // one-shot or delayed events
+     │    ├─ PeriodicTickSystem       // repeated updates (blocks, timed effects)
+     │    └─ RandomTickSystem         // random block or environment updates
+     │
+     ├─ InventorySubsystem
+     │    ├─ PickupSystem
+     │    ├─ DropSystem
+     │    ├─ CraftingSystem
+     │    └─ ItemDecaySystem
+     │
+     ├─ RenderingSubsystem
+     │    ├─ MeshUpdateSystem
+     │    ├─ MaterialSystem
+     │    ├─ LightingSystem
+     │    ├─ ParticleSystem
+     │    └─ PostProcessingSystem
+     │
+     ├─ AudioSubsystem
+     │    ├─ SpatialAudioSystem
+     │    ├─ EventSoundSystem
+     │    └─ MusicSystem
+     │
+     ├─ NetworkingSubsystem
+     │    ├─ ClientPredictionSystem
+     │    ├─ ServerReconciliationSystem
+     │    ├─ EntitySyncSystem
+     │    └─ RemoteEventSystem
+     │
+     ├─ WorldSubsystem
+     │    ├─ ChunkLoadingSystem
+     │    ├─ TerrainGenerationSystem
+     │    ├─ DayNightCycleSystem
+     │    └─ WeatherSystem
+     │
+     └─ UISubsystem
+          ├─ HUDSystem
+          ├─ InventoryUISystem
+          ├─ TooltipSystem
+          └─ NotificationSystem
 
-    Server to Client
-        PacketSize - 2 bytes
-        ClientID - 2 bytes
-            This is an ID assigned by the server to the client, useful for also relaying packets from one client to another by specifying origin
-        PacketType - 1 byte
-        PacketData - n bytes
-
-Can be used to detect if mouse over ImGui
-    ImGui::GetIO().WantCaptureMouse
-
-https://minecraft.wiki/w/Java_Edition_protocol
+Networking
+    Use LZ4 compression for packets
+        Should everything use LZ4 compression? What about small packets? Is it still worth it?
+    Proper use of UDP/TCP

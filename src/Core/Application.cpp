@@ -41,7 +41,8 @@ constexpr float FLIGHT_HORIZONTAL_SPEED = 14.0f; // slightly faster while flying
 
 void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
-   for( auto [ entity, tran, vel, input, tag ] : registry.ECView< CTransform, CVelocity, CInput, CPlayerTag >() )
+   //PROFILE_SCOPE( "PlayerInputSystem" );
+   for( auto [ tran, vel, input, tag ] : registry.CView< CTransform, CVelocity, CInput, CPlayerTag >() )
    {
       // --- Double tap space to toggle flight mode ---
       if( input.spaceTapTimer > 0.0f )
@@ -122,7 +123,7 @@ void PlayerInputSystem( Entity::Registry& registry, float delta )
 
 void PlayerPhysicsSystem( Entity::Registry& registry, float delta, World& world )
 {
-   for( auto [ entity, tran, vel, input, tag ] : registry.ECView< CTransform, CVelocity, CInput, CPlayerTag >() )
+   for( auto [ tran, vel, input, tag ] : registry.CView< CTransform, CVelocity, CInput, CPlayerTag >() )
    {
       // Apply gravity only when not in flight mode
       if( !input.flightMode )
@@ -204,10 +205,10 @@ void RenderSystem( Entity::Registry& registry, const glm::vec3& camPosition, con
 {
    static std::unique_ptr< Shader > pShader = std::make_unique< Shader >();
 
-   pShader->Bind();
-   pShader->SetUniform( "u_MVP", viewProjection );
-   pShader->SetUniform( "u_viewPos", camPosition );
-   pShader->SetUniform( "u_lightPos", camPosition );
+   pShader->Bind();                                  // Bind the shader program
+   pShader->SetUniform( "u_MVP", viewProjection );   // Set Model-View-Projection matrix
+   pShader->SetUniform( "u_viewPos", camPosition );  // Set camera position
+   pShader->SetUniform( "u_lightPos", camPosition ); // Set light position at camera position
 
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
    for( auto [ tran, mesh ] : registry.CView< CTransform, CMesh >() )

@@ -6,12 +6,14 @@ using PacketBuffer = std::array< uint8_t, PACKET_BUFFER_SIZE >;
 enum class NetworkCode : uint8_t
 {
    // Control Messages
-   Invalid   = 0x00, // Invalid packet, probably dont need why would we make this
-   Heartbeat = 0x01,
-
-   ClientConnect    = 0x02,
+   Invalid          = 0x00,
+   Heartbeat        = 0x01,
+   ClientConnect    = 0x02, // Broadcast notification that a client joined (payload = clientID of new client)
    ClientDisconnect = 0x03,
    HostShutdown     = 0x04,
+   UDPRegister      = 0x05, // Client -> Server (UDP) so server can learn client's UDP endpoint (payload = clientID)
+   HandshakeInit    = 0x06, // Client -> Server (payload = protocol version)
+   HandshakeAccept  = 0x07, // Server -> Client (payload = assigned clientID)
 
    // Game Messages
    Chat           = 0x20,
@@ -32,7 +34,6 @@ struct Packet
    NetworkCode m_code { NetworkCode::Invalid };
    uint16_t    m_bufferLength { 0 };
 
-   //static inline constexpr auto FixedFields = std::make_tuple( &Packet::m_clientID, &Packet::m_code, &Packet::m_bufferLength );
    static inline constexpr auto FixedFields = std::make_tuple( &Packet::m_sourceID, &Packet::m_destinationID, &Packet::m_code, &Packet::m_bufferLength );
 
    // Buffer Data (variable fields)
@@ -69,9 +70,6 @@ inline constexpr size_t Packet::HeaderSize() noexcept
 
 // =========================================================================
 // Packet Specialization
-//    All NetworkCode's should have a PacketMaker specialization defined
-//    When adding a mapping that is not a primitive type, a specialization
-//       for ParseBuffer is required
 // =========================================================================
 #define DEFINE_NETWORK_CODE_TYPE( code, type, fixedSize ) \
    template<> struct NetworkCodeType<code> { \
@@ -79,7 +77,7 @@ inline constexpr size_t Packet::HeaderSize() noexcept
       static constexpr size_t BufferSize = fixedSize; \
       template< typename Type = Type > \
       static auto ParseBuffer(const uint8_t* pBuffer, size_t bufferLength) { \
-         if constexpr (std::is_fundamental_v<Type>) { Type value; std::memcpy( &value, pBuffer, bufferLength ); return value; } \
+         if constexpr (std::is_fundamental_v<Type>) { Type value{0}; std::memcpy( &value, pBuffer, bufferLength ); return value; } \
          else if constexpr( std::is_same_v< Type, glm::vec3 > ) { return Type( *reinterpret_cast< const glm::vec3* >( pBuffer ) ); } \
          else if constexpr( std::is_same_v< Type, std::string > ) { return Type( reinterpret_cast< const char* >( pBuffer ), bufferLength ); } \
          else if constexpr( std::is_same_v< Type, std::vector< type::value_type > > ) { return Type( pBuffer, pBuffer + bufferLength ); } \
@@ -87,12 +85,15 @@ inline constexpr size_t Packet::HeaderSize() noexcept
       } \
    };
 
-// All NetworkCode's should have a PacketMaker specialization defined
-//    When adding a mapping that is not a primitive type, add a specialization for ParseBuffer above
+// Control / System
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::Heartbeat, uint8_t, sizeof( uint8_t ) )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::ClientConnect, uint64_t, sizeof( uint64_t ) )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::ClientDisconnect, uint64_t, sizeof( uint64_t ) )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::HostShutdown, uint64_t, sizeof( uint64_t ) )
+DEFINE_NETWORK_CODE_TYPE( NetworkCode::UDPRegister, uint64_t, sizeof( uint64_t ) )
+DEFINE_NETWORK_CODE_TYPE( NetworkCode::HandshakeInit, uint32_t, sizeof( uint32_t ) )
+DEFINE_NETWORK_CODE_TYPE( NetworkCode::HandshakeAccept, uint64_t, sizeof( uint64_t ) )
+// Game
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::Chat, std::string, 0 )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::PositionUpdate, glm::vec3, sizeof( glm::vec3 ) )
 

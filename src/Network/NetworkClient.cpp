@@ -22,6 +22,15 @@ NetworkClient::NetworkClient()
 NetworkClient::~NetworkClient()
 {
    StopRecvThread();
+   if( m_udpRunning )
+   {
+      m_udpRunning = false;
+      if( m_udpRecvThread.joinable() )
+         m_udpRecvThread.join();
+   }
+   if( m_udpSocket != INVALID_SOCKET )
+      closesocket( m_udpSocket );
+
    closesocket( m_hostSocket );
    for( const Client& client : m_clients )
    {
@@ -46,12 +55,75 @@ void NetworkClient::StopRecvThread()
       m_recvThread.join();
 }
 
+void NetworkClient::InitUDP( uint16_t port )
+{
+   m_udpSocket = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
+   if( m_udpSocket == INVALID_SOCKET )
+   {
+      s_logs.push_back( std::format( "Failed to create UDP socket (client): {}", WSAGetLastError() ) );
+      return;
+   }
+
+   sockaddr_in localAddr {};
+   localAddr.sin_family      = AF_INET;
+   localAddr.sin_addr.s_addr = INADDR_ANY; // any local interface
+   localAddr.sin_port        = 0;          // let OS pick a port
+   if( bind( m_udpSocket, reinterpret_cast< sockaddr* >( &localAddr ), sizeof( localAddr ) ) == SOCKET_ERROR )
+   {
+      s_logs.push_back( std::format( "Failed to bind UDP client socket: {}", WSAGetLastError() ) );
+      closesocket( m_udpSocket );
+      m_udpSocket = INVALID_SOCKET;
+      return;
+   }
+
+   u_long mode = 1;
+   ioctlsocket( m_udpSocket, FIONBIO, &mode );
+
+   // Setup server UDP address
+   m_serverUdpAddr.sin_family      = AF_INET;
+   m_serverUdpAddr.sin_addr.s_addr = inet_addr( m_serverIpAddress.c_str() );
+   m_serverUdpAddr.sin_port        = htons( port );
+
+   m_udpRunning    = true;
+   m_udpRecvThread = std::thread( &NetworkClient::UDPRecvThread, this );
+}
+
+void NetworkClient::UDPRecvThread()
+{
+   std::vector< uint8_t > buffer( RECV_BUFFER_SIZE );
+   while( m_udpRunning )
+   {
+      sockaddr_in fromAddr {};
+      int         fromLen = sizeof( fromAddr );
+      int         bytes   = recvfrom(
+         m_udpSocket, reinterpret_cast< char* >( buffer.data() ), ( int )buffer.size(), 0, reinterpret_cast< sockaddr* >( &fromAddr ), &fromLen );
+      if( bytes > 0 )
+      {
+         size_t offset = 0;
+         while( offset < static_cast< size_t >( bytes ) )
+         {
+            auto inPacket = Packet::Deserialize( buffer, offset );
+            if( !inPacket )
+               break;
+            offset += inPacket->Size();
+
+            // Only handle real-time packets expected over UDP
+            if( inPacket->m_code == NetworkCode::PositionUpdate )
+            {
+               Events::Dispatch< Events::NetworkPositionUpdateEvent >( inPacket->m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( *inPacket ) );
+            }
+         }
+      }
+      std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+   }
+}
+
 void NetworkClient::RecvThread()
 {
    std::vector< uint8_t > buffer( RECV_BUFFER_SIZE );
    while( m_running )
    {
-      int bytesReceived = recv( m_hostSocket, reinterpret_cast< char* >( buffer.data() ), buffer.size(), 0 );
+      int bytesReceived = recv( m_hostSocket, reinterpret_cast< char* >( buffer.data() ), ( int )buffer.size(), 0 );
       if( bytesReceived > 0 )
       {
          size_t offset = 0;
@@ -110,10 +182,32 @@ void NetworkClient::Connect( const char* ipAddress, uint16_t port )
 
    //m_fConnected = true; // Set to true only if connect did not fail
    StartRecvThread();
+   InitUDP( port );
+}
+
+void NetworkClient::SendUDPPacket( const Packet& packet )
+{
+   if( m_udpSocket == INVALID_SOCKET )
+      return;
+
+   auto data = Packet::Serialize( packet );
+   sendto( m_udpSocket,
+           reinterpret_cast< const char* >( data.data() ),
+           ( int )data.size(),
+           0,
+           reinterpret_cast< const sockaddr* >( &m_serverUdpAddr ),
+           sizeof( m_serverUdpAddr ) );
 }
 
 void NetworkClient::SendPacket( const Packet& packet )
 {
+   if( packet.m_code == NetworkCode::PositionUpdate )
+   {
+      // Send unreliable over UDP
+      SendUDPPacket( packet );
+      return;
+   }
+
    Send( m_hostSocket, Packet::Serialize( packet ) );
 }
 
@@ -126,7 +220,7 @@ void NetworkClient::SendPackets( const std::vector< Packet >& packets )
       serializedPackets.insert( serializedPackets.end(), serializedPacket.begin(), serializedPacket.end() );
    }
 
-   if( send( m_hostSocket, reinterpret_cast< char* >( serializedPackets.data() ), serializedPackets.size(), 0 ) == SOCKET_ERROR )
+   if( send( m_hostSocket, reinterpret_cast< char* >( serializedPackets.data() ), ( int )serializedPackets.size(), 0 ) == SOCKET_ERROR )
       s_logs.push_back( std::format( "Failed to send packet to host: {}", m_hostSocket ) );
 }
 
@@ -134,24 +228,14 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket )
 {
    switch( inPacket.m_code )
    {
-      //case NetworkCode::Handshake:
-      //   s_logs.push_back( std::format( "Connected to server: {}:{}", INetwork::GetHostAddress(), m_port ) );
-      //   m_fConnected = true;
-      //   m_serverID   = inPacket.m_sourceID;
-      //   m_ID         = inPacket.m_destinationID;
-      //   SendPacket( Packet::Create< NetworkCode::Handshake >( m_ID, m_serverID, {} ) );
-      //   Events::Dispatch< Events::NetworkClientConnectEvent >( m_serverID );
-      //   break;
       case NetworkCode::HostShutdown:
          m_fConnected = false;
          Events::Dispatch< Events::NetworkHostShutdownEvent >( inPacket.m_sourceID );
          break;
       case NetworkCode::ClientConnect:
       {
-         // TODO: Need to handle if clients other than the server connect, this is hacky right now for just server connection
-
          if( m_fConnected )
-            break; // Already connected, ignore duplicate, this shouldn't happen
+            break; // Already connected
 
          s_logs.push_back( std::format( "Connected to server: {}:{}", INetwork::GetHostAddress(), m_port ) );
          m_fConnected = true;
@@ -163,12 +247,16 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket )
          newClient.m_socket   = m_hostSocket;
          m_clients.push_back( newClient );
          Events::Dispatch< Events::NetworkClientConnectEvent >( inPacket.m_sourceID );
+
+         // Register UDP endpoint (unreliable channel)
+         SendUDPPacket( Packet::Create< NetworkCode::UDPRegister >( m_ID, m_serverID, m_ID ) );
          break;
       }
       case NetworkCode::Chat:
          Events::Dispatch< Events::NetworkChatReceivedEvent >( inPacket.m_sourceID, Packet::ParseBuffer< NetworkCode::Chat >( inPacket ) );
          break;
       case NetworkCode::PositionUpdate:
+         // These normally come over UDP, but allow TCP fallback
          Events::Dispatch< Events::NetworkPositionUpdateEvent >( inPacket.m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( inPacket ) );
          break;
       case NetworkCode::ClientDisconnect:
@@ -179,11 +267,8 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket )
                           m_clients.end() );
          Events::Dispatch< Events::NetworkClientDisconnectEvent >( inPacket.m_sourceID );
          break;
-      case NetworkCode::Heartbeat:
-         // Optionally handle heartbeat
-         break;
-
-      default: std::println( std::cerr, "Unhandled network code: {}", std::to_underlying( inPacket.m_code ) );
+      case NetworkCode::Heartbeat: break;
+      default:                     std::println( std::cerr, "Unhandled network code: {}", std::to_underlying( inPacket.m_code ) );
    }
 }
 
@@ -192,11 +277,9 @@ void NetworkClient::Poll( const glm::vec3& playerPosition )
    if( m_hostSocket == INVALID_SOCKET )
       return;
 
-   // Send position updates if connected
    if( m_fConnected )
       SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, m_serverID, playerPosition ) );
 
-   // Process incoming packets
    while( std::optional< Packet > optInPacket = PollPacket() )
       HandleIncomingPacket( *optInPacket );
 }

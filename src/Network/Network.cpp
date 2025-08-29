@@ -212,10 +212,12 @@ public:
                for( const std::string& message : m_messages )
                   ImGui::TextWrapped( "%s", message.c_str() );
 
-               // Auto-scroll to the bottom if enabled
-               if( m_fChatAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() )
+               // Auto-scroll to the bottom if enabled (if chat auto scroll setting is set to true, will auto-scroll to bottom)
+               static bool m_fChatAutoScrollLastState = m_fChatAutoScroll;
+               if( ( !m_fChatAutoScrollLastState && m_fChatAutoScroll ) || ( m_fChatAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() ) )
                   ImGui::SetScrollHereY( 1.0f ); // Auto scroll to bottom
 
+               m_fChatAutoScrollLastState = m_fChatAutoScroll;
                ImGui::EndChild();
             }
 
@@ -233,11 +235,16 @@ public:
                   ImGui::SetKeyboardFocusHere( -1 ); // keep focus on the input box
                }
             }
+            ImGui::EndDisabled();
+
+            // Clear chat button
+            ImGui::SameLine();
+            if( ImGui::Button( "Clear" ) )
+               m_messages.clear();
 
             // Auto-scroll toggle
             ImGui::SameLine();
             ImGui::Checkbox( "Auto-scroll", &m_fChatAutoScroll );
-            ImGui::EndDisabled();
             ImGui::EndTabItem();
          }
 
@@ -248,9 +255,11 @@ public:
                for( const std::string& log : m_logs )
                   ImGui::TextWrapped( "%s", log.c_str() );
 
-               if( m_fLogAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() )
+               static bool m_fLogAutoScrollLastState = m_fLogAutoScroll;
+               if( ( !m_fLogAutoScrollLastState && m_fLogAutoScroll ) || ( m_fLogAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() ) )
                   ImGui::SetScrollHereY( 1.0f );
 
+               m_fLogAutoScrollLastState = m_fLogAutoScroll;
                ImGui::EndChild();
             }
 
