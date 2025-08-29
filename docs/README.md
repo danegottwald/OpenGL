@@ -17,7 +17,7 @@ The project implements a custom ECS focused on:
 - Zero virtual calls in hot paths (compile-time dispatch + type erasure only at registration)
 - Fast multi-component iteration via a heuristic (iterate the *smallest* involved component pool)
 - Low fragmentation, stable `Entity` identifiers (recycled indices) & optional owning `EntityHandle`
-- Headeronly, no external dependency
+- Header-only, no external dependency
 
 ### Complexity (Amortized)
 - Create entity: `O(1)`
@@ -31,21 +31,21 @@ The project implements a custom ECS focused on:
 
 | Test Case                                | Custom ECS (ms) | EnTT (ms) | Speedup (EnTT/Custom) |
 |------------------------------------------|----------------:|----------:|----------------------:|
-| Add/Remove (25% of entities)             | 7.843           | 11.308    | 1.44×                 |
-| Add/Remove + Zero Component              | 4.442           | 6.320     | 1.46×                 |
-| Create + Destroy Entities (50k per run)  | 0.867           | 2.847     | 3.28×                 |
-| Iterate (single component)               | 4.651           | 4.913     | 1.06×                 |
-| Iterate (single, read-only)              | 3.945           | 4.723     | 1.20×                 |
-| Iterate (two components)                 | 7.147           | 8.675     | 1.22×                 |
-| Iterate (two components, branchy)        | 24.463          | 33.289    | 1.35×                 |
-| Iterate (two components, dual write)     | 7.516           | 9.442     | 1.25×                 |
-| Iterate (three components, 0% present)   | 0.000           | 0.000     | 1.00×                 |
-| Iterate (three components, 25% present)  | 2.250           | 2.887     | 1.29×                 |
-| Iterate (three components, 50% present)  | 6.028           | 7.930     | 1.30×                 |
-| Iterate (three components, 75% present)  | 3.517           | 4.514     | 1.28×                 |
-| Iterate (three components, 100% present) | 3.790           | 5.063     | 1.33×                 |
-| Random Destroy + Create (10k per run)    | 3.263           | 5.645     | 1.73×                 |
-| Random Get (1k+ ops)                     | 0.070           | 0.262     | 3.71×                 |
+| Add/Remove (25% of entities)             | 7.843           | 11.308    | 1.44Ã—                 |
+| Add/Remove + Zero Component              | 4.442           | 6.320     | 1.46Ã—                 |
+| Create + Destroy Entities (50k per run)  | 0.867           | 2.847     | 3.28Ã—                 |
+| Iterate (single component)               | 4.651           | 4.913     | 1.06Ã—                 |
+| Iterate (single, read-only)              | 3.945           | 4.723     | 1.20Ã—                 |
+| Iterate (two components)                 | 7.147           | 8.675     | 1.22Ã—                 |
+| Iterate (two components, branchy)        | 24.463          | 33.289    | 1.35Ã—                 |
+| Iterate (two components, dual write)     | 7.516           | 9.442     | 1.25Ã—                 |
+| Iterate (three components, 0% present)   | 0.000           | 0.000     | 1.00Ã—                 |
+| Iterate (three components, 25% present)  | 2.250           | 2.887     | 1.29Ã—                 |
+| Iterate (three components, 50% present)  | 6.028           | 7.930     | 1.30Ã—                 |
+| Iterate (three components, 75% present)  | 3.517           | 4.514     | 1.28Ã—                 |
+| Iterate (three components, 100% present) | 3.790           | 5.063     | 1.33Ã—                 |
+| Random Destroy + Create (10k per run)    | 3.263           | 5.645     | 1.73Ã—                 |
+| Random Get (1k+ ops)                     | 0.070           | 0.262     | 3.71Ã—                 |
 
 
 ---
