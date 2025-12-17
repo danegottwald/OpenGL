@@ -5,13 +5,8 @@
 #include <Input/Input.h>
 #include <Renderer/Mesh.h>
 
+#include <Entity/Components.h>
 #include <Entity/Registry.h>
-#include <Entity/Components/AABB.h>
-#include <Entity/Components/Transform.h>
-#include <Entity/Components/Velocity.h>
-#include <Entity/Components/Input.h>
-#include <Entity/Components/PlayerTag.h>
-#include <Entity/Components/Mesh.h>
 
 Events::EventSubscriber m_eventSubscriber;
 
@@ -25,6 +20,8 @@ World::World( Entity::Registry& registry )
       std::shared_ptr< CapsuleMesh > psClientMesh = std::make_shared< CapsuleMesh >();
       psClientMesh->SetColor( glm::vec3( 100.0f / 255.0f, 147.0f / 255.0f, 237.0f / 255.0f ) ); // cornflower blue
       registry.Add< CMesh >( psNewClient->Get(), psClientMesh );
+      //registry.Add< CVelocity >( psNewClient->Get(), 0.0f, 0.0f, 0.0f );
+      //registry.Add< CAABB >( psNewClient->Get(), glm::vec3( 0.3f, 1.9f * 0.5f, 0.3f ) ); // half extents
 
       m_playerHandles.insert( { e.GetClientID(), std::move( psNewClient ) } );
    } );
@@ -248,8 +245,6 @@ private:
 };
 
 constexpr float    BLOCK_POS_Y = 64.0f; // constant height for all blocks
-constexpr uint16_t CHUNK_SIZE = 16;
-constexpr uint16_t CHUNK_HEIGHT = 1; // if your chunks are only 1 block tall
 constexpr uint16_t WORLD_SIZE = 6; // number of chunks along one axis (world is WORLD_SIZE x WORLD_SIZE chunks)
 
 void World::Setup( Entity::Registry& registry )
@@ -267,17 +262,13 @@ void World::Setup( Entity::Registry& registry )
          for( int x = 0; x < CHUNK_SIZE; x++ )
          {
             for( int z = 0; z < CHUNK_SIZE; z++ )
-            {
-               glm::vec3 blockPos( static_cast< float >( chunkPosX + x ), BLOCK_POS_Y, static_cast< float >( chunkPosZ + z ) );
-               psChunkMesh->AddCube( blockPos );
-            }
+               psChunkMesh->AddCube( { static_cast< float >( chunkPosX + x ), BLOCK_POS_Y, static_cast< float >( chunkPosZ + z ) } );
          }
 
          //psChunkMesh->SetColor( glm::vec3( 34.0f / 255.0f, 139.0f / 255.0f, 34.0f / 255.0f ) ); // forest green
          psChunkMesh->SetColor( glm::vec3( std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f ) );
          psChunkMesh->Finalize();
 
-         std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
 
          float halfX = CHUNK_SIZE * 0.5f;
          float halfZ = CHUNK_SIZE * 0.5f;
@@ -287,6 +278,8 @@ void World::Setup( Entity::Registry& registry )
          float chunkWorldZ = chunkPosZ + halfZ - 0.5f;
          float chunkWorldY = BLOCK_POS_Y;
 
+         std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
+         registry.Add< CChunkTag >( psChunk->Get() );
          registry.Add< CTransform >( psChunk->Get(), chunkWorldX, chunkWorldY, chunkWorldZ );
          registry.Add< CAABB >( psChunk->Get(), CAABB { glm::vec3( halfX, halfY, halfZ ) } );
          registry.Add< CMesh >( psChunk->Get(), psChunkMesh );
@@ -295,12 +288,190 @@ void World::Setup( Entity::Registry& registry )
    }
 
    std::shared_ptr< Entity::EntityHandle > psSun = registry.CreateWithHandle();
-   registry.Add< CTransform >( psSun->Get(), 0.0f, 76.0f, 0.0f );
+   registry.Add< CTransform >( psSun->Get(), 5.0f, 76.0f, 5.0f );
    registry.Add< CMesh >( psSun->Get(), std::make_shared< SphereMesh >() );
    registry.Add< CVelocity >( psSun->Get(), glm::vec3( 1.0f, 0.0f, 1.0f ) );
    registry.Add< CAABB >( psSun->Get(), CAABB { glm::vec3( 0.5f ) } );
 
    m_entityHandles.push_back( psSun );
+}
+
+void World::CreateChunkMesh( Entity::Registry& registry, _Inout_ std::shared_ptr< ChunkMesh >& mesh, const glm::ivec2& chunkPos, FastNoiseLite& noise )
+{
+   std::random_device                       rd;          // Non-deterministic seed generator
+   std::mt19937                             gen( rd() ); // Mersenne Twister PRNG
+   std::uniform_int_distribution< int32_t > dist;
+   noise.SetSeed( 5 );                                     // Set the seed for reproducibility
+   noise.SetNoiseType( FastNoiseLite::NoiseType_Perlin );  // Use Perlin noise for smooth terrain
+   noise.SetFrequency( 0.005f );                           // Lower frequency = larger features (mountains, valleys)
+   noise.SetFractalType( FastNoiseLite::FractalType_FBm ); // Use fractal Brownian motion for more realistic terrain
+   noise.SetFractalOctaves( 5 );                           // Controls the detail level (higher = more detail)
+
+   for( int x = 0; x < CHUNK_SIZE; ++x )
+   {
+      for( int z = 0; z < CHUNK_SIZE; ++z )
+      {
+         auto getNoise = [ &noise ]( float x, float z ) -> float { return noise.GetNoise( x, z ) + 1.0f; };
+
+         float posX = static_cast< float >( chunkPos.x * CHUNK_SIZE + x );
+         float posZ = static_cast< float >( chunkPos.y * CHUNK_SIZE + z );
+
+         // Quantize height to whole-block steps so terrain aligns to a
+         // discrete grid in Y.
+         const float     topY = std::floor( getNoise( posX, posZ ) * 127.5f - 64.0f );
+         const glm::vec3 cubePos( posX, topY, posZ );
+         mesh->AddFace( cubePos, BlockFace::Up );
+
+         auto fillFace = [ & ]( float adjTopY, float topYLocal, BlockFace face )
+         {
+            if( topYLocal > adjTopY ) // Add faces if not adjacent to another block
+            {
+               mesh->AddFace( cubePos, face );
+               for( float y = adjTopY + 1.0f; y < topYLocal; y += 1.0f )
+                  mesh->AddFace( glm::vec3( posX, y, posZ ), face );
+            }
+         };
+
+         float adjTopYNorth = std::floor( getNoise( posX,     posZ + 1 ) * 127.5f - 64.0f );
+         float adjTopYSouth = std::floor( getNoise( posX,     posZ - 1 ) * 127.5f - 64.0f );
+         float adjTopYEast  = std::floor( getNoise( posX + 1, posZ     ) * 127.5f - 64.0f );
+         float adjTopYWest  = std::floor( getNoise( posX - 1, posZ     ) * 127.5f - 64.0f );
+         fillFace( adjTopYNorth, topY, BlockFace::North );
+         fillFace( adjTopYSouth, topY, BlockFace::South );
+         fillFace( adjTopYEast, topY, BlockFace::East );
+         fillFace( adjTopYWest, topY, BlockFace::West );
+
+         // Block entities with transforms/AABBs are managed separately based on
+         // player proximity; mesh generation is independent of entities.
+      }
+   }
+}
+
+void World::UpdateActiveChunks( Entity::Registry& registry, const glm::vec3& playerPos )
+{
+   auto chunkCoord = []( float v ) { return static_cast< int >( std::floor( v / CHUNK_SIZE ) ); };
+   glm::ivec2 newChunk { chunkCoord( playerPos.x ), chunkCoord( playerPos.z ) };
+   if( newChunk == m_playerChunk )
+      return; // still in the same chunk
+
+   
+
+   PROFILE_SCOPE( "World::UpdateActiveChunks" );
+   m_playerChunk = newChunk;
+
+   constexpr int meshRenderDistance   = 6; // chunks with meshes
+   constexpr int meshRenderDistanceSq = meshRenderDistance * meshRenderDistance;
+
+
+   // Determine chunks that should have meshes (larger radius)
+   std::vector< glm::ivec2 > meshChunks;
+   meshChunks.reserve( ( meshRenderDistance * 2 + 1 ) * ( meshRenderDistance * 2 + 1 ) );
+   for( int dx = -meshRenderDistance; dx <= meshRenderDistance; ++dx )
+   {
+      for( int dz = -meshRenderDistance; dz <= meshRenderDistance; ++dz )
+      {
+         if( dx * dx + dz * dz > meshRenderDistanceSq )
+            continue;
+         meshChunks.emplace_back( newChunk.x + dx, newChunk.y + dz );
+      }
+   }
+
+   // Determine chunks that should have per-block entities (tight 3x3 around player)
+   std::vector< glm::ivec2 > blockChunks;
+   blockChunks.reserve( 9 );
+
+   constexpr int blockRenderRadius   = 1; // 3x3 chunks: current + 8 neighbors
+   for( int dx = -blockRenderRadius; dx <= blockRenderRadius; ++dx )
+   {
+      for( int dz = -blockRenderRadius; dz <= blockRenderRadius; ++dz )
+         blockChunks.emplace_back( newChunk.x + dx, newChunk.y + dz );
+   }
+
+   // Remove meshes for chunks that are no longer needed
+   for( auto it = m_activeChunks.begin(); it != m_activeChunks.end(); )
+   {
+      bool        keep = false;
+      const glm::ivec2& pos  = it->first;
+      for( const glm::ivec2& c : meshChunks )
+      {
+         if( c == pos )
+         {
+            keep = true;
+            break;
+         }
+      }
+
+      if( !keep )
+      {
+         registry.Destroy( it->second.m_entity );
+         it = m_activeChunks.erase( it );
+      }
+      else
+         ++it;
+   }
+
+   // Add new mesh chunks
+   int newChunksLoaded = 0;
+   for( const glm::ivec2& cPos : meshChunks )
+   {
+      if( m_activeChunks.find( cPos ) != m_activeChunks.end() )
+         continue;
+
+      ++newChunksLoaded;
+
+      Chunk chunk;
+      chunk.chunkPos = cPos;
+
+      auto mesh = std::make_shared< ChunkMesh >();
+      CreateChunkMesh( registry, mesh, cPos, m_mapNoise );
+
+      mesh->SetColor( glm::vec3( std::rand() % 256 / 255.0f,
+                                 std::rand() % 256 / 255.0f,
+                                 std::rand() % 256 / 255.0f ) );
+      mesh->Finalize();
+      chunk.mesh = mesh;
+
+      float chunkCenterX = float( cPos.x * CHUNK_SIZE + CHUNK_SIZE / 2 - 0.5f );
+      float chunkCenterZ = float( cPos.y * CHUNK_SIZE + CHUNK_SIZE / 2 - 0.5f );
+
+      std::shared_ptr< Entity::EntityHandle > pChunkEntity  = registry.CreateWithHandle();
+      registry.Add< CTransform >( *pChunkEntity, chunkCenterX, BLOCK_POS_Y, chunkCenterZ );
+      registry.Add< CMesh >( *pChunkEntity, mesh );
+      registry.Add< CChunkTag >( *pChunkEntity );
+
+      chunk.m_entity = *pChunkEntity;
+
+      m_entityHandles.push_back( pChunkEntity );
+      m_activeChunks.emplace( cPos, std::move( chunk ) );
+   }
+
+   // Destroy any existing block entities, then recreate them for the 3x3 region
+   for( Entity::Entity e : m_activeBlocks )
+      registry.Destroy( e );
+   m_activeBlocks.clear();
+
+   for( const glm::ivec2& cPos : blockChunks )
+   {
+      for( int x = 0; x < CHUNK_SIZE; ++x )
+      {
+         for( int z = 0; z < CHUNK_SIZE; ++z )
+         {
+            float posX = static_cast< float >( cPos.x * CHUNK_SIZE + x );
+            float posZ = static_cast< float >( cPos.y * CHUNK_SIZE + z );
+
+            // Use the same quantized height computation as CreateChunkMesh so
+            // that block entities align exactly with the mesh cubes.
+            float topY = std::floor( ( m_mapNoise.GetNoise( posX, posZ ) + 1.0f ) * 127.5f - 64.0f );
+
+            Entity::Entity blockEntity = registry.Create();
+            registry.Add< CTransform >( blockEntity, posX, topY, posZ );
+            registry.Add< CAABB >( blockEntity, CAABB { glm::vec3( 0.5f ) } );
+            m_activeBlocks.push_back( blockEntity );
+         }
+      }
+   }
+
+   std::cout << "Loaded " << newChunksLoaded << " new chunks" << std::endl;
 }
 
 class ViewFrustum

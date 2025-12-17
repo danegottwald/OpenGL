@@ -9,6 +9,7 @@ constexpr size_t RECV_BUFFER_SIZE = 4096;
 NetworkHost::NetworkHost()
 {
    SetID( Client::GenerateClientID() );
+
    char hostname[ 256 ];
    if( gethostname( hostname, sizeof( hostname ) ) == 0 )
    {

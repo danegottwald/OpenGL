@@ -29,7 +29,7 @@ public:
 
    [[nodiscard]] FORCE_INLINE Entity Get() const noexcept { return m_entity; }
 
-   FORCE_INLINE explicit operator Entity() const noexcept { return m_entity; }
+   FORCE_INLINE operator Entity() const noexcept { return m_entity; }
    FORCE_INLINE bool     operator==( const EntityHandle& other ) const noexcept { return m_entity == other.m_entity; }
    FORCE_INLINE bool     operator!=( const EntityHandle& other ) const noexcept { return m_entity != other.m_entity; }
    FORCE_INLINE bool     operator==( Entity other ) const noexcept { return m_entity == other; }

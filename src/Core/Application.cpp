@@ -16,17 +16,8 @@
 #include <Renderer/Shader.h>
 
 // Component includes
+#include <Entity/Components.h>
 #include <Entity/Registry.h>
-#include <Entity/Components/AABB.h>
-#include <Entity/Components/Transform.h>
-#include <Entity/Components/Velocity.h>
-#include <Entity/Components/Input.h>
-#include <Entity/Components/Camera.h>
-#include <Entity/Components/PlayerTag.h>
-#include <Entity/Components/CameraTag.h>
-#include <Entity/Components/Parent.h>
-#include <Entity/Components/Children.h>
-#include <Entity/Components/Mesh.h>
 
 // ================ SYSTEMS ================
 constexpr float GRAVITY           = -32.0f;
@@ -224,24 +215,25 @@ void RenderSystem( Entity::Registry& registry, const glm::vec3& camPosition, con
          { min.x, min.y, min.z }, { max.x, min.y, min.z }, { max.x, max.y, min.z }, { min.x, max.y, min.z },
          { min.x, min.y, max.z }, { max.x, min.y, max.z }, { max.x, max.y, max.z }, { min.x, max.y, max.z }
       };
-      unsigned int indices[ 24 ] = {
-         0, 1, 1, 2, 2, 3, 3, 0,
-         4, 5, 5, 6, 6, 7, 7, 4,
-         0, 4, 1, 5, 2, 6, 3, 7
-      };
+
       unsigned int vao, vbo, ebo;
+      constexpr unsigned int indices[ 24 ] = { 0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7 };
+
       glGenVertexArrays( 1, &vao );
       glGenBuffers( 1, &vbo );
       glGenBuffers( 1, &ebo );
+
       glBindVertexArray( vao );
       glBindBuffer( GL_ARRAY_BUFFER, vbo );
       glBufferData( GL_ARRAY_BUFFER, sizeof( vertices ), vertices, GL_STATIC_DRAW );
+
       glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, ebo );
       glBufferData( GL_ELEMENT_ARRAY_BUFFER, sizeof( indices ), indices, GL_STATIC_DRAW );
+
       glEnableVertexAttribArray( 0 );
       glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void* )0 );
-      pShader->SetUniform( "u_color", glm::vec3( 1.0f, 0.0f, 0.0f ) ); // red color for AABB
       glDrawElements( GL_LINES, 24, GL_UNSIGNED_INT, 0 );
+
       glDeleteBuffers( 1, &vbo );
       glDeleteBuffers( 1, &ebo );
       glDeleteVertexArrays( 1, &vao );
@@ -265,7 +257,7 @@ void Application::Run()
    registry.Add< CVelocity >( player, 0.0f, 0.0f, 0.0f );
    registry.Add< CInput >( player );
    registry.Add< CPlayerTag >( player );
-   registry.Add< CAABB >( player, glm::vec3( 0.3f, PLAYER_HEIGHT * 0.5f, 0.3f ) ); // half extents
+   registry.Add< CAABB >( player, glm::vec3( 0.5f, 0.01f, 0.5f ) ); // half extents
 
    // Create camera entity
    Entity::Entity camera = registry.Create();
@@ -311,7 +303,7 @@ void Application::Run()
    GUIManager::Attach( std::make_shared< DebugGUI >( registry, player, camera, timestep ) );
 
    World world( registry );
-   world.Setup( registry );
+   //world.Setup( registry );
 
    eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ &world, &registry ]( const Events::KeyPressedEvent& e ) noexcept
    {
@@ -331,6 +323,9 @@ void Application::Run()
       CCamera*    pCameraComp = registry.TryGet< CCamera >( camera );
 
       {
+         if( pPlayerTran)
+            world.UpdateActiveChunks( registry, pPlayerTran->position);
+
          Events::ProcessQueuedEvents();
          // ProcessQueuedNetworkEvents(); - maybe do this here?
 

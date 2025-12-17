@@ -8,13 +8,18 @@ using GLuint = unsigned int;
 
 // Forward Declarations
 class Camera;
+class ChunkMesh;
 class FastNoiseLite;
 class IMesh;
 namespace Entity
 {
+typedef uint64_t Entity;
 class Registry;
 class EntityHandle;
 }
+
+constexpr uint8_t CHUNK_SIZE = 16;
+constexpr uint16_t CHUNK_HEIGHT = 1;
 
 class World
 {
@@ -24,10 +29,26 @@ public:
 
    void Setup( Entity::Registry& registry );
 
-   float GetHeightAtPos( float x, float z ) const
+   
+   struct Chunk
    {
-      return ( static_cast< int >( ( m_mapNoise.GetNoise( x, z ) + 1 ) * 127.5 ) ) - 64; // TODO: make this a constant
-   }
+      Entity::Entity                                                         m_entity; // entity representing this chunk
+      glm::ivec2                                                             chunkPos; // chunk coordinates in world
+      std::shared_ptr< ChunkMesh >                                           mesh;     // for rendering
+      std::array< std::array< int, CHUNK_SIZE >, CHUNK_HEIGHT * CHUNK_SIZE > blocks;   // block data
+   };
+   glm::ivec2                              m_playerChunk { INT_MIN, INT_MIN }; // current chunk player is in
+   std::unordered_map< glm::ivec2, Chunk > m_activeChunks; // only active chunks
+
+   struct Block
+   {
+      Entity::Entity entity;
+      glm::ivec3     position;
+   };
+   std::vector< Entity::Entity > m_activeBlocks;
+
+   void CreateChunkMesh( Entity::Registry& registry, _Inout_ std::shared_ptr< ChunkMesh >& mesh, const glm::ivec2& chunkPos, FastNoiseLite& noise );
+   void UpdateActiveChunks( Entity::Registry& registry, const glm::vec3& playerPos );
 
 private:
    // All relevant world data
