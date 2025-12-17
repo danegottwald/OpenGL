@@ -87,3 +87,8 @@ Networking
     Use LZ4 compression for packets
         Should everything use LZ4 compression? What about small packets? Is it still worth it?
     Proper use of UDP/TCP
+
+Todo
+    Support Vulkan rendering backend
+    assimp - Open Asset Import Library for model loading
+    Keybind to action mapping system (like Unreal Engine how you can bind keys to actions)

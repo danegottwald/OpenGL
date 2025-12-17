@@ -17,6 +17,7 @@
 
 // Component includes
 #include <Entity/Registry.h>
+#include <Entity/Components/AABB.h>
 #include <Entity/Components/Transform.h>
 #include <Entity/Components/Velocity.h>
 #include <Entity/Components/Input.h>
@@ -91,29 +92,55 @@ void PlayerInputSystem( Entity::Registry& registry, float delta )
 
 void PlayerPhysicsSystem( Entity::Registry& registry, float delta, World& world )
 {
-   //PROFILE_SCOPE( "PlayerPhysicsSystem" );
-   for( auto [ tran, vel, tag ] : registry.CView< CTransform, CVelocity, CPlayerTag >() )
+   // Integration System
    {
-      // apply gravity (not exceeding terminal velocity) and integrate position
-      vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
-      tran.position += vel.velocity * delta;
-
-      float edgeHeight   = ( std::max )( { world.GetHeightAtPos( tran.position.x + 0.5f, tran.position.z ),
-                                           world.GetHeightAtPos( tran.position.x - 0.5f, tran.position.z ),
-                                           world.GetHeightAtPos( tran.position.x, tran.position.z + 0.5f ),
-                                           world.GetHeightAtPos( tran.position.x, tran.position.z - 0.5f ) } );
-      float cornerHeight = ( std::max )( { world.GetHeightAtPos( tran.position.x + 0.25f, tran.position.z + 0.25f ),
-                                           world.GetHeightAtPos( tran.position.x - 0.25f, tran.position.z + 0.25f ),
-                                           world.GetHeightAtPos( tran.position.x + 0.25f, tran.position.z - 0.25f ),
-                                           world.GetHeightAtPos( tran.position.x - 0.25f, tran.position.z - 0.25f ) } );
-      float groundHeight = ( std::max )( edgeHeight, cornerHeight );
-      bool  inAir        = ( tran.position.y ) > groundHeight + 0.01f;
-      if( !inAir )
+      //PROFILE_SCOPE( "PlayerPhysicsSystem::Integration" );
+      //for( auto [ pTran, pVel, pTag ] : registry.CView< CTransform, CVelocity, CPlayerTag >() )
+      for( auto [ pTran, pVel ] : registry.CView< CTransform, CVelocity >() )
       {
-         tran.position.y = groundHeight;
-         vel.velocity.y  = 0.0f;
+         // Apply gravity
+         pVel.velocity.y = ( std::max )( pVel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
+
+         // Integrate position
+         pTran.position += pVel.velocity * delta;
       }
    }
+
+   // Collision System
+   {
+      //PROFILE_SCOPE( "PlayerPhysicsSystem::Collision" );
+      auto aabbOverlap = []( const glm::vec3& aPos, const CAABB& a, const glm::vec3& bPos, const CAABB& b ) -> bool
+      {
+         return std::abs( aPos.x - bPos.x ) <= ( a.halfExtents.x + b.halfExtents.x ) && std::abs( aPos.y - bPos.y ) <= ( a.halfExtents.y + b.halfExtents.y ) &&
+                std::abs( aPos.z - bPos.z ) <= ( a.halfExtents.z + b.halfExtents.z );
+      };
+
+      for( auto [ cTran1, cVel1, cBox1 ] : registry.CView< CTransform, CVelocity, CAABB >() )
+      {
+         for( auto [ cTran2, cBox2 ] : registry.CView< CTransform, CAABB >() )
+         {
+            if( &cBox1 == &cBox2 )
+               continue;
+
+            if( !aabbOverlap( cTran1.position, cBox1, cTran2.position, cBox2 ) )
+               continue;
+
+            float bottom1 = cTran1.position.y - cBox1.halfExtents.y;
+            float top2    = cTran2.position.y + cBox2.halfExtents.y;
+            if( cVel1.velocity.y <= 0.0f && bottom1 < top2 )
+            {
+               cTran1.position.y = top2 + cBox1.halfExtents.y;
+               cVel1.velocity.y  = 0.0f;
+               break;
+            }
+         }
+      }
+   }
+
+   // Dynamic vs Static
+   //    Player and other moving objects collide against world blocks.
+   // Dynamic vs Dynamic
+   //    Player vs moving platforms, other players, etc.
 }
 
 void CameraSystem( Entity::Registry& registry, Window& window )
@@ -188,6 +215,38 @@ void RenderSystem( Entity::Registry& registry, const glm::vec3& camPosition, con
       //glDrawElements( GL_TRIANGLES, pMesh->indexCount, GL_UNSIGNED_INT, 0 );
    }
 
+   // Render CAABB bounds for debugging
+   for( auto [ tran, box ] : registry.CView< CTransform, CAABB >() )
+   {
+      glm::vec3 min = tran.position - box.halfExtents;
+      glm::vec3 max = tran.position + box.halfExtents;
+      glm::vec3 vertices[ 8 ] = {
+         { min.x, min.y, min.z }, { max.x, min.y, min.z }, { max.x, max.y, min.z }, { min.x, max.y, min.z },
+         { min.x, min.y, max.z }, { max.x, min.y, max.z }, { max.x, max.y, max.z }, { min.x, max.y, max.z }
+      };
+      unsigned int indices[ 24 ] = {
+         0, 1, 1, 2, 2, 3, 3, 0,
+         4, 5, 5, 6, 6, 7, 7, 4,
+         0, 4, 1, 5, 2, 6, 3, 7
+      };
+      unsigned int vao, vbo, ebo;
+      glGenVertexArrays( 1, &vao );
+      glGenBuffers( 1, &vbo );
+      glGenBuffers( 1, &ebo );
+      glBindVertexArray( vao );
+      glBindBuffer( GL_ARRAY_BUFFER, vbo );
+      glBufferData( GL_ARRAY_BUFFER, sizeof( vertices ), vertices, GL_STATIC_DRAW );
+      glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, ebo );
+      glBufferData( GL_ELEMENT_ARRAY_BUFFER, sizeof( indices ), indices, GL_STATIC_DRAW );
+      glEnableVertexAttribArray( 0 );
+      glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void* )0 );
+      pShader->SetUniform( "u_color", glm::vec3( 1.0f, 0.0f, 0.0f ) ); // red color for AABB
+      glDrawElements( GL_LINES, 24, GL_UNSIGNED_INT, 0 );
+      glDeleteBuffers( 1, &vbo );
+      glDeleteBuffers( 1, &ebo );
+      glDeleteVertexArrays( 1, &vao );
+   }
+
    pShader->Unbind();
 }
 
@@ -206,6 +265,7 @@ void Application::Run()
    registry.Add< CVelocity >( player, 0.0f, 0.0f, 0.0f );
    registry.Add< CInput >( player );
    registry.Add< CPlayerTag >( player );
+   registry.Add< CAABB >( player, glm::vec3( 0.3f, PLAYER_HEIGHT * 0.5f, 0.3f ) ); // half extents
 
    // Create camera entity
    Entity::Entity camera = registry.Create();

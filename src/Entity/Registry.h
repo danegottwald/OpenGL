@@ -206,8 +206,7 @@ public:
       auto& sparse   = pStorage->m_entityToIndex;
       if( entity < sparse.size() )
       {
-         auto dense = sparse[ entity ];
-         if( dense != Storage< TType >::npos )
+         if( auto dense = sparse[ entity ]; dense != Storage< TType >::npos )
          {
             pStorage->m_types[ dense ] = TType( std::forward< TArgs >( args )... );
             return pStorage->m_types[ dense ];
@@ -429,8 +428,6 @@ public:
       FORCE_INLINE auto operator*() const noexcept
       {
          Entity entity = ( *pEntities )[ index ];
-         auto   getRef = [ & ]( auto* pStorage ) -> decltype( auto ) { return pStorage->m_types[ pStorage->m_entityToIndex[ entity ] ]; };
-
          if constexpr( sizeof...( TOthers ) == 0 ) // fast path for single type iteration
          {
             if constexpr( TViewType == ViewType::Entity )
@@ -442,6 +439,7 @@ public:
          }
 
          // General path for multiple types
+         auto getRef = [ & ]( auto* pStorage ) -> decltype( auto ) { return pStorage->m_types[ pStorage->m_entityToIndex[ entity ] ]; };
          if constexpr( TViewType == ViewType::Entity )
             return entity;
          else if constexpr( TViewType == ViewType::Components )

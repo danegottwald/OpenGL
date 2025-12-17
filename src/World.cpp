@@ -6,6 +6,7 @@
 #include <Renderer/Mesh.h>
 
 #include <Entity/Registry.h>
+#include <Entity/Components/AABB.h>
 #include <Entity/Components/Transform.h>
 #include <Entity/Components/Velocity.h>
 #include <Entity/Components/Input.h>
@@ -246,69 +247,48 @@ private:
    };
 };
 
-constexpr uint8_t  CHUNK_SIZE       = 16;
-constexpr uint16_t WORLD_CHUNK_SIZE = 32; //64;
-constexpr uint16_t WORLD_SIZE       = CHUNK_SIZE * WORLD_CHUNK_SIZE / 2;
+constexpr float    BLOCK_POS_Y = 64.0f; // constant height for all blocks
+constexpr uint16_t CHUNK_SIZE = 16;
+constexpr uint16_t CHUNK_HEIGHT = 1; // if your chunks are only 1 block tall
+constexpr uint16_t WORLD_SIZE = 6; // number of chunks along one axis (world is WORLD_SIZE x WORLD_SIZE chunks)
 
 void World::Setup( Entity::Registry& registry )
 {
    PROFILE_SCOPE( "World::Setup" );
    m_entityHandles.clear();
 
-   std::random_device                       rd;          // Non-deterministic seed generator
-   std::mt19937                             gen( rd() ); // Mersenne Twister PRNG
-   std::uniform_int_distribution< int32_t > dist;
-   m_mapNoise.SetSeed( 5 );                                     // Set the seed for reproducibility
-   m_mapNoise.SetNoiseType( FastNoiseLite::NoiseType_Perlin );  // Use Perlin noise for smooth terrain
-   m_mapNoise.SetFrequency( 0.005f );                           // Lower frequency = larger features (mountains, valleys)
-   m_mapNoise.SetFractalType( FastNoiseLite::FractalType_FBm ); // Use fractal Brownian motion for more realistic terrain
-   m_mapNoise.SetFractalOctaves( 5 );                           // Controls the detail level (higher = more detail)
-
-   for( int chunkX = 0; chunkX < WORLD_CHUNK_SIZE; ++chunkX )
+   for( int chunkX = 0; chunkX < WORLD_SIZE; chunkX++ )
    {
-      for( int chunkZ = 0; chunkZ < WORLD_CHUNK_SIZE; ++chunkZ )
+      for( int chunkY = 0; chunkY < WORLD_SIZE; chunkY++ )
       {
-         const glm::vec3 chunkStartPos( -WORLD_SIZE + chunkX * CHUNK_SIZE, 0.0f, -WORLD_SIZE + chunkZ * CHUNK_SIZE );
-
          std::shared_ptr< ChunkMesh > psChunkMesh = std::make_shared< ChunkMesh >();
-         for( float x = chunkStartPos.x; x < chunkStartPos.x + CHUNK_SIZE; x++ )
+
+         int chunkPosX = chunkX * CHUNK_SIZE, chunkPosZ = chunkY * CHUNK_SIZE;
+         for( int x = 0; x < CHUNK_SIZE; x++ )
          {
-            for( float z = chunkStartPos.z; z < chunkStartPos.z + CHUNK_SIZE; z++ )
+            for( int z = 0; z < CHUNK_SIZE; z++ )
             {
-               auto getNoise = [ &noise = m_mapNoise ]( float x, float z ) -> float { return noise.GetNoise( x, z ) + 1; };
-
-               const int       height = static_cast< int >( getNoise( x, z ) * 127.5f ) - 64;
-               const glm::vec3 cubePos( x, height, z );
-               psChunkMesh->AddFace( cubePos, BlockFace::Up );
-               //psChunkMesh->AddFace( cubePos, BlockFace::Down );
-
-               // Replace the repeated face-filling blocks with a lambda to reduce duplication
-               auto fillFace = [ & ]( int adjHeight, int height, BlockFace face )
-               {
-                  if( height > adjHeight ) // Add faces if not adjacent to another block
-                  {
-                     psChunkMesh->AddFace( cubePos, face );
-                     for( int h = adjHeight + 1; h < height; h++ )
-                        psChunkMesh->AddFace( glm::vec3( x, h, z ), face );
-                  }
-               };
-
-               float adjHeightNorth = ( getNoise( x, z + 1 ) * 127.5f ) - 64;
-               float adjHeightSouth = ( getNoise( x, z - 1 ) * 127.5f ) - 64;
-               float adjHeightEast  = ( getNoise( x + 1, z ) * 127.5f ) - 64;
-               float adjHeightWest  = ( getNoise( x - 1, z ) * 127.5f ) - 64;
-               fillFace( adjHeightNorth, height, BlockFace::North );
-               fillFace( adjHeightSouth, height, BlockFace::South );
-               fillFace( adjHeightEast, height, BlockFace::East );
-               fillFace( adjHeightWest, height, BlockFace::West );
+               glm::vec3 blockPos( static_cast< float >( chunkPosX + x ), BLOCK_POS_Y, static_cast< float >( chunkPosZ + z ) );
+               psChunkMesh->AddCube( blockPos );
             }
          }
 
+         //psChunkMesh->SetColor( glm::vec3( 34.0f / 255.0f, 139.0f / 255.0f, 34.0f / 255.0f ) ); // forest green
          psChunkMesh->SetColor( glm::vec3( std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f, std::rand() % 256 / 255.0f ) );
          psChunkMesh->Finalize();
 
          std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
-         registry.Add< CTransform >( psChunk->Get(), chunkStartPos.x, 0.0f, chunkStartPos.z );
+
+         float halfX = CHUNK_SIZE * 0.5f;
+         float halfZ = CHUNK_SIZE * 0.5f;
+         float halfY = CHUNK_HEIGHT * 0.5f;
+
+         float chunkWorldX = chunkPosX + halfX - 0.5f;
+         float chunkWorldZ = chunkPosZ + halfZ - 0.5f;
+         float chunkWorldY = BLOCK_POS_Y;
+
+         registry.Add< CTransform >( psChunk->Get(), chunkWorldX, chunkWorldY, chunkWorldZ );
+         registry.Add< CAABB >( psChunk->Get(), CAABB { glm::vec3( halfX, halfY, halfZ ) } );
          registry.Add< CMesh >( psChunk->Get(), psChunkMesh );
          m_entityHandles.push_back( psChunk );
       }
@@ -317,6 +297,8 @@ void World::Setup( Entity::Registry& registry )
    std::shared_ptr< Entity::EntityHandle > psSun = registry.CreateWithHandle();
    registry.Add< CTransform >( psSun->Get(), 0.0f, 76.0f, 0.0f );
    registry.Add< CMesh >( psSun->Get(), std::make_shared< SphereMesh >() );
+   registry.Add< CVelocity >( psSun->Get(), glm::vec3( 1.0f, 0.0f, 1.0f ) );
+   registry.Add< CAABB >( psSun->Get(), CAABB { glm::vec3( 0.5f ) } );
 
    m_entityHandles.push_back( psSun );
 }
