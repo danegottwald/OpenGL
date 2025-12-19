@@ -1,7 +1,9 @@
 {
+  "name": "opengl",
+  "version": "0.1",
+  "builtin-baseline": "94a50e8c1357d423840e22451e122f56d62b5c20",
   "dependencies": [
     "glad",
-    "glew",
     "glfw3",
     "glm",
     {

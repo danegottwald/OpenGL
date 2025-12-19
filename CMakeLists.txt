@@ -8,7 +8,6 @@ set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /ENTRY:mai
 
 # Find external dependencies using vcpkg
 find_package(OpenGL REQUIRED)
-find_package(GLEW REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
@@ -37,7 +36,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # Link external libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
    OpenGL::GL
-   GLEW::GLEW
    glfw
    glm::glm-header-only
    glad::glad
