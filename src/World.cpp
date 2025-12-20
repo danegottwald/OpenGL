@@ -354,14 +354,11 @@ void World::UpdateActiveChunks( Entity::Registry& registry, const glm::vec3& pla
    if( newChunk == m_playerChunk )
       return; // still in the same chunk
 
-   
-
    PROFILE_SCOPE( "World::UpdateActiveChunks" );
    m_playerChunk = newChunk;
 
    constexpr int meshRenderDistance   = 6; // chunks with meshes
    constexpr int meshRenderDistanceSq = meshRenderDistance * meshRenderDistance;
-
 
    // Determine chunks that should have meshes (larger radius)
    std::vector< glm::ivec2 > meshChunks;
@@ -448,7 +445,10 @@ void World::UpdateActiveChunks( Entity::Registry& registry, const glm::vec3& pla
    // Destroy any existing block entities, then recreate them for the 3x3 region
    for( Entity::Entity e : m_activeBlocks )
       registry.Destroy( e );
+   for( Block& block : m_activeBlocks2 )
+      registry.Destroy( block.entity );
    m_activeBlocks.clear();
+   m_activeBlocks2.clear();
 
    for( const glm::ivec2& cPos : blockChunks )
    {
@@ -467,6 +467,7 @@ void World::UpdateActiveChunks( Entity::Registry& registry, const glm::vec3& pla
             registry.Add< CTransform >( blockEntity, posX, topY, posZ );
             registry.Add< CAABB >( blockEntity, CAABB { glm::vec3( 0.5f ) } );
             m_activeBlocks.push_back( blockEntity );
+            m_activeBlocks2.push_back( { blockEntity, glm::ivec3( static_cast<int>(posX), static_cast<int>(topY), static_cast<int>(posZ) ) } );
          }
       }
    }

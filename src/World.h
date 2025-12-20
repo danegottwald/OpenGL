@@ -46,9 +46,24 @@ public:
       glm::ivec3     position;
    };
    std::vector< Entity::Entity > m_activeBlocks;
+   std::vector< Block > m_activeBlocks2;
 
    void CreateChunkMesh( Entity::Registry& registry, _Inout_ std::shared_ptr< ChunkMesh >& mesh, const glm::ivec2& chunkPos, FastNoiseLite& noise );
    void UpdateActiveChunks( Entity::Registry& registry, const glm::vec3& playerPos );
+
+   struct Chunk2
+   {
+      // Holds the block data
+      enum class BlockID
+      {
+         Air       = 0,
+         Dirt      = 1,
+         Grass     = 2,
+         Stone     = 3,
+         // Add more block types as needed
+      };
+      BlockID blocks[ CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE ];
+   };
 
 private:
    // All relevant world data
