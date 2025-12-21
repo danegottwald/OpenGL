@@ -213,7 +213,6 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
    }
 
    // ---- Optional: entity-vs-entity stays after world, but note it can fight world resolution ----
-   // Keep your existing entity collision if you want, but it is simplistic and can cause odd pushes.
 }
 
 
