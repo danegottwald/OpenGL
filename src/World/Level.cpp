@@ -76,7 +76,8 @@ const glm::vec2 kFaceUVs[ 4 ] = {
 // ----------------------------------------------------------------
 // Chunk
 // ----------------------------------------------------------------
-Chunk::Chunk( int cx, int cy, int cz ) :
+Chunk::Chunk( Level& level, int cx, int cy, int cz ) :
+   m_level( level ),
    m_chunkX( cx ),
    m_chunkY( cy ),
    m_chunkZ( cz ),
@@ -151,9 +152,10 @@ void Chunk::GenerateMesh()
                for( int i = 0; i < 4; ++i )
                {
                   ChunkVertex v {};
-                  v.position = basePos + kFaceVerts[ dir ][ i ];
-                  v.normal   = d.normal;
-                  v.uv       = kFaceUVs[ i ];
+                  v.position     = basePos + kFaceVerts[ dir ][ i ];
+                  v.normal       = d.normal;
+                  v.uv           = kFaceUVs[ i ];
+                  v.textureIndex = id - 1;
                   m_mesh.vertices.push_back( v );
                }
 
@@ -218,6 +220,48 @@ void Level::SetBlock( int wx, int wy, int wz, BlockId id )
 }
 
 
+void Level::Explode( int wx, int wy, int wz, uint8_t radius )
+{
+   float radiusSq = radius * radius;
+   int   minX     = static_cast< int >( std::floor( wx - radius ) );
+   int   maxX     = static_cast< int >( std::ceil( wx + radius ) );
+   int   minY     = static_cast< int >( std::floor( wy - radius ) );
+   int   maxY     = static_cast< int >( std::ceil( wy + radius ) );
+   int   minZ     = static_cast< int >( std::floor( wz - radius ) );
+   int   maxZ     = static_cast< int >( std::ceil( wz + radius ) );
+
+   std::unordered_set< Chunk* > affectedChunks;
+   for( int x = minX; x <= maxX; ++x )
+   {
+      for( int y = minY; y <= maxY; ++y )
+      {
+         for( int z = minZ; z <= maxZ; ++z )
+         {
+            float dx = x + 0.5f - wx;
+            float dy = y + 0.5f - wy;
+            float dz = z + 0.5f - wz;
+            if( dx * dx + dy * dy + dz * dz > radiusSq )
+               continue;
+
+            ChunkCoord cc;
+            glm::ivec3 local;
+            WorldToChunk( x, y, z, cc, local );
+
+            Chunk& chunk = EnsureChunk( cc );
+            chunk.SetBlock( local.x, local.y, local.z, BLOCK_AIR );
+            affectedChunks.insert( &chunk );
+         }
+      }
+   }
+
+   for( Chunk* pChunk : affectedChunks )
+   {
+      pChunk->GenerateMesh();
+      SyncChunkRender( { pChunk->ChunkX(), pChunk->ChunkZ() } );
+   }
+}
+
+
 void Level::WorldToChunk( int wx, int wy, int wz, ChunkCoord& outChunk, glm::ivec3& outLocal ) const
 {
    // floor division for negative values
@@ -246,7 +290,7 @@ Chunk& Level::EnsureChunk( const ChunkCoord& cc )
    if( auto it = m_chunks.find( cc ); it != m_chunks.end() )
       return *( it->second );
 
-   std::unique_ptr< Chunk > pChunk = std::make_unique< Chunk >( cc.x, 0, cc.z );
+   std::unique_ptr< Chunk > pChunk = std::make_unique< Chunk >( *this, cc.x, 0, cc.z );
    GenerateChunkData( *pChunk );
    pChunk->GenerateMesh();
 
@@ -262,16 +306,42 @@ void Level::UpdateVisibleRegion( const glm::vec3& playerPos, int viewRadius )
    // Calculate the chunk coordinates for the player's position
    ChunkCoord playerChunk;
    glm::ivec3 playerLocal;
-   WorldToChunk( playerPos.x, playerPos.y, playerPos.z, playerChunk, playerLocal );
+   WorldToChunk( static_cast< int >( playerPos.x ), static_cast< int >( playerPos.y ), static_cast< int >( playerPos.z ), playerChunk, playerLocal );
 
-   // Update the visible chunks based on the player's position and view radius
-   for( int x = -viewRadius; x <= viewRadius; ++x )
+   // Build set of desired chunk coordinates in view
+   std::unordered_set< ChunkCoord, ChunkCoordHash > desiredChunks;
+   desiredChunks.reserve( static_cast< std::size_t >( ( viewRadius * 2 + 1 ) * ( viewRadius * 2 + 1 ) ) );
+
+   for( int dx = -viewRadius; dx <= viewRadius; ++dx )
    {
-      for( int y = -viewRadius; y <= viewRadius; ++y )
+      for( int dz = -viewRadius; dz <= viewRadius; ++dz )
       {
-         for( int z = -viewRadius; z <= viewRadius; ++z )
-            EnsureChunk( ChunkCoord { playerChunk.x + x, playerChunk.z + z } );
+         const ChunkCoord cc { playerChunk.x + dx, playerChunk.z + dz };
+         desiredChunks.insert( cc );
+         EnsureChunk( cc );
       }
+   }
+
+   // Remove chunks that are now outside of the view radius
+   for( auto it = m_chunks.begin(); it != m_chunks.end(); )
+   {
+      if( !desiredChunks.contains( it->first ) )
+      {
+         // Erase render data first (if any)
+         m_chunkRenders.erase( it->first );
+         it = m_chunks.erase( it );
+      }
+      else
+         ++it;
+   }
+
+   // Also prune any stray render entries that no longer have a backing chunk
+   for( auto it = m_chunkRenders.begin(); it != m_chunkRenders.end(); )
+   {
+      if( !m_chunks.contains( it->first ) )
+         it = m_chunkRenders.erase( it );
+      else
+         ++it;
    }
 }
 

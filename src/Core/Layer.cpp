@@ -22,7 +22,7 @@ void constructor()
    glCreateBuffers( 1, &m_VBID );
    glBindBuffer( GL_ARRAY_BUFFER, m_VBID );
 
-   m_Shader.reset( new Shader() );
+   m_Shader.reset( new Shader( Shader::FILE, "basic_vert.glsl", "basic_frag.glsl" ) );
    m_Texture.reset( new Texture( "cobble.png" ) );
 }
 

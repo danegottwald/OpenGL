@@ -26,6 +26,8 @@ struct ChunkVertex
    glm::vec3 normal;
    glm::vec2 uv;
    // add color/light/ao if needed
+
+   uint16_t textureIndex;
 };
 
 struct ChunkMesh
@@ -45,7 +47,7 @@ struct ChunkMesh
 class Chunk
 {
 public:
-   Chunk( int cx, int cy, int cz );
+   Chunk( class Level& level, int cx, int cy, int cz );
 
    BlockId GetBlock( int x, int y, int z ) const;
    void    SetBlock( int x, int y, int z, BlockId id );
@@ -62,6 +64,7 @@ private:
    bool       InBounds( int x, int y, int z ) const;
    static int ToIndex( int x, int y, int z );
 
+   Level&                 m_level;
    int                    m_chunkX, m_chunkY, m_chunkZ;
    std::vector< BlockId > m_blocks;
    bool                   m_dirty = false; // needs mesh rebuild, etc.
@@ -120,15 +123,21 @@ struct ChunkRender
       glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, ebo );
       glBufferData( GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * sizeof( uint32_t ), mesh.indices.data(), GL_STATIC_DRAW );
 
-      // layout(location = 0) vec3 position
-      glEnableVertexAttribArray( 0 );
-      glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, position ) );
-      // layout(location = 1) vec3 normal
-      glEnableVertexAttribArray( 1 );
-      glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, normal ) );
-      // layout(location = 2) vec2 uv
-      glEnableVertexAttribArray( 2 );
-      glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, uv ) );
+      // Setup vertex attributes
+      {
+         // layout(location = 0) vec3 position
+         glEnableVertexAttribArray( 0 );
+         glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, position ) );
+         // layout(location = 1) vec3 normal
+         glEnableVertexAttribArray( 1 );
+         glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, normal ) );
+         // layout(location = 2) vec2 uv
+         glEnableVertexAttribArray( 2 );
+         glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, uv ) );
+         // layout(location = 3) uint16_t textureIndex
+         glEnableVertexAttribArray( 3 );
+         glVertexAttribPointer( 3, 1, GL_UNSIGNED_SHORT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, textureIndex ) );
+      }
 
       glBindVertexArray( 0 );
 
@@ -159,6 +168,8 @@ public:
 
    BlockId GetBlock( int wx, int wy, int wz ) const;
    void    SetBlock( int wx, int wy, int wz, BlockId id );
+
+   void Explode( int wx, int wy, int wz, uint8_t radius );
 
    // Call during update to load/unload chunks around player
    void UpdateVisibleRegion( const glm::vec3& playerPos, int viewRadius );

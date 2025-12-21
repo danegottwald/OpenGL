@@ -1,61 +1,72 @@
 #include "Shader.h"
 
-// Create a attach the Shaders within the specified file
-Shader::Shader()
-{
-   // Parse the Shader file into separate vertex and fragment shaders
-   m_Source = ParseShader( "basic_vert.glsl", "basic_frag.glsl" );
 
-   // Returns an ID to reference the current Shader program
-   m_RendererID = CreateShader( m_Source.VertexSource, m_Source.FragmentSource );
-}
+// ----------------------------------------------------------------
+// Shader
+// ----------------------------------------------------------------
+Shader::Shader( InitType type, std::string_view vertex, std::string_view fragment ) :
+   m_source( GetShaderProgramSource( type, vertex, fragment ) ),
+   m_rendererId( CreateShader() )
+{}
 
 // Frees memory and restores the name taken by m_RendererID
 Shader::~Shader()
 {
-   glDeleteProgram( m_RendererID );
+   glDeleteProgram( m_rendererId );
 }
 
-// Sets the Shader program as part of the current rendering state
+
 void Shader::Bind() const
 {
-   glUseProgram( m_RendererID );
+   glUseProgram( m_rendererId ); // Set the current active shader program
 }
 
-// Removes the Shader program from part of the rendering state
+
 void Shader::Unbind() const
 {
-   glUseProgram( 0 );
+   glUseProgram( 0 ); // Unbinds the shader program currently active
 }
 
-// Parses the specified file into separate Shader source code
-// Returns a struct that contains the source codes
-Shader::ShaderProgramSource Shader::ParseShader( const std::string& vertSrc, const std::string& fragSrc )
+
+Shader::ShaderProgramSource Shader::GetShaderProgramSource( InitType type, std::string_view vertex, std::string_view fragment )
 {
-   std::string       line;
-   std::stringstream ss[ 2 ];
+   switch( type )
+   {
+      case InitType::SOURCE: return { std::string( vertex ), std::string( fragment ) };
 
-   std::ifstream vertFileStream( "./res/shaders/" + vertSrc );
-   while( getline( vertFileStream, line ) )
-      ss[ 0 ] << line << '\n';
+      case InitType::FILE:
+      {
+         auto readFileFn = []( const std::string& path ) -> std::string
+         {
+            std::ifstream file( std::string( path ), std::ios::in | std::ios::binary );
+            if( !file )
+               throw std::runtime_error( "Failed to open shader file: " + std::string( path ) );
 
-   std::ifstream fragFileStream( "./res/shaders/" + fragSrc );
-   while( getline( fragFileStream, line ) )
-      ss[ 1 ] << line << '\n';
+            std::string content;
+            file.seekg( 0, std::ios::end );
+            content.resize( file.tellg() );
+            file.seekg( 0, std::ios::beg );
+            file.read( &content[ 0 ], content.size() );
+            return content;
+         };
+         return { readFileFn( std::format( "./res/shaders/{}", vertex ) ), readFileFn( std::format( "./res/shaders/{}", fragment ) ) };
+      }
 
-   return { ss[ 0 ].str(), ss[ 1 ].str() };
+      default: throw std::runtime_error( "Shader::GetShaderProgramSource - Unhandled InitType" );
+   }
 }
+
 
 // Creates a Shader program, attaches a vertex and fragment shader, then links
 // and validates the shader. Returns the Shader program's id
-unsigned int Shader::CreateShader( const std::string& vertexShader, const std::string& fragmentShader )
+unsigned int Shader::CreateShader()
 {
    // Creates an empty program object for which shader objects can be attached
    unsigned int programID = glCreateProgram();
 
    // Creates shader objects for the Vertex and Fragment shaders
-   unsigned int vs = CompileShader( GL_VERTEX_SHADER, vertexShader );
-   unsigned int fs = CompileShader( GL_FRAGMENT_SHADER, fragmentShader );
+   unsigned int vs = CompileShader( GL_VERTEX_SHADER, m_source.vertex );
+   unsigned int fs = CompileShader( GL_FRAGMENT_SHADER, m_source.fragment );
 
    // Attaches the shader objects to the program object
    glAttachShader( programID, vs );
@@ -105,12 +116,13 @@ unsigned int Shader::CreateShader( const std::string& vertexShader, const std::s
    return programID;
 }
 
+
 // Compiles the Shader's source code
 // Returns a Shader's id for attaching to a Shader program
-unsigned int Shader::CompileShader( unsigned int type, const std::string& source )
+unsigned int Shader::CompileShader( unsigned int type, std::string_view source )
 {
    // Set the shader's (id) source code and compile it
-   const char*  src      = source.c_str();
+   const char*  src      = source.data();
    unsigned int shaderID = glCreateShader( type );
    glShaderSource( shaderID, 1, &src, nullptr );
    glCompileShader( shaderID );
@@ -133,21 +145,20 @@ unsigned int Shader::CompileShader( unsigned int type, const std::string& source
    return shaderID;
 }
 
-/* Uniform Related Functions */
 
 // Returns the location of a uniform value within the Shader
 int Shader::GetUniformLocation( const std::string_view& name )
 {
    // Search the cache to check if the uniform variable has been hit before
-   if( m_UniformLocationCache.find( name ) != m_UniformLocationCache.end() )
-      return m_UniformLocationCache[ name ];
+   if( m_uniformLocationCache.find( name ) != m_uniformLocationCache.end() )
+      return m_uniformLocationCache[ name ];
 
    // Find the location of the uniform variable
-   int location = glGetUniformLocation( m_RendererID, name.data() );
+   int location = glGetUniformLocation( m_rendererId, name.data() );
    if( location == -1 )
       std::println( std::cerr, "Warning: uniform '{}' doesn't exist!", name );
 
    // Cache variable for future references
-   m_UniformLocationCache[ name ] = location;
+   m_uniformLocationCache[ name ] = location;
    return location;
 }
