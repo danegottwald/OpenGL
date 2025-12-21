@@ -131,20 +131,15 @@ void Chunk::GenerateMesh()
                continue;
 
             const glm::vec3 basePos( static_cast< float >( x ), static_cast< float >( y ), static_cast< float >( z ) );
-
             for( int dir = 0; dir < 6; ++dir )
             {
-               const auto& d  = kDirections[ dir ];
-               const int   nx = x + d.dx;
-               const int   ny = y + d.dy;
-               const int   nz = z + d.dz;
+               const Direction& d  = kDirections[ dir ];
+               const int        nx = x + d.dx;
+               const int        ny = y + d.dy;
+               const int        nz = z + d.dz;
 
                const bool neighborInBounds = nx >= 0 && nx < CHUNK_SIZE_X && ny >= 0 && ny < CHUNK_SIZE_Y && nz >= 0 && nz < CHUNK_SIZE_Z;
-
-               BlockId neighborId = BLOCK_AIR;
-               if( neighborInBounds )
-                  neighborId = GetBlock( nx, ny, nz );
-
+               BlockId    neighborId       = neighborInBounds ? GetBlock( nx, ny, nz ) : BLOCK_AIR;
                if( neighborId != BLOCK_AIR )
                   continue; // face hidden
 

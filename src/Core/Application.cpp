@@ -33,7 +33,7 @@ constexpr float PLAYER_EYE_HEIGHT = 1.62f;
 constexpr float GROUND_MAXSPEED   = 4.3f;
 constexpr float AIR_MAXSPEED      = 10.0f;
 constexpr float AIR_CONTROL       = 0.3f;
-constexpr float SPRINT_MODIFIER   = 1.5f;
+constexpr float SPRINT_MODIFIER   = 1.3f;
 
 void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
@@ -159,7 +159,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
                {
                   if( isSolid( x, y, z ) )
                   {
-                     hitX = (std::min)( hitX, x );
+                     hitX = ( std::min )( hitX, x );
                      break;
                   }
                }
@@ -183,7 +183,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
                {
                   if( isSolid( x, y, z ) )
                   {
-                     hitX = (std::max)( hitX, x );
+                     hitX = ( std::max )( hitX, x );
                      break;
                   }
                }
@@ -219,7 +219,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
                {
                   if( isSolid( x, y, z ) )
                   {
-                     hitY = (std::min)( hitY, y );
+                     hitY = ( std::min )( hitY, y );
                      break;
                   }
                }
@@ -227,8 +227,8 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
 
          if( hitY != INT_MAX )
          {
-            pos.y = ( float )hitY - phys.halfExtents.y - SKIN;
-            vel.y = 0.0f;
+            pos.y          = ( float )hitY - phys.halfExtents.y - SKIN;
+            vel.y          = 0.0f;
             phys.fOnGround = true;
          }
       }
@@ -242,7 +242,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
                {
                   if( isSolid( x, y, z ) )
                   {
-                     hitY = (std::max)( hitY, y );
+                     hitY = ( std::max )( hitY, y );
                      break;
                   }
                }
@@ -250,8 +250,8 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
 
          if( hitY != INT_MIN )
          {
-            pos.y = ( float )( hitY + 1 ) + phys.halfExtents.y + SKIN;
-            vel.y = 0.0f;
+            pos.y          = ( float )( hitY + 1 ) + phys.halfExtents.y + SKIN;
+            vel.y          = 0.0f;
             phys.fOnGround = true;
          }
       }
@@ -278,7 +278,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
                {
                   if( isSolid( x, y, z ) )
                   {
-                     hitZ = (std::min)( hitZ, z );
+                     hitZ = ( std::min )( hitZ, z );
                      break;
                   }
                }
@@ -300,7 +300,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
                {
                   if( isSolid( x, y, z ) )
                   {
-                     hitZ = (std::max)( hitZ, z );
+                     hitZ = ( std::max )( hitZ, z );
                      break;
                   }
                }
@@ -314,32 +314,24 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
       }
    };
 
-   // ---- Single-pass integration + world collision (NO double movement) ----
    for( auto [ tran, vel, phys ] : registry.CView< CTransform, CVelocity, CPhysics >() )
    {
-      // Preserve grounded state if we're already resting on something.
-      // This prevents a 1-frame "airborne" when step.y == 0 and thus no Y collision test runs.
+      // Determine if entity is on the ground and only apply gravity if not.
       phys.fOnGround = computeGrounded( tran.position, phys.halfExtents );
-
-       // Gravity (keep your sign conventions)
-       if( !phys.fOnGround)
+      if( !phys.fOnGround )
          vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
 
-       // Desired movement this frame
-       const glm::vec3 step = vel.velocity * delta;
+      // Per-axis movement + collision
+      glm::vec3       pos  = tran.position;
+      const glm::vec3 step = vel.velocity * delta;
+      moveAndCollideY( pos, vel.velocity, phys, step.y );
+      moveAndCollideX( pos, vel.velocity, phys.halfExtents, step.x );
+      moveAndCollideZ( pos, vel.velocity, phys.halfExtents, step.z );
+      tran.position = pos;
+   }
 
-       glm::vec3 pos = tran.position;
-
-       // Axis-separated move & clamp
-       moveAndCollideY( pos, vel.velocity, phys, step.y );
-       moveAndCollideX( pos, vel.velocity, phys.halfExtents, step.x );
-       moveAndCollideZ( pos, vel.velocity, phys.halfExtents, step.z );
-
-       tran.position = pos;
-    }
-
-    // ---- Optional: entity-vs-entity stays after world, but note it can fight world resolution ----
-    // Keep your existing entity collision if you want, but it is simplistic and can cause odd pushes.
+   // ---- Optional: entity-vs-entity stays after world, but note it can fight world resolution ----
+   // Keep your existing entity collision if you want, but it is simplistic and can cause odd pushes.
 }
 
 
@@ -413,8 +405,10 @@ static void InitBlockTextureArray()
    int atlasHeight = 0;
 
    // Load all images
+   //stbi_set_flip_vertically_on_load( true );
    for( const auto& def : texDefs )
    {
+
       ImageData img;
       int       bpp;
       img.pixels = stbi_load( def.path, &img.width, &img.height, &bpp, 4 );
@@ -842,10 +836,12 @@ void Application::Run()
          std::cout << "Raycast hit at position: " << result->position.x << ", " << result->position.y << ", " << result->position.z << "\n";
          if( e.GetMouseButton() == Input::ButtonLeft )
          {
-            level.SetBlock( static_cast< int >( result->position.x ),
-                            static_cast< int >( result->position.y ),
-                            static_cast< int >( result->position.z ),
-                            BLOCK_AIR );
+            glm::vec3 placePos = result->position + glm::vec3( result->normal );
+            level.SetBlock( static_cast< int >( placePos.x ), static_cast< int >( placePos.y ), static_cast< int >( placePos.z ), BLOCK_STONE );
+            //level.SetBlock( static_cast< int >( result->position.x ),
+            //                static_cast< int >( result->position.y ),
+            //                static_cast< int >( result->position.z ),
+            //                BLOCK_AIR );
          }
          else
          {

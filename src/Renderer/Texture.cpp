@@ -211,6 +211,7 @@ bool TextureAtlas::BuildFromDirectory( const std::string& directory, int padding
    std::vector< Image > images;
 
    // Load all .pngs
+   stbi_set_flip_vertically_on_load( false );
    for( const auto& entry : fs::directory_iterator( directory ) )
    {
       if( !entry.is_regular_file() )
@@ -237,6 +238,7 @@ bool TextureAtlas::BuildFromDirectory( const std::string& directory, int padding
 
       images.push_back( std::move( img ) );
    }
+   stbi_set_flip_vertically_on_load( true );
 
    if( images.empty() )
    {
