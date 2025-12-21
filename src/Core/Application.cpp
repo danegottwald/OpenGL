@@ -90,244 +90,126 @@ void PlayerInputSystem( Entity::Registry& registry, float delta )
 void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta )
 {
    //PROFILE_SCOPE( "PlayerPhysicsSystem" );
-   constexpr float SKIN = 0.001f; // small separation to prevent re-penetration
-   constexpr float EPS  = 1e-4f;  // for stable voxel range calc
 
-   auto isSolid = [ & ]( int x, int y, int z ) -> bool { return level.GetBlock( x, y, z ) != BLOCK_AIR; };
-
-   // Small downward probe to keep a stable grounded state and prevent Y jitter when velocity.y ~ 0.
-   // This avoids toggling fOnGround each frame due to SKIN/EPS rounding.
-   constexpr float GROUND_PROBE = 0.05f;
-
-   // Convert AABB at (pos, half) to voxel inclusive bounds, with epsilon to avoid "touching counts"
-   auto getVoxelBounds = [ & ]( const glm::vec3& pos, const glm::vec3& half, int& minX, int& maxX, int& minY, int& maxY, int& minZ, int& maxZ )
+   // World vs Entity collision
    {
-      const float minEdgeX = pos.x - half.x;
-      const float maxEdgeX = pos.x + half.x;
-      const float minEdgeY = pos.y - half.y;
-      const float maxEdgeY = pos.y + half.y;
-      const float minEdgeZ = pos.z - half.z;
-      const float maxEdgeZ = pos.z + half.z;
+      constexpr float SKIN         = 0.001f; // small separation to prevent re-penetration
+      constexpr float EPS          = 1e-4f;  // for stable voxel range calc
+      constexpr float GROUND_PROBE = 0.05f;  // how far below to probe for ground
 
-      minX = ( int )std::floor( minEdgeX + EPS );
-      maxX = ( int )std::floor( maxEdgeX - EPS );
-      minY = ( int )std::floor( minEdgeY + EPS );
-      maxY = ( int )std::floor( maxEdgeY - EPS );
-      minZ = ( int )std::floor( minEdgeZ + EPS );
-      maxZ = ( int )std::floor( maxEdgeZ - EPS );
-   };
-
-   // Check if we're standing on something without needing to move down this frame.
-   auto computeGrounded = [ & ]( const glm::vec3& pos, const glm::vec3& half ) -> bool
-   {
-      // Probe a tiny distance below the feet.
-      glm::vec3 probePos = pos;
-      probePos.y -= GROUND_PROBE;
-
-      int minX, maxX, minY, maxY, minZ, maxZ;
-      getVoxelBounds( probePos, half, minX, maxX, minY, maxY, minZ, maxZ );
-
-      for( int y = minY; y <= maxY; ++y )
+      auto getVoxelBounds = [ & ]( const glm::vec3& pos, const glm::vec3& half, int& minX, int& maxX, int& minY, int& maxY, int& minZ, int& maxZ )
       {
-         for( int x = minX; x <= maxX; ++x )
-            for( int z = minZ; z <= maxZ; ++z )
-               if( isSolid( x, y, z ) )
-                  return true;
-      }
-      return false;
-   };
+         const float minEdgeX = pos.x - half.x;
+         const float maxEdgeX = pos.x + half.x;
+         const float minEdgeY = pos.y - half.y;
+         const float maxEdgeY = pos.y + half.y;
+         const float minEdgeZ = pos.z - half.z;
+         const float maxEdgeZ = pos.z + half.z;
 
-   // Resolve movement along X by clamping to nearest blocking voxel face
-   auto moveAndCollideX = [ & ]( glm::vec3& pos, glm::vec3& vel, const glm::vec3& half, float dx )
-   {
-      if( dx == 0.0f )
-         return;
+         minX = ( int )std::floor( minEdgeX + EPS );
+         maxX = ( int )std::floor( maxEdgeX - EPS );
+         minY = ( int )std::floor( minEdgeY + EPS );
+         maxY = ( int )std::floor( maxEdgeY - EPS );
+         minZ = ( int )std::floor( minEdgeZ + EPS );
+         maxZ = ( int )std::floor( maxEdgeZ - EPS );
+      };
 
-      pos.x += dx;
-
-      int minX, maxX, minY, maxY, minZ, maxZ;
-      getVoxelBounds( pos, half, minX, maxX, minY, maxY, minZ, maxZ );
-
-      if( dx > 0.0f )
+      auto isSolid         = [ & ]( int x, int y, int z ) -> bool { return level.GetBlock( x, y, z ) != BLOCK_AIR; };
+      auto computeGrounded = [ & ]( const glm::vec3& pos, const glm::vec3& half ) -> bool
       {
-         // moving +X: find the nearest solid voxel at/inside our maxX plane
-         int hitX = INT_MAX;
-         for( int x = minX; x <= maxX; ++x )
-         {
-            for( int y = minY; y <= maxY; ++y )
+         glm::vec3 probePos = pos;
+         probePos.y -= GROUND_PROBE;
+
+         int minX, maxX, minY, maxY, minZ, maxZ;
+         getVoxelBounds( probePos, half, minX, maxX, minY, maxY, minZ, maxZ );
+
+         for( int y = minY; y <= maxY; ++y )
+            for( int x = minX; x <= maxX; ++x )
                for( int z = minZ; z <= maxZ; ++z )
-               {
                   if( isSolid( x, y, z ) )
-                  {
-                     hitX = ( std::min )( hitX, x );
-                     break;
-                  }
-               }
-         }
+                     return true;
 
-         if( hitX != INT_MAX )
-         {
-            // clamp so our max face sits just left of hitX face
-            pos.x = ( float )hitX - half.x - SKIN;
-            vel.x = 0.0f;
-         }
-      }
-      else
+         return false;
+      };
+
+      enum Axis
       {
-         // moving -X: find the nearest solid voxel at/inside our minX plane (largest x)
-         int hitX = INT_MIN;
-         for( int x = maxX; x >= minX; --x )
-         {
-            for( int y = minY; y <= maxY; ++y )
-               for( int z = minZ; z <= maxZ; ++z )
-               {
-                  if( isSolid( x, y, z ) )
-                  {
-                     hitX = ( std::max )( hitX, x );
-                     break;
-                  }
-               }
-         }
-
-         if( hitX != INT_MIN )
-         {
-            // clamp so our min face sits just right of (hitX + 1) face
-            pos.x = ( float )( hitX + 1 ) + half.x + SKIN;
-            vel.x = 0.0f;
-         }
-      }
-   };
-
-   // Resolve movement along Y
-   auto moveAndCollideY = [ & ]( glm::vec3& pos, glm::vec3& vel, CPhysics& phys, float dy )
-   {
-      if( dy == 0.0f )
-         return;
-
-      pos.y += dy;
-
-      int minX, maxX, minY, maxY, minZ, maxZ;
-      getVoxelBounds( pos, phys.halfExtents, minX, maxX, minY, maxY, minZ, maxZ );
-
-      if( dy > 0.0f )
+         X = 0,
+         Y = 1,
+         Z = 2
+      };
+      auto moveAndCollideAxis = [ & ]( glm::vec3& pos, glm::vec3& vel, CPhysics& phys, float d, Axis axis )
       {
-         int hitY = INT_MAX;
+         if( d == 0.0f )
+            return;
+
+         pos[ axis ] += d;
+
+         int minX, maxX, minY, maxY, minZ, maxZ;
+         getVoxelBounds( pos, phys.halfExtents, minX, maxX, minY, maxY, minZ, maxZ );
+
+         const bool positive = d > 0.0f;
+         int        hit      = positive ? INT_MAX : INT_MIN;
+
+         // Scan overlapped voxels, tracking closest hit plane along `axis`
          for( int y = minY; y <= maxY; ++y )
          {
             for( int x = minX; x <= maxX; ++x )
+            {
                for( int z = minZ; z <= maxZ; ++z )
                {
-                  if( isSolid( x, y, z ) )
+                  if( !isSolid( x, y, z ) )
+                     continue;
+
+                  switch( axis )
                   {
-                     hitY = ( std::min )( hitY, y );
-                     break;
+                     case Axis::X: hit = positive ? ( std::min )( hit, x ) : ( std::max )( hit, x ); break;
+                     case Axis::Y: hit = positive ? ( std::min )( hit, y ) : ( std::max )( hit, y ); break;
+                     case Axis::Z: hit = positive ? ( std::min )( hit, z ) : ( std::max )( hit, z ); break;
                   }
                }
+            }
          }
 
-         if( hitY != INT_MAX )
+         if( positive )
          {
-            pos.y          = ( float )hitY - phys.halfExtents.y - SKIN;
-            vel.y          = 0.0f;
-            phys.fOnGround = true;
+            if( hit == INT_MAX )
+               return;
+
+            // clamp so our max face sits just before `hit` voxel's min face
+            pos[ axis ] = static_cast< float >( hit ) - phys.halfExtents[ axis ] - SKIN;
+            vel[ axis ] = 0.0f;
+            if( axis == Axis::Y )
+               phys.fOnGround = true;
          }
-      }
-      else
+         else
+         {
+            if( hit == INT_MIN )
+               return;
+
+            // clamp so our min face sits just after (`hit + 1`) voxel's max face
+            pos[ axis ] = static_cast< float >( hit + 1 ) + phys.halfExtents[ axis ] + SKIN;
+            vel[ axis ] = 0.0f;
+            if( axis == Axis::Y )
+               phys.fOnGround = true;
+         }
+      };
+
+      for( auto [ tran, vel, phys ] : registry.CView< CTransform, CVelocity, CPhysics >() )
       {
-         int hitY = INT_MIN;
-         for( int y = maxY; y >= minY; --y )
-         {
-            for( int x = minX; x <= maxX; ++x )
-               for( int z = minZ; z <= maxZ; ++z )
-               {
-                  if( isSolid( x, y, z ) )
-                  {
-                     hitY = ( std::max )( hitY, y );
-                     break;
-                  }
-               }
-         }
+         // Determine if entity is on the ground and only apply gravity if not.
+         phys.fOnGround = computeGrounded( tran.position, phys.halfExtents );
+         if( !phys.fOnGround )
+            vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
 
-         if( hitY != INT_MIN )
-         {
-            pos.y          = ( float )( hitY + 1 ) + phys.halfExtents.y + SKIN;
-            vel.y          = 0.0f;
-            phys.fOnGround = true;
-         }
+         // Per-axis movement + collision
+         glm::vec3 pos  = tran.position;
+         glm::vec3 step = vel.velocity * delta;
+         moveAndCollideAxis( pos, vel.velocity, phys, step.y, Axis::Y );
+         moveAndCollideAxis( pos, vel.velocity, phys, step.x, Axis::X );
+         moveAndCollideAxis( pos, vel.velocity, phys, step.z, Axis::Z );
+         tran.position = pos;
       }
-   };
-
-   // Resolve movement along Z
-   auto moveAndCollideZ = [ & ]( glm::vec3& pos, glm::vec3& vel, const glm::vec3& half, float dz )
-   {
-      if( dz == 0.0f )
-         return;
-
-      pos.z += dz;
-
-      int minX, maxX, minY, maxY, minZ, maxZ;
-      getVoxelBounds( pos, half, minX, maxX, minY, maxY, minZ, maxZ );
-
-      if( dz > 0.0f )
-      {
-         int hitZ = INT_MAX;
-         for( int z = minZ; z <= maxZ; ++z )
-         {
-            for( int x = minX; x <= maxX; ++x )
-               for( int y = minY; y <= maxY; ++y )
-               {
-                  if( isSolid( x, y, z ) )
-                  {
-                     hitZ = ( std::min )( hitZ, z );
-                     break;
-                  }
-               }
-         }
-
-         if( hitZ != INT_MAX )
-         {
-            pos.z = ( float )hitZ - half.z - SKIN;
-            vel.z = 0.0f;
-         }
-      }
-      else
-      {
-         int hitZ = INT_MIN;
-         for( int z = maxZ; z >= minZ; --z )
-         {
-            for( int x = minX; x <= maxX; ++x )
-               for( int y = minY; y <= maxY; ++y )
-               {
-                  if( isSolid( x, y, z ) )
-                  {
-                     hitZ = ( std::max )( hitZ, z );
-                     break;
-                  }
-               }
-         }
-
-         if( hitZ != INT_MIN )
-         {
-            pos.z = ( float )( hitZ + 1 ) + half.z + SKIN;
-            vel.z = 0.0f;
-         }
-      }
-   };
-
-   for( auto [ tran, vel, phys ] : registry.CView< CTransform, CVelocity, CPhysics >() )
-   {
-      // Determine if entity is on the ground and only apply gravity if not.
-      phys.fOnGround = computeGrounded( tran.position, phys.halfExtents );
-      if( !phys.fOnGround )
-         vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
-
-      // Per-axis movement + collision
-      glm::vec3       pos  = tran.position;
-      const glm::vec3 step = vel.velocity * delta;
-      moveAndCollideY( pos, vel.velocity, phys, step.y );
-      moveAndCollideX( pos, vel.velocity, phys.halfExtents, step.x );
-      moveAndCollideZ( pos, vel.velocity, phys.halfExtents, step.z );
-      tran.position = pos;
    }
 
    // ---- Optional: entity-vs-entity stays after world, but note it can fight world resolution ----
