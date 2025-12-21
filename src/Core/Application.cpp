@@ -178,9 +178,6 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
 
             // clamp so our max face sits just before `hit` voxel's min face
             pos[ axis ] = static_cast< float >( hit ) - phys.halfExtents[ axis ] - SKIN;
-            vel[ axis ] = 0.0f;
-            if( axis == Axis::Y )
-               phys.fOnGround = true;
          }
          else
          {
@@ -189,10 +186,12 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
 
             // clamp so our min face sits just after (`hit + 1`) voxel's max face
             pos[ axis ] = static_cast< float >( hit + 1 ) + phys.halfExtents[ axis ] + SKIN;
-            vel[ axis ] = 0.0f;
-            if( axis == Axis::Y )
-               phys.fOnGround = true;
          }
+
+         // Zero velocity along this axis
+         vel[ axis ] = 0.0f;
+         if( axis == Axis::Y )
+            phys.fOnGround = true;
       };
 
       for( auto [ tran, vel, phys ] : registry.CView< CTransform, CVelocity, CPhysics >() )
