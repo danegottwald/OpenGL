@@ -281,7 +281,7 @@ void World::Setup( Entity::Registry& registry )
          std::shared_ptr< Entity::EntityHandle > psChunk = registry.CreateWithHandle();
          registry.Add< CChunkTag >( psChunk->Get() );
          registry.Add< CTransform >( psChunk->Get(), chunkWorldX, chunkWorldY, chunkWorldZ );
-         registry.Add< CAABB >( psChunk->Get(), CAABB { glm::vec3( halfX, halfY, halfZ ) } );
+         registry.Add< CPhysics >( psChunk->Get(), CPhysics { glm::vec3( halfX, halfY, halfZ ) } );
          registry.Add< CMesh >( psChunk->Get(), psChunkMesh );
          m_entityHandles.push_back( psChunk );
       }
@@ -291,7 +291,7 @@ void World::Setup( Entity::Registry& registry )
    registry.Add< CTransform >( psSun->Get(), 5.0f, 76.0f, 5.0f );
    registry.Add< CMesh >( psSun->Get(), std::make_shared< SphereMesh >() );
    registry.Add< CVelocity >( psSun->Get(), glm::vec3( 1.0f, 0.0f, 1.0f ) );
-   registry.Add< CAABB >( psSun->Get(), CAABB { glm::vec3( 0.5f ) } );
+   registry.Add< CPhysics >( psSun->Get(), CPhysics { glm::vec3( 0.5f ) } );
 
    m_entityHandles.push_back( psSun );
 }
@@ -465,7 +465,7 @@ void World::UpdateActiveChunks( Entity::Registry& registry, const glm::vec3& pla
 
             Entity::Entity blockEntity = registry.Create();
             registry.Add< CTransform >( blockEntity, posX, topY, posZ );
-            registry.Add< CAABB >( blockEntity, CAABB { glm::vec3( 0.5f ) } );
+            registry.Add< CPhysics >( blockEntity, CPhysics { glm::vec3( 0.5f ) } );
             m_activeBlocks.push_back( blockEntity );
             m_activeBlocks2.push_back( { blockEntity, glm::ivec3( static_cast<int>(posX), static_cast<int>(topY), static_cast<int>(posZ) ) } );
          }

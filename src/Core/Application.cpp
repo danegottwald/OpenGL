@@ -89,118 +89,259 @@ void PlayerInputSystem( Entity::Registry& registry, float delta )
 
 void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta )
 {
-   // Integration System
+   //PROFILE_SCOPE( "PlayerPhysicsSystem" );
+   constexpr float SKIN = 0.001f; // small separation to prevent re-penetration
+   constexpr float EPS  = 1e-4f;  // for stable voxel range calc
+
+   auto isSolid = [ & ]( int x, int y, int z ) -> bool { return level.GetBlock( x, y, z ) != BLOCK_AIR; };
+
+   // Small downward probe to keep a stable grounded state and prevent Y jitter when velocity.y ~ 0.
+   // This avoids toggling fOnGround each frame due to SKIN/EPS rounding.
+   constexpr float GROUND_PROBE = 0.05f;
+
+   // Convert AABB at (pos, half) to voxel inclusive bounds, with epsilon to avoid "touching counts"
+   auto getVoxelBounds = [ & ]( const glm::vec3& pos, const glm::vec3& half, int& minX, int& maxX, int& minY, int& maxY, int& minZ, int& maxZ )
    {
-      //PROFILE_SCOPE( "PlayerPhysicsSystem::Integration" );
-      for( auto [ pTran, pVel ] : registry.CView< CTransform, CVelocity >() )
-      {
-         // Apply gravity
-         pVel.velocity.y = ( std::max )( pVel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
+      const float minEdgeX = pos.x - half.x;
+      const float maxEdgeX = pos.x + half.x;
+      const float minEdgeY = pos.y - half.y;
+      const float maxEdgeY = pos.y + half.y;
+      const float minEdgeZ = pos.z - half.z;
+      const float maxEdgeZ = pos.z + half.z;
 
-         // Integrate position
-         pTran.position += pVel.velocity * delta;
-      }
-   }
+      minX = ( int )std::floor( minEdgeX + EPS );
+      maxX = ( int )std::floor( maxEdgeX - EPS );
+      minY = ( int )std::floor( minEdgeY + EPS );
+      maxY = ( int )std::floor( maxEdgeY - EPS );
+      minZ = ( int )std::floor( minEdgeZ + EPS );
+      maxZ = ( int )std::floor( maxEdgeZ - EPS );
+   };
 
-   // Entity vs World Collision System
+   // Check if we're standing on something without needing to move down this frame.
+   auto computeGrounded = [ & ]( const glm::vec3& pos, const glm::vec3& half ) -> bool
    {
-      //PROFILE_SCOPE( "PlayerPhysicsSystem::EntityVsWorldCollision" );
-      auto overlapsSolid = [ & ]( const glm::vec3& pos, const glm::vec3& halfExtents )
-      {
-         int minX = ( int )std::floor( pos.x - halfExtents.x );
-         int maxX = ( int )std::floor( pos.x + halfExtents.x );
-         int minY = ( int )std::floor( pos.y - halfExtents.y );
-         int maxY = ( int )std::floor( pos.y + halfExtents.y );
-         int minZ = ( int )std::floor( pos.z - halfExtents.z );
-         int maxZ = ( int )std::floor( pos.z + halfExtents.z );
+      // Probe a tiny distance below the feet.
+      glm::vec3 probePos = pos;
+      probePos.y -= GROUND_PROBE;
 
+      int minX, maxX, minY, maxY, minZ, maxZ;
+      getVoxelBounds( probePos, half, minX, maxX, minY, maxY, minZ, maxZ );
+
+      for( int y = minY; y <= maxY; ++y )
+      {
          for( int x = minX; x <= maxX; ++x )
+            for( int z = minZ; z <= maxZ; ++z )
+               if( isSolid( x, y, z ) )
+                  return true;
+      }
+      return false;
+   };
+
+   // Resolve movement along X by clamping to nearest blocking voxel face
+   auto moveAndCollideX = [ & ]( glm::vec3& pos, glm::vec3& vel, const glm::vec3& half, float dx )
+   {
+      if( dx == 0.0f )
+         return;
+
+      pos.x += dx;
+
+      int minX, maxX, minY, maxY, minZ, maxZ;
+      getVoxelBounds( pos, half, minX, maxX, minY, maxY, minZ, maxZ );
+
+      if( dx > 0.0f )
+      {
+         // moving +X: find the nearest solid voxel at/inside our maxX plane
+         int hitX = INT_MAX;
+         for( int x = minX; x <= maxX; ++x )
+         {
             for( int y = minY; y <= maxY; ++y )
                for( int z = minZ; z <= maxZ; ++z )
-                  if( level.GetBlock( x, y, z ) != BLOCK_AIR )
-                     return true;
-
-         return false;
-      };
-
-      for( auto [ tran, vel, box ] : registry.CView< CTransform, CVelocity, CAABB >() )
-      {
-         glm::vec3 newPos = tran.position;
-         glm::vec3 step   = vel.velocity * delta;
-
-         // Y axis
-         newPos.y += step.y;
-         if( overlapsSolid( newPos, box.halfExtents ) )
-         {
-            if( step.y > 0.0f )
-               newPos.y = std::floor( newPos.y + box.halfExtents.y ) - box.halfExtents.y;
-            else
-               newPos.y = std::floor( newPos.y - box.halfExtents.y ) + 1.0f + box.halfExtents.y;
-            vel.velocity.y = 0.0f;
+               {
+                  if( isSolid( x, y, z ) )
+                  {
+                     hitX = (std::min)( hitX, x );
+                     break;
+                  }
+               }
          }
 
-         // X axis
-         newPos.x += step.x;
-         if( overlapsSolid( newPos, box.halfExtents ) )
+         if( hitX != INT_MAX )
          {
-            if( step.x > 0.0f )
-               newPos.x = std::floor( newPos.x + box.halfExtents.x ) - box.halfExtents.x;
-            else
-               newPos.x = std::floor( newPos.x - box.halfExtents.x ) + 1.0f + box.halfExtents.x;
-            vel.velocity.x = 0.0f;
+            // clamp so our max face sits just left of hitX face
+            pos.x = ( float )hitX - half.x - SKIN;
+            vel.x = 0.0f;
          }
-
-         // Z axis
-         newPos.z += step.z;
-         if( overlapsSolid( newPos, box.halfExtents ) )
-         {
-            if( step.z > 0.0f )
-               newPos.z = std::floor( newPos.z + box.halfExtents.z ) - box.halfExtents.z;
-            else
-               newPos.z = std::floor( newPos.z - box.halfExtents.z ) + 1.0f + box.halfExtents.z;
-            vel.velocity.z = 0.0f;
-         }
-
-         tran.position = newPos;
       }
-   }
+      else
+      {
+         // moving -X: find the nearest solid voxel at/inside our minX plane (largest x)
+         int hitX = INT_MIN;
+         for( int x = maxX; x >= minX; --x )
+         {
+            for( int y = minY; y <= maxY; ++y )
+               for( int z = minZ; z <= maxZ; ++z )
+               {
+                  if( isSolid( x, y, z ) )
+                  {
+                     hitX = (std::max)( hitX, x );
+                     break;
+                  }
+               }
+         }
 
-   // Collision System
+         if( hitX != INT_MIN )
+         {
+            // clamp so our min face sits just right of (hitX + 1) face
+            pos.x = ( float )( hitX + 1 ) + half.x + SKIN;
+            vel.x = 0.0f;
+         }
+      }
+   };
+
+   // Resolve movement along Y
+   auto moveAndCollideY = [ & ]( glm::vec3& pos, glm::vec3& vel, CPhysics& phys, float dy )
    {
-      //PROFILE_SCOPE( "PlayerPhysicsSystem::Collision" );
-      auto aabbOverlap = []( const glm::vec3& aPos, const CAABB& a, const glm::vec3& bPos, const CAABB& b ) -> bool
-      {
-         return std::abs( aPos.x - bPos.x ) <= ( a.halfExtents.x + b.halfExtents.x ) && std::abs( aPos.y - bPos.y ) <= ( a.halfExtents.y + b.halfExtents.y ) &&
-                std::abs( aPos.z - bPos.z ) <= ( a.halfExtents.z + b.halfExtents.z );
-      };
+      if( dy == 0.0f )
+         return;
 
-      for( auto [ cTran1, cVel1, cBox1 ] : registry.CView< CTransform, CVelocity, CAABB >() )
+      pos.y += dy;
+
+      int minX, maxX, minY, maxY, minZ, maxZ;
+      getVoxelBounds( pos, phys.halfExtents, minX, maxX, minY, maxY, minZ, maxZ );
+
+      if( dy > 0.0f )
       {
-         for( auto [ cTran2, cBox2 ] : registry.CView< CTransform, CAABB >() )
+         int hitY = INT_MAX;
+         for( int y = minY; y <= maxY; ++y )
          {
-            if( &cBox1 == &cBox2 ) // skip self
-               continue;
+            for( int x = minX; x <= maxX; ++x )
+               for( int z = minZ; z <= maxZ; ++z )
+               {
+                  if( isSolid( x, y, z ) )
+                  {
+                     hitY = (std::min)( hitY, y );
+                     break;
+                  }
+               }
+         }
 
-            if( !aabbOverlap( cTran1.position, cBox1, cTran2.position, cBox2 ) )
-               continue;
-
-            float bottom = cTran1.position.y - cBox1.halfExtents.y;
-            float top    = cTran2.position.y + cBox2.halfExtents.y;
-            if( cVel1.velocity.y <= 0.0f && bottom < top )
-            {
-               cTran1.position.y = top + cBox1.halfExtents.y;
-               cVel1.velocity.y  = 0.0f;
-               break;
-            }
+         if( hitY != INT_MAX )
+         {
+            pos.y = ( float )hitY - phys.halfExtents.y - SKIN;
+            vel.y = 0.0f;
+            phys.fOnGround = true;
          }
       }
-   }
+      else
+      {
+         int hitY = INT_MIN;
+         for( int y = maxY; y >= minY; --y )
+         {
+            for( int x = minX; x <= maxX; ++x )
+               for( int z = minZ; z <= maxZ; ++z )
+               {
+                  if( isSolid( x, y, z ) )
+                  {
+                     hitY = (std::max)( hitY, y );
+                     break;
+                  }
+               }
+         }
 
-   // Dynamic vs Static
-   //    Player and other moving objects collide against world blocks.
-   // Dynamic vs Dynamic
-   //    Player vs moving platforms, other players, etc.
+         if( hitY != INT_MIN )
+         {
+            pos.y = ( float )( hitY + 1 ) + phys.halfExtents.y + SKIN;
+            vel.y = 0.0f;
+            phys.fOnGround = true;
+         }
+      }
+   };
+
+   // Resolve movement along Z
+   auto moveAndCollideZ = [ & ]( glm::vec3& pos, glm::vec3& vel, const glm::vec3& half, float dz )
+   {
+      if( dz == 0.0f )
+         return;
+
+      pos.z += dz;
+
+      int minX, maxX, minY, maxY, minZ, maxZ;
+      getVoxelBounds( pos, half, minX, maxX, minY, maxY, minZ, maxZ );
+
+      if( dz > 0.0f )
+      {
+         int hitZ = INT_MAX;
+         for( int z = minZ; z <= maxZ; ++z )
+         {
+            for( int x = minX; x <= maxX; ++x )
+               for( int y = minY; y <= maxY; ++y )
+               {
+                  if( isSolid( x, y, z ) )
+                  {
+                     hitZ = (std::min)( hitZ, z );
+                     break;
+                  }
+               }
+         }
+
+         if( hitZ != INT_MAX )
+         {
+            pos.z = ( float )hitZ - half.z - SKIN;
+            vel.z = 0.0f;
+         }
+      }
+      else
+      {
+         int hitZ = INT_MIN;
+         for( int z = maxZ; z >= minZ; --z )
+         {
+            for( int x = minX; x <= maxX; ++x )
+               for( int y = minY; y <= maxY; ++y )
+               {
+                  if( isSolid( x, y, z ) )
+                  {
+                     hitZ = (std::max)( hitZ, z );
+                     break;
+                  }
+               }
+         }
+
+         if( hitZ != INT_MIN )
+         {
+            pos.z = ( float )( hitZ + 1 ) + half.z + SKIN;
+            vel.z = 0.0f;
+         }
+      }
+   };
+
+   // ---- Single-pass integration + world collision (NO double movement) ----
+   for( auto [ tran, vel, phys ] : registry.CView< CTransform, CVelocity, CPhysics >() )
+   {
+      // Preserve grounded state if we're already resting on something.
+      // This prevents a 1-frame "airborne" when step.y == 0 and thus no Y collision test runs.
+      phys.fOnGround = computeGrounded( tran.position, phys.halfExtents );
+
+       // Gravity (keep your sign conventions)
+       if( !phys.fOnGround)
+         vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
+
+       // Desired movement this frame
+       const glm::vec3 step = vel.velocity * delta;
+
+       glm::vec3 pos = tran.position;
+
+       // Axis-separated move & clamp
+       moveAndCollideY( pos, vel.velocity, phys, step.y );
+       moveAndCollideX( pos, vel.velocity, phys.halfExtents, step.x );
+       moveAndCollideZ( pos, vel.velocity, phys.halfExtents, step.z );
+
+       tran.position = pos;
+    }
+
+    // ---- Optional: entity-vs-entity stays after world, but note it can fight world resolution ----
+    // Keep your existing entity collision if you want, but it is simplistic and can cause odd pushes.
 }
+
 
 void CameraSystem( Entity::Registry& registry, Window& window )
 {
@@ -399,15 +540,15 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    }
 
    // Render CAABB bounds for debugging
-   for( auto [ tran, box ] : registry.CView< CTransform, CAABB >() )
+   for( auto [ tran, phys ] : registry.CView< CTransform, CPhysics >() )
    {
       glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
       glm::mat4 mvp   = camera.viewProjection * model; // MVP = Projection * View * Model
       pShader->SetUniform( "u_MVP", mvp );
 
       // Build vertices relative to origin
-      glm::vec3 min           = -box.halfExtents;
-      glm::vec3 max           = box.halfExtents;
+      glm::vec3 min           = -phys.halfExtents;
+      glm::vec3 max           = phys.halfExtents;
       glm::vec3 vertices[ 8 ] = {
          { min.x, min.y, min.z },
          { max.x, min.y, min.z },
@@ -627,7 +768,7 @@ void Application::Run()
    registry.Add< CVelocity >( player, 0.0f, 0.0f, 0.0f );
    registry.Add< CInput >( player );
    registry.Add< CPlayerTag >( player );
-   registry.Add< CAABB >( player, glm::vec3( 0.3f, 0.9f, 0.3f ) ); // center at body
+   registry.Add< CPhysics >( player, glm::vec3( 0.3f, 0.9f, 0.3f ) ); // center at body
 
    // Create camera entity
    Entity::Entity camera = registry.Create();
@@ -735,13 +876,13 @@ void Application::Run()
    registry.Add< CTransform >( psBall->Get(), 5.0f, 128.0f, 5.0f );
    registry.Add< CMesh >( psBall->Get(), std::make_shared< SphereMesh >() );
    registry.Add< CVelocity >( psBall->Get(), glm::vec3( 0.0f, 0.0f, 0.0f ) );
-   registry.Add< CAABB >( psBall->Get(), CAABB { glm::vec3( 0.5f ) } );
+   registry.Add< CPhysics >( psBall->Get(), CPhysics { glm::vec3( 0.5f ) } );
 
    std::shared_ptr< Entity::EntityHandle > psCube = registry.CreateWithHandle();
    registry.Add< CTransform >( psCube->Get(), 6.0f, 128.0f, 8.0f );
    registry.Add< CMesh >( psCube->Get(), std::make_shared< CubeMesh >() );
    registry.Add< CVelocity >( psCube->Get(), glm::vec3( 0.0f, 0.0f, 0.0f ) );
-   registry.Add< CAABB >( psCube->Get(), CAABB { glm::vec3( 1.0f ) } );
+   registry.Add< CPhysics >( psCube->Get(), CPhysics { glm::vec3( 1.0f ) } );
 
    while( window.IsOpen() )
    {
