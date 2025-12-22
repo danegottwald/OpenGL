@@ -92,3 +92,7 @@ Todo
     Support Vulkan rendering backend
     assimp - Open Asset Import Library for model loading
     Keybind to action mapping system (like Unreal Engine how you can bind keys to actions)
+
+Thoughts?
+    Global event manager? register an event then they get polled every refresh - https://gamedev.stackexchange.com/a/59627
+    Formatting library? - #include <fmt/format.h>

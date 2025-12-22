@@ -47,6 +47,7 @@
 
 // OpenGL Libraries
 #include <glad/glad.h>
+#include <gl/glext.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -70,7 +71,7 @@
 class ScopeTimer
 {
 public:
-   ScopeTimer( const std::string& label ) :
+   ScopeTimer( std::string_view label ) :
       m_label( label ),
       m_start( std::chrono::high_resolution_clock::now() )
    {}

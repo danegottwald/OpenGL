@@ -1,5 +1,7 @@
 #include "Level.h"
 
+#include <Renderer/Texture.h>
+
 namespace
 {
 struct Direction
@@ -19,7 +21,7 @@ constexpr Direction kDirections[ 6 ] = {
 
 // For each direction, define a unit quad in [0,1] block space.
 // Each face is 4 vertices, min-corner at (0,0,0), max at (1,1,1).
-const glm::vec3 kFaceVerts[ 6 ][ 4 ] = {
+constexpr glm::vec3 kFaceVerts[ 6 ][ 4 ] = {
    // +X (x+1 face)
    {
     { 1.f, 0.f, 0.f },
@@ -65,7 +67,7 @@ const glm::vec3 kFaceVerts[ 6 ][ 4 ] = {
 };
 
 
-const glm::vec2 kFaceUVs[ 4 ] = {
+constexpr glm::vec2 kFaceUVs[ 4 ] = {
    { 0.0f, 0.0f },
    { 1.0f, 0.0f },
    { 1.0f, 1.0f },
@@ -81,35 +83,36 @@ Chunk::Chunk( Level& level, int cx, int cy, int cz ) :
    m_chunkX( cx ),
    m_chunkY( cy ),
    m_chunkZ( cz ),
-   m_blocks( CHUNK_VOLUME, BLOCK_AIR )
+   m_blocks( CHUNK_VOLUME, BlockId::Air )
 {}
 
 
-BlockId Chunk::GetBlock( int x, int y, int z ) const
+BlockId Chunk::GetBlock( int x, int y, int z ) const noexcept
 {
-   return InBounds( x, y, z ) ? m_blocks[ ToIndex( x, y, z ) ] : BLOCK_AIR;
+   return FInBounds( x, y, z ) ? m_blocks[ ToIndex( x, y, z ) ] : BlockId::Air;
 }
 
 
 void Chunk::SetBlock( int x, int y, int z, BlockId id )
 {
-   if( !InBounds( x, y, z ) )
+   if( !FInBounds( x, y, z ) )
       return;
+
    m_blocks[ ToIndex( x, y, z ) ] = id;
-   m_dirty                        = true; // mark for remesh, lighting update, etc.
+   m_fDirty                       = true; // mark for remesh, lighting update, etc.
 }
 
 
-bool Chunk::InBounds( int x, int y, int z ) const
+bool Chunk::FInBounds( int x, int y, int z ) const noexcept
 {
    return x >= 0 && x < CHUNK_SIZE_X && y >= 0 && y < CHUNK_SIZE_Y && z >= 0 && z < CHUNK_SIZE_Z;
 }
 
 
-int Chunk::ToIndex( int x, int y, int z )
+int Chunk::ToIndex( int x, int y, int z ) noexcept
 {
    // X + Z*XSize + Y*XSize*ZSize keeps vertical columns contiguous by Y
-   return x + z * CHUNK_SIZE_X + y * CHUNK_SIZE_X * CHUNK_SIZE_Z;
+   return x + ( z * CHUNK_SIZE_X ) + ( y * CHUNK_SIZE_X * CHUNK_SIZE_Z );
 }
 
 
@@ -120,6 +123,9 @@ void Chunk::GenerateMesh()
    m_mesh.vertices.reserve( CHUNK_VOLUME * 4 );
    m_mesh.indices.reserve( CHUNK_VOLUME * 6 );
 
+   const int baseWX = m_chunkX * CHUNK_SIZE_X;
+   const int baseWY = m_chunkY * CHUNK_SIZE_Y;
+   const int baseWZ = m_chunkZ * CHUNK_SIZE_Z;
    for( int x = 0; x < CHUNK_SIZE_X; ++x )
    {
       for( int y = 0; y < CHUNK_SIZE_Y; ++y )
@@ -127,9 +133,12 @@ void Chunk::GenerateMesh()
          for( int z = 0; z < CHUNK_SIZE_Z; ++z )
          {
             const BlockId id = GetBlock( x, y, z );
-            if( id == BLOCK_AIR )
+            if( id == BlockId::Air )
                continue;
 
+            const int       wx = baseWX + x;
+            const int       wy = baseWY + y;
+            const int       wz = baseWZ + z;
             const glm::vec3 basePos( static_cast< float >( x ), static_cast< float >( y ), static_cast< float >( z ) );
             for( int dir = 0; dir < 6; ++dir )
             {
@@ -138,19 +147,18 @@ void Chunk::GenerateMesh()
                const int        ny = y + d.dy;
                const int        nz = z + d.dz;
 
-               const bool neighborInBounds = nx >= 0 && nx < CHUNK_SIZE_X && ny >= 0 && ny < CHUNK_SIZE_Y && nz >= 0 && nz < CHUNK_SIZE_Z;
-               BlockId    neighborId       = neighborInBounds ? GetBlock( nx, ny, nz ) : BLOCK_AIR;
-               if( neighborId != BLOCK_AIR )
-                  continue; // face hidden
+               BlockId neighborId = FInBounds( nx, ny, nz ) ? GetBlock( nx, ny, nz ) : m_level.GetBlock( wx + d.dx, wy + d.dy, wz + d.dz );
+               if( neighborId != BlockId::Air )
+                  continue; // face hidden by neighbor (even across chunks)
 
-               const uint32_t indexOffset = static_cast< uint32_t >( m_mesh.vertices.size() );
+               const uint32_t              indexOffset = static_cast< uint32_t >( m_mesh.vertices.size() );
+               const TextureAtlas::Region& region      = g_textureAtlasManager.GetRegion( id );
                for( int i = 0; i < 4; ++i )
                {
                   ChunkVertex v {};
-                  v.position     = basePos + kFaceVerts[ dir ][ i ];
-                  v.normal       = d.normal;
-                  v.uv           = kFaceUVs[ i ];
-                  v.textureIndex = id - 1;
+                  v.position = basePos + kFaceVerts[ dir ][ i ];
+                  v.normal   = d.normal;
+                  v.uv       = region.uvs[ i ];
                   m_mesh.vertices.push_back( v );
                }
 
@@ -167,7 +175,7 @@ void Chunk::GenerateMesh()
       }
    }
 
-   m_dirty = false;
+   m_fDirty = false;
 }
 
 
@@ -188,22 +196,40 @@ Level::Level()
 }
 
 
+auto Level::WorldToChunk( int wx, int wy, int wz ) const
+{
+   // floor division for negative values
+   auto divFloor = []( int a, int b )
+   {
+      const int q = a / b, r = a % b;
+      return ( r != 0 ) && ( ( r > 0 ) != ( b > 0 ) ) ? q - 1 : q;
+   };
+
+   int cx = divFloor( wx, CHUNK_SIZE_X );
+   int cy = divFloor( wy, CHUNK_SIZE_Y );
+   int cz = divFloor( wz, CHUNK_SIZE_Z );
+   int lx = wx - cx * CHUNK_SIZE_X;
+   int ly = wy - cy * CHUNK_SIZE_Y;
+   int lz = wz - cz * CHUNK_SIZE_Z;
+   return std::tuple< ChunkCoord, glm::ivec3 > {
+      ChunkCoord { cx, cz },
+       glm::ivec3 { lx, ly, lz }
+   };
+}
+
+
 BlockId Level::GetBlock( int wx, int wy, int wz ) const
 {
-   ChunkCoord cc;
-   glm::ivec3 local;
-   WorldToChunk( wx, wy, wz, cc, local );
+   auto [ cc, local ] = WorldToChunk( wx, wy, wz );
 
    auto it = m_chunks.find( cc );
-   return it != m_chunks.end() ? it->second->GetBlock( local.x, local.y, local.z ) : BLOCK_AIR;
+   return it != m_chunks.end() ? it->second->GetBlock( local.x, local.y, local.z ) : BlockId::Air;
 }
 
 
 void Level::SetBlock( int wx, int wy, int wz, BlockId id )
 {
-   ChunkCoord cc;
-   glm::ivec3 local;
-   WorldToChunk( wx, wy, wz, cc, local );
+   auto [ cc, local ] = WorldToChunk( wx, wy, wz );
 
    Chunk& chunk = EnsureChunk( cc );
    chunk.SetBlock( local.x, local.y, local.z, id );
@@ -238,12 +264,10 @@ void Level::Explode( int wx, int wy, int wz, uint8_t radius )
             if( dx * dx + dy * dy + dz * dz > radiusSq )
                continue;
 
-            ChunkCoord cc;
-            glm::ivec3 local;
-            WorldToChunk( x, y, z, cc, local );
+            auto [ cc, local ] = WorldToChunk( x, y, z );
 
             Chunk& chunk = EnsureChunk( cc );
-            chunk.SetBlock( local.x, local.y, local.z, BLOCK_AIR );
+            chunk.SetBlock( local.x, local.y, local.z, BlockId::Air );
             affectedChunks.insert( &chunk );
          }
       }
@@ -257,51 +281,42 @@ void Level::Explode( int wx, int wy, int wz, uint8_t radius )
 }
 
 
-void Level::WorldToChunk( int wx, int wy, int wz, ChunkCoord& outChunk, glm::ivec3& outLocal ) const
-{
-   // floor division for negative values
-   auto divFloor = []( int a, int b )
-   {
-      int q = a / b;
-      int r = a % b;
-      if( ( r != 0 ) && ( ( r > 0 ) != ( b > 0 ) ) )
-         --q;
-      return q;
-   };
-
-   int cx   = divFloor( wx, CHUNK_SIZE_X );
-   int cy   = divFloor( wy, CHUNK_SIZE_Y );
-   int cz   = divFloor( wz, CHUNK_SIZE_Z );
-   int lx   = wx - cx * CHUNK_SIZE_X;
-   int ly   = wy - cy * CHUNK_SIZE_Y;
-   int lz   = wz - cz * CHUNK_SIZE_Z;
-   outChunk = { cx, cz };
-   outLocal = { lx, ly, lz };
-}
-
-
 Chunk& Level::EnsureChunk( const ChunkCoord& cc )
 {
    if( auto it = m_chunks.find( cc ); it != m_chunks.end() )
       return *( it->second );
 
-   std::unique_ptr< Chunk > pChunk = std::make_unique< Chunk >( *this, cc.x, 0, cc.z );
-   GenerateChunkData( *pChunk );
-   pChunk->GenerateMesh();
+   Chunk& newChunk = *m_chunks.emplace( cc, std::make_unique< Chunk >( *this, cc.x, 0, cc.z ) ).first->second.get();
+   GenerateChunkData( newChunk );
 
-   Chunk& ref = *pChunk;
-   m_chunks.emplace( cc, std::move( pChunk ) );
-   SyncChunkRender( cc );
-   return ref;
+   // mark adjacent chunks dirty for remeshing since this new chunk may expose faces
+   ChunkCoord neighborCoords[] = {
+      { cc.x - 1, cc.z     },
+      { cc.x + 1, cc.z     },
+      { cc.x,     cc.z - 1 },
+      { cc.x,     cc.z + 1 }
+   };
+   for( const ChunkCoord& neighborCoord : neighborCoords )
+   {
+      auto it = m_chunks.find( neighborCoord );
+      if( it == m_chunks.end() )
+         continue;
+
+      Chunk& neighborChunk   = *( it->second );
+      neighborChunk.m_fDirty = true;
+   }
+
+   //newChunk.GenerateMesh();
+   //SyncChunkRender( cc );
+
+   return newChunk;
 }
 
 
 void Level::UpdateVisibleRegion( const glm::vec3& playerPos, int viewRadius )
 {
    // Calculate the chunk coordinates for the player's position
-   ChunkCoord playerChunk;
-   glm::ivec3 playerLocal;
-   WorldToChunk( static_cast< int >( playerPos.x ), static_cast< int >( playerPos.y ), static_cast< int >( playerPos.z ), playerChunk, playerLocal );
+   auto [ playerChunk, playerLocal ] = WorldToChunk( static_cast< int >( playerPos.x ), static_cast< int >( playerPos.y ), static_cast< int >( playerPos.z ) );
 
    // Build set of desired chunk coordinates in view
    std::unordered_set< ChunkCoord, ChunkCoordHash > desiredChunks;
@@ -314,6 +329,16 @@ void Level::UpdateVisibleRegion( const glm::vec3& playerPos, int viewRadius )
          const ChunkCoord cc { playerChunk.x + dx, playerChunk.z + dz };
          desiredChunks.insert( cc );
          EnsureChunk( cc );
+      }
+   }
+
+   for( auto it = m_chunks.begin(); it != m_chunks.end(); ++it )
+   {
+      Chunk& chunk = *( it->second );
+      if( chunk.m_fDirty )
+      {
+         chunk.GenerateMesh();
+         SyncChunkRender( it->first );
       }
    }
 
@@ -392,7 +417,7 @@ void Level::GenerateChunkData( Chunk& chunk )
 
          for( int y = 0; y <= columnHeight; ++y )
          {
-            BlockId id = ( y < columnHeight - 4 ) ? BLOCK_STONE : BLOCK_DIRT;
+            BlockId id = ( y < columnHeight - 4 ) ? BlockId::Stone : BlockId::Dirt;
             chunk.SetBlock( x, y, z, id );
          }
       }

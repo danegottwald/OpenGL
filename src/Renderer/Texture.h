@@ -1,26 +1,10 @@
 #pragma once
 
+#include <World/Blocks.h>
+
 // Forward Declarations
 class Shader;
 
-class Texture
-{
-private:
-   unsigned int   m_RendererID;
-   std::string    m_File;
-   unsigned char* m_LocalBuffer;
-   int            m_Width, m_Height, m_BPP;
-
-public:
-   Texture( const std::string& file );
-   ~Texture();
-
-   void Bind( unsigned int slot = 0 ) const;
-   void Unbind() const;
-
-   inline int GetWidth() const { return m_Width; }
-   inline int GetHeight() const { return m_Height; }
-};
 
 // ----------------------------------------------------------------
 // SkyboxTexture - Cubemap Texture for Skyboxes
@@ -43,38 +27,98 @@ private:
    std::unique_ptr< Shader > m_pShader;
 };
 
+
+// ----------------------------------------------------------------
+// TextureAtlas - Atlas for 2D Textures
+// ----------------------------------------------------------------
 class TextureAtlas
 {
 public:
    struct Region
    {
-      // UV rect in [0,1] range
-      glm::vec2 uMin;
-      glm::vec2 uMax;
+      std::array< glm::vec2, 4 > uvs;
+   };
+
+   enum class Filtering
+   {
+      PixelPerfect,        // no mipmaps
+      MipmappedAnisotropic // mipmaps (and optional aniso)
    };
 
    TextureAtlas() noexcept;
    ~TextureAtlas();
 
-   // Build atlas from all .png files in a directory (non-recursive)
-   bool BuildFromDirectory( const std::string& directory, int padding = 1 );
+   // Incremental build: call AddTexture() N times then Compile() once.
+   void SetPadding( int pixels ) { m_padding = ( std::max )( 0, pixels ); }
+   void SetFiltering( Filtering filtering ) { m_filtering = filtering; }
 
-   // Bind the atlas texture
+   // Prepares the texture to be packed during Compile().
+   void PrepareTexture( BlockId blockId );
+
+   // Pack all added textures, compute UVs/regions, and upload to OpenGL.
+   void Compile();
+
    void Bind( unsigned int slot = 0 ) const;
    void Unbind() const;
 
-   // Query the UV region for a given logical name (e.g. "dirt", "stone")
-   // filename is usually "dirt.png" or the base name.
-   std::optional< Region > GetRegion( const std::string& name ) const;
+   const Region& GetRegion( BlockId blockId ) const { return m_regions.at( blockId ); }
+   //std::optional< Region > GetRegion( const std::string& name ) const;
 
-   int GetWidth() const { return m_Width; }
-   int GetHeight() const { return m_Height; }
+   int GetWidth() const { return m_width; }
+   int GetHeight() const { return m_height; }
 
 private:
-   unsigned int m_RendererID = 0;
-   int          m_Width      = 0;
-   int          m_Height     = 0;
+   struct PendingTexture
+   {
+      BlockId                      blockId;
+      std::string_view             filepath;
+      int                          width  = 0;
+      int                          height = 0;
+      std::vector< unsigned char > pixels; // RGBA8
+   };
 
-   // map from base filename (without directory) to UV region
-   std::unordered_map< std::string, Region > m_Regions;
+   unsigned int m_rendererID = 0;
+   int          m_width      = 0;
+   int          m_height     = 0;
+
+   int       m_padding   = 16;
+   Filtering m_filtering = Filtering::MipmappedAnisotropic;
+
+   std::unordered_map< BlockId, PendingTexture > m_pending;
+   std::unordered_map< BlockId, Region >         m_regions;
 };
+
+
+// ----------------------------------------------------------------
+// TextureAtlasManager - Global Texture Atlas Manager
+// ----------------------------------------------------------------
+class TextureAtlasManager
+{
+public:
+   TextureAtlasManager() noexcept
+   {
+      try
+      {
+         for( int i = 0; i < static_cast< int >( BlockId::Count ); ++i )
+            m_atlas.PrepareTexture( static_cast< BlockId >( i ) );
+
+         //m_atlas.Compile();
+      }
+      catch( ... )
+      {
+         std::cerr << "TextureAtlasManager - failed to initialize texture atlas\n";
+         std::abort();
+      }
+   }
+
+   void                        Compile() { m_atlas.Compile(); }
+   const TextureAtlas::Region& GetRegion( BlockId blockId ) const { return m_atlas.GetRegion( blockId ); }
+
+   void Bind( unsigned int slot = 0 ) const { m_atlas.Bind( slot ); }
+   void Unbind() const { m_atlas.Unbind(); }
+
+private:
+   TextureAtlas m_atlas;
+};
+
+inline TextureAtlasManager g_textureAtlasManager;

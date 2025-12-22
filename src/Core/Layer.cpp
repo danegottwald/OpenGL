@@ -8,11 +8,10 @@
 std::vector< float >        v;
 std::vector< unsigned int > i;
 
-GLuint                     m_VAID { 0 }; // Vertex Array ID
-GLuint                     m_VBID { 0 }; // Vertex Buffer ID
-GLuint                     m_IBID { 0 }; // Index Buffer ID
-std::shared_ptr< Shader >  m_Shader;
-std::shared_ptr< Texture > m_Texture;
+GLuint                    m_VAID { 0 }; // Vertex Array ID
+GLuint                    m_VBID { 0 }; // Vertex Buffer ID
+GLuint                    m_IBID { 0 }; // Index Buffer ID
+std::shared_ptr< Shader > m_Shader;
 
 void constructor()
 {
@@ -23,7 +22,6 @@ void constructor()
    glBindBuffer( GL_ARRAY_BUFFER, m_VBID );
 
    m_Shader.reset( new Shader( Shader::FILE, "basic_vert.glsl", "basic_frag.glsl" ) );
-   m_Texture.reset( new Texture( "cobble.png" ) );
 }
 
 void destructor()

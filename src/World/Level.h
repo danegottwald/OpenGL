@@ -1,18 +1,8 @@
 #pragma once
 
-#include "pch.h"
 #include <FastNoiseLite/FastNoiseLite.h>
 
-using BlockId                        = uint16_t; // up to 65535 block types
-static constexpr BlockId BLOCK_AIR   = 0;
-static constexpr BlockId BLOCK_DIRT  = 1;
-static constexpr BlockId BLOCK_STONE = 2;
-
-struct Block
-{
-   BlockId id;
-   uint8_t meta; // bit-packed flags or small subtype data
-};
+#include <World/Blocks.h>
 
 // Fixed chunk dimensions
 static constexpr int CHUNK_SIZE_X = 16;
@@ -26,8 +16,6 @@ struct ChunkVertex
    glm::vec3 normal;
    glm::vec2 uv;
    // add color/light/ao if needed
-
-   uint16_t textureIndex;
 };
 
 struct ChunkMesh
@@ -49,7 +37,7 @@ class Chunk
 public:
    Chunk( class Level& level, int cx, int cy, int cz );
 
-   BlockId GetBlock( int x, int y, int z ) const;
+   BlockId GetBlock( int x, int y, int z ) const noexcept;
    void    SetBlock( int x, int y, int z, BlockId id );
 
    // Position in chunk grid
@@ -61,15 +49,18 @@ public:
    const ChunkMesh& GetMesh() const { return m_mesh; }
 
 private:
-   bool       InBounds( int x, int y, int z ) const;
-   static int ToIndex( int x, int y, int z );
+   bool       FInBounds( int x, int y, int z ) const noexcept;
+   static int ToIndex( int x, int y, int z ) noexcept;
 
    Level&                 m_level;
    int                    m_chunkX, m_chunkY, m_chunkZ;
    std::vector< BlockId > m_blocks;
-   bool                   m_dirty = false; // needs mesh rebuild, etc.
+   ChunkMesh              m_mesh {};
 
-   ChunkMesh m_mesh {};
+   // Dirty flag for remeshing, lighting updates, etc.
+   bool m_fDirty { true }; // any new chunk starts dirty
+
+   friend class Level;
 };
 
 struct ChunkCoord
@@ -134,9 +125,6 @@ struct ChunkRender
          // layout(location = 2) vec2 uv
          glEnableVertexAttribArray( 2 );
          glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, uv ) );
-         // layout(location = 3) uint16_t textureIndex
-         glEnableVertexAttribArray( 3 );
-         glVertexAttribPointer( 3, 1, GL_UNSIGNED_SHORT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, textureIndex ) );
       }
 
       glBindVertexArray( 0 );
@@ -175,7 +163,7 @@ public:
    void UpdateVisibleRegion( const glm::vec3& playerPos, int viewRadius );
 
    // Read-only access to all loaded chunks
-   const std::unordered_map< ChunkCoord, std::unique_ptr< Chunk >, ChunkCoordHash >& GetChunks() const { return m_chunks; }
+   const auto& GetChunks() const { return m_chunks; }
 
    // Chunk render management
    const ChunkRender* GetChunkRender( const ChunkCoord& coord ) const;
@@ -183,7 +171,7 @@ public:
    void               SyncChunkRender( const ChunkCoord& coord );
 
 private:
-   void   WorldToChunk( int wx, int wy, int wz, ChunkCoord& outChunk, glm::ivec3& outLocal ) const;
+   auto   WorldToChunk( int wx, int wy, int wz ) const;
    Chunk& EnsureChunk( const ChunkCoord& cc );
    void   GenerateChunkData( Chunk& chunk );
 
@@ -191,4 +179,6 @@ private:
    std::unordered_map< ChunkCoord, ChunkRender, ChunkCoordHash >              m_chunkRenders;
 
    FastNoiseLite m_noise;
+
+   friend class Chunk;
 };

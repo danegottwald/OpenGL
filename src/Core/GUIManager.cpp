@@ -65,6 +65,26 @@ void GUIManager::Draw()
    }
 }
 
+#include <windows.h>
+#include <psapi.h>
+
+struct ProcessMemoryInfo
+{
+   size_t workingSetMB;     // physical RAM in use
+   size_t privateMB;        // memory only your process owns (good for leaks)
+   size_t peakWorkingSetMB; // peak physical RAM usage
+};
+
+static ProcessMemoryInfo GetProcessMemoryInfoMB()
+{
+   constexpr size_t           MB = 1024 * 1024;
+   PROCESS_MEMORY_COUNTERS_EX pmc {};
+   if( GetProcessMemoryInfo( GetCurrentProcess(), reinterpret_cast< PROCESS_MEMORY_COUNTERS* >( &pmc ), sizeof( pmc ) ) )
+      return { pmc.WorkingSetSize / MB, pmc.PrivateUsage / MB, pmc.PeakWorkingSetSize / MB };
+
+   return {};
+}
+
 // ========================================================================
 //      DebugGUI
 // ========================================================================
@@ -110,6 +130,33 @@ void DebugGUI::Draw()
                ImGui::Text( "Camera Position: %.2f, %.2f, %.2f", pCameraTran->position.x, pCameraTran->position.y, pCameraTran->position.z );
                ImGui::Text( "Camera Rotation: %.2f, %.2f, %.2f", pCameraTran->rotation.x, pCameraTran->rotation.y, pCameraTran->rotation.z );
             }
+
+            ImGui::EndTabItem();
+         }
+
+         if( ImGui::BeginTabItem( "Memory" ) )
+         {
+            const ProcessMemoryInfo memInfo           = GetProcessMemoryInfoMB();
+            static int              memIndex          = 0;
+            static float            memHistory[ 128 ] = {}, peakMem = 0.0f;
+            memHistory[ memIndex ] = ( float )memInfo.workingSetMB;
+            if( memHistory[ memIndex ] > peakMem )
+               peakMem = memHistory[ memIndex ];
+
+            memIndex = ( memIndex + 1 ) % 128;
+
+            ImGui::Text( "Current: %zu MB", memInfo.workingSetMB );
+            ImGui::Text( "Private: %zu MB", memInfo.privateMB );
+            ImGui::Text( "Peak:    %zu MB", memInfo.peakWorkingSetMB );
+            ImGui::PlotLines( "Memory Usage (MB)",
+                              memHistory,
+                              128,
+                              memIndex,
+                              nullptr,        // overlay text
+                              0.0f,           // min scale
+                              peakMem * 1.1f, // max scale (slightly above peak)
+                              ImVec2( 0, 80 ) // plot size
+            );
 
             ImGui::EndTabItem();
          }

@@ -9,7 +9,6 @@
 #include <Core/Window.h>
 #include <Events/NetworkEvent.h>
 #include <Input/Input.h>
-#include <World.h>
 
 // ===================================================
 //      INetwork

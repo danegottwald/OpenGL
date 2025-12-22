@@ -11,7 +11,6 @@
 #include <Events/MouseEvent.h>
 #include <Input/Input.h>
 #include <Network/Network.h>
-#include <World.h>
 
 #include <World/Level.h>
 #include <Renderer/Shader.h>
@@ -33,7 +32,7 @@ constexpr float PLAYER_EYE_HEIGHT = 1.62f;
 constexpr float GROUND_MAXSPEED   = 4.3f;
 constexpr float AIR_MAXSPEED      = 10.0f;
 constexpr float AIR_CONTROL       = 0.3f;
-constexpr float SPRINT_MODIFIER   = 1.3f;
+constexpr float SPRINT_MODIFIER   = 15.3f;
 
 void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
@@ -114,7 +113,6 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
          maxZ = ( int )std::floor( maxEdgeZ - EPS );
       };
 
-      auto isSolid         = [ & ]( int x, int y, int z ) -> bool { return level.GetBlock( x, y, z ) != BLOCK_AIR; };
       auto computeGrounded = [ & ]( const glm::vec3& pos, const glm::vec3& half ) -> bool
       {
          glm::vec3 probePos = pos;
@@ -126,7 +124,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
          for( int y = minY; y <= maxY; ++y )
             for( int x = minX; x <= maxX; ++x )
                for( int z = minZ; z <= maxZ; ++z )
-                  if( isSolid( x, y, z ) )
+                  if( FSolid( level.GetBlock( x, y, z ) ) )
                      return true;
 
          return false;
@@ -158,7 +156,7 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
             {
                for( int z = minZ; z <= maxZ; ++z )
                {
-                  if( !isSolid( x, y, z ) )
+                  if( !FSolid( level.GetBlock( x, y, z ) ) )
                      continue;
 
                   switch( axis )
@@ -363,6 +361,33 @@ static void InitBlockTextureArray()
 }
 
 
+class ViewFrustum
+{
+public:
+   ViewFrustum( const glm::mat4& pv )
+   {
+      m_planes[ 0 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 0 ] ); // Left
+      m_planes[ 1 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 0 ] ); // Right
+      m_planes[ 2 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 1 ] ); // Top
+      m_planes[ 3 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 1 ] ); // Bottom
+      m_planes[ 4 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 2 ] ); // Near
+      m_planes[ 5 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 2 ] ); // Far
+      for( glm::vec4& plane : m_planes )
+         plane /= glm::length( glm::vec3( plane ) );
+   }
+
+   bool FInFrustum( const glm::vec3& point, float padding = 0.0f ) const
+   {
+      return std::none_of( m_planes.begin(),
+                           m_planes.end(),
+                           [ & ]( const glm::vec4& plane ) { return glm::dot( glm::vec3( plane ), point ) + plane.w + padding < 0; } );
+   }
+
+private:
+   std::array< glm::vec4, 6 > m_planes;
+};
+
+
 std::optional< glm::vec3 > g_highlightBlock;
 void                       RenderSystem( Entity::Registry& registry, Level& level, const CCamera& camera, const glm::vec3& camPosition )
 {
@@ -380,8 +405,10 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); // clear color and depth buffers
 
    {
-      glActiveTexture( GL_TEXTURE0 );
-      glBindTexture( GL_TEXTURE_2D_ARRAY, blockTextureArrayId );
+      g_textureAtlasManager.Bind();
+
+      //glActiveTexture( GL_TEXTURE0 );
+      //glBindTexture( GL_TEXTURE_2D_ARRAY, blockTextureArrayId );
       pShader->SetUniform( "u_blockTextures", 0 );
 
       pShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
@@ -401,12 +428,19 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
          pShader->SetUniform( "u_Model", model );
          pRender->Render();
       }
+
+      g_textureAtlasManager.Unbind();
    }
+
+   ViewFrustum frustum( camera.viewProjection );
 
    // Render all entities with CMesh component
    pShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
    for( auto [ tran, mesh ] : registry.CView< CTransform, CMesh >() )
    {
+      if( !frustum.FInFrustum( tran.position ) )
+         continue;
+
       pShader->SetUniform( "u_color", mesh.mesh->GetColor() );
 
       mesh.mesh->SetPosition( tran.position ); // this shouldn't be here
@@ -416,14 +450,14 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    // Render CAABB bounds for debugging
    for( auto [ tran, phys ] : registry.CView< CTransform, CPhysics >() )
    {
-      glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
-      glm::mat4 mvp   = camera.viewProjection * model; // MVP = Projection * View * Model
+      const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
+      const glm::mat4 mvp   = camera.viewProjection * model; // MVP = Projection * View * Model
       pShader->SetUniform( "u_MVP", mvp );
 
       // Build vertices relative to origin
-      glm::vec3 min           = -phys.halfExtents;
-      glm::vec3 max           = phys.halfExtents;
-      glm::vec3 vertices[ 8 ] = {
+      const glm::vec3 min           = -phys.halfExtents;
+      const glm::vec3 max           = phys.halfExtents;
+      const glm::vec3 vertices[ 8 ] = {
          { min.x, min.y, min.z },
          { max.x, min.y, min.z },
          { max.x, max.y, min.z },
@@ -464,20 +498,20 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
       if( g_highlightBlock.has_value() )
       {
          // Use the same shader; we draw a simple wireframe cube around the block
-         glm::vec3 blockPos = *g_highlightBlock;
+         const glm::vec3 blockPos = *g_highlightBlock;
 
          // Model: translate to block center, scale to slightly larger than 1x1x1
          glm::mat4 model = glm::translate( glm::mat4( 1.0f ), blockPos + glm::vec3( 0.5f ) );
          model           = glm::scale( model, glm::vec3( 1.02f ) ); // tiny inflation
 
-         glm::mat4 mvp = camera.viewProjection * model;
+         const glm::mat4 mvp = camera.viewProjection * model;
          pShader->SetUniform( "u_MVP", mvp );
          pShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) ); // white
 
          // Unit cube wireframe in local space [-0.5,0.5]^3
-         glm::vec3 min           = glm::vec3( -0.5f );
-         glm::vec3 max           = glm::vec3( 0.5f );
-         glm::vec3 vertices[ 8 ] = {
+         const glm::vec3 min           = glm::vec3( -0.5f );
+         const glm::vec3 max           = glm::vec3( 0.5f );
+         const glm::vec3 vertices[ 8 ] = {
             { min.x, min.y, min.z },
             { max.x, min.y, min.z },
             { max.x, max.y, min.z },
@@ -589,8 +623,7 @@ std::optional< RaycastResult > DoRaycast( const Level& level, const Ray& ray, fl
    glm::ivec3 blockPos = glm::floor( ray.origin );
 
    // If we start inside a block, hit it immediately
-   // if( FIsSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
-   if( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) != BLOCK_AIR )
+   if( FSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
       return RaycastResult { glm::vec3( blockPos ), glm::ivec3( 0 ) /*normal*/, 0.0f /*distance*/ };
 
    // DDA setup
@@ -609,9 +642,7 @@ std::optional< RaycastResult > DoRaycast( const Level& level, const Ray& ray, fl
    glm::ivec3 hitNormal = glm::ivec3( 0 );
    while( dist <= maxDistance )
    {
-      // TODO: integrate world access and solidity check here.
-      // if( FIsSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
-      if( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) != BLOCK_AIR )
+      if( FSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
          return RaycastResult { glm::vec3( blockPos ), hitNormal, dist };
 
       // Determine next axis to step
@@ -685,10 +716,13 @@ void Application::Run()
       }
    } );
 
+   Window& window = Window::Get();
+   window.Init();
+
    Level level;
    eventSubscriber.Subscribe< Events::MouseButtonPressedEvent >( [ & ]( const Events::MouseButtonPressedEvent& e ) noexcept
    {
-      if( e.GetMouseButton() != Input::ButtonLeft && e.GetMouseButton() != Input::ButtonRight )
+      if( e.GetMouseButton() != Input::ButtonLeft && e.GetMouseButton() != Input::ButtonRight && e.GetMouseButton() != Input::ButtonMiddle )
          return;
 
       // Get camera transform
@@ -714,21 +748,27 @@ void Application::Run()
       if( std::optional< RaycastResult > result = DoRaycast( level, Ray { rayOrigin, dir }, maxDistance ) )
       {
          std::cout << "Raycast hit at position: " << result->position.x << ", " << result->position.y << ", " << result->position.z << "\n";
-         if( e.GetMouseButton() == Input::ButtonLeft )
+
+         switch( e.GetMouseButton() )
          {
-            glm::vec3 placePos = result->position + glm::vec3( result->normal );
-            level.SetBlock( static_cast< int >( placePos.x ), static_cast< int >( placePos.y ), static_cast< int >( placePos.z ), BLOCK_STONE );
-            //level.SetBlock( static_cast< int >( result->position.x ),
-            //                static_cast< int >( result->position.y ),
-            //                static_cast< int >( result->position.z ),
-            //                BLOCK_AIR );
-         }
-         else
-         {
-            level.Explode( static_cast< int >( result->position.x ),
-                           static_cast< int >( result->position.y ),
-                           static_cast< int >( result->position.z ),
-                           96 /*radius*/ );
+            case Input::ButtonLeft:
+            {
+               const glm::vec3 pos = result->position;
+               level.SetBlock( static_cast< int >( pos.x ), static_cast< int >( pos.y ), static_cast< int >( pos.z ), BlockId::Air /*id*/ );
+               break;
+            }
+            case Input::ButtonRight:
+            {
+               const glm::vec3 pos = result->position + glm::vec3( result->normal );
+               level.SetBlock( static_cast< int >( pos.x ), static_cast< int >( pos.y ), static_cast< int >( pos.z ), BlockId::Grass /*id*/ );
+               break;
+            }
+            case Input::ButtonMiddle:
+            {
+               const glm::vec3 pos = result->position;
+               level.Explode( static_cast< int >( pos.x ), static_cast< int >( pos.y ), static_cast< int >( pos.z ), 36 /*radius*/ );
+               break;
+            }
          }
       }
       else
@@ -737,9 +777,7 @@ void Application::Run()
    // -----------------------------------
 
    // Initialize things
-   Window& window = Window::Get();
-   window.Init();
-
+   g_textureAtlasManager.Compile();
    InitBlockTextureArray();
 
    GUIManager::Init();
