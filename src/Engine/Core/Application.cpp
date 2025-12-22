@@ -271,9 +271,9 @@ static void InitBlockTextureArray()
    };
 
    const std::vector< TexDef > texDefs = {
-      { "res/textures/dirt.png" },  // layer 0 (optional)
-      { "res/textures/dirt.png" },  // layer 1 (BLOCK_DIRT)
-      { "res/textures/stone.png" }, // layer 2 (BLOCK_STONE)
+      { "assets/textures/dirt.png" },  // layer 0 (optional)
+      { "assets/textures/dirt.png" },  // layer 1 (BLOCK_DIRT)
+      { "assets/textures/stone.png" }, // layer 2 (BLOCK_STONE)
    };
 
    std::vector< ImageData > images;
@@ -376,11 +376,23 @@ public:
          plane /= glm::length( glm::vec3( plane ) );
    }
 
-   bool FInFrustum( const glm::vec3& point, float padding = 0.0f ) const
+   // Check if point is inside frustum
+   bool FInFrustum( const glm::vec3& point ) const
    {
-      return std::none_of( m_planes.begin(),
-                           m_planes.end(),
-                           [ & ]( const glm::vec4& plane ) { return glm::dot( glm::vec3( plane ), point ) + plane.w + padding < 0; } );
+      return std::none_of( m_planes.begin(), m_planes.end(), [ & ]( const glm::vec4& plane ) { return glm::dot( glm::vec3( plane ), point ) + plane.w < 0; } );
+   }
+
+   // Check if AABB is inside/intersecting frustum
+   bool FInFrustum( const glm::vec3& min, const glm::vec3& max ) const
+   {
+      for( const glm::vec4& plane : m_planes )
+      {
+         const glm::vec3 point( plane.x >= 0 ? max.x : min.x, plane.y >= 0 ? max.y : min.y, plane.z >= 0 ? max.z : min.z );
+         if( glm::dot( glm::vec3( plane ), point ) + plane.w < 0 )
+            return false;
+      }
+
+      return true; // inside or intersecting
    }
 
 private:
@@ -395,55 +407,65 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    // TODO - refactor this system, Shader should be within component data for entity
 
    // hack to get working
-   static std::unique_ptr< Shader > pShader = std::make_unique< Shader >( Shader::FILE, "basic_vert.glsl", "basic_frag.glsl" );
+   static std::unique_ptr< Shader > pTerrainShader = std::make_unique< Shader >( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
 
-   pShader->Bind();                                       // Bind the shader program
-   pShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
-   pShader->SetUniform( "u_viewPos", camPosition );       // Set camera position
-   pShader->SetUniform( "u_lightPos", camPosition );      // Set light position at camera position
+   pTerrainShader->Bind();                                       // Bind the shader program
+   pTerrainShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
+   pTerrainShader->SetUniform( "u_viewPos", camPosition );       // Set camera position
+   pTerrainShader->SetUniform( "u_lightPos", camPosition );      // Set light position at camera position
 
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); // clear color and depth buffers
+
+   // Frustum for culling
+   ViewFrustum frustum( camera.viewProjection );
 
    {
       g_textureAtlasManager.Bind();
 
       //glActiveTexture( GL_TEXTURE0 );
       //glBindTexture( GL_TEXTURE_2D_ARRAY, blockTextureArrayId );
-      pShader->SetUniform( "u_blockTextures", 0 );
+      pTerrainShader->SetUniform( "u_blockTextures", 0 );
+      pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
 
-      pShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
-      for( const auto& [ coord, pChunk ] : level.GetChunks() )
+      for( const auto& [ coord, chunk ] : level.GetChunks() )
       {
-         if( !pChunk )
-            continue;
-
          const ChunkRender* pRender = level.GetChunkRender( coord );
          if( !pRender )
             continue;
 
-         glm::vec3 chunkOffset( coord.x * CHUNK_SIZE_X, 0 /*y*/, coord.z * CHUNK_SIZE_Z );
-         glm::mat4 model = glm::translate( glm::mat4( 1.0f ), chunkOffset );
-         glm::mat4 mvp   = camera.viewProjection * model;
-         pShader->SetUniform( "u_MVP", mvp );
-         pShader->SetUniform( "u_Model", model );
+         // Compute chunk AABB in world space
+         const glm::vec3 chunkMin = glm::vec3( coord.x * CHUNK_SIZE_X, 0.0f, coord.z * CHUNK_SIZE_Z );
+         const glm::vec3 chunkMax = chunkMin + glm::vec3( CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z ); // terrain height
+         if( !frustum.FInFrustum( chunkMin, chunkMax ) )
+            continue; // skip chunk outside frustum
+
+         const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), chunkMin );
+         const glm::mat4 mvp   = camera.viewProjection * model;
+         pTerrainShader->SetUniform( "u_MVP", mvp );
+         pTerrainShader->SetUniform( "u_Model", model );
          pRender->Render();
       }
 
       g_textureAtlasManager.Unbind();
    }
 
-   ViewFrustum frustum( camera.viewProjection );
-
    // Render all entities with CMesh component
-   pShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
-   for( auto [ tran, mesh ] : registry.CView< CTransform, CMesh >() )
+   pTerrainShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
+   for( auto [ e, tran, mesh ] : registry.ECView< CTransform, CMesh >() )
    {
-      if( !frustum.FInFrustum( tran.position ) )
-         continue;
+      // Frustum cull based on CPhysics AABB if available
+      if( CPhysics* pPhys = registry.TryGet< CPhysics >( e ) )
+      {
+         if( !frustum.FInFrustum( tran.position - pPhys->halfExtents, tran.position + pPhys->halfExtents ) )
+            continue;
+      }
 
-      pShader->SetUniform( "u_color", mesh.mesh->GetColor() );
+      const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
+      const glm::mat4 mvp   = camera.viewProjection * model;
+      pTerrainShader->SetUniform( "u_color", mesh.mesh->GetColor() );
+      pTerrainShader->SetUniform( "u_MVP", mvp );
+      pTerrainShader->SetUniform( "u_Model", model );
 
-      mesh.mesh->SetPosition( tran.position ); // this shouldn't be here
       mesh.mesh->Render();
    }
 
@@ -452,7 +474,7 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    {
       const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
       const glm::mat4 mvp   = camera.viewProjection * model; // MVP = Projection * View * Model
-      pShader->SetUniform( "u_MVP", mvp );
+      pTerrainShader->SetUniform( "u_MVP", mvp );
 
       // Build vertices relative to origin
       const glm::vec3 min           = -phys.halfExtents;
@@ -505,8 +527,8 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
          model           = glm::scale( model, glm::vec3( 1.02f ) ); // tiny inflation
 
          const glm::mat4 mvp = camera.viewProjection * model;
-         pShader->SetUniform( "u_MVP", mvp );
-         pShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) ); // white
+         pTerrainShader->SetUniform( "u_MVP", mvp );
+         pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) ); // white
 
          // Unit cube wireframe in local space [-0.5,0.5]^3
          const glm::vec3 min           = glm::vec3( -0.5f );
@@ -551,23 +573,23 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
       }
    }
 
-   pShader->Unbind();
+   pTerrainShader->Unbind();
 
    // Draw Skybox
    {
-      constexpr std::string_view faceFiles[ 6 ] = { "res/textures/skybox/px.png", "res/textures/skybox/nx.png", "res/textures/skybox/py.png",
-                                                    "res/textures/skybox/ny.png", "res/textures/skybox/pz.png", "res/textures/skybox/nz.png" };
+      constexpr std::string_view faceFiles[ 6 ] = { "assets/textures/skybox/px.png", "assets/textures/skybox/nx.png", "assets/textures/skybox/py.png",
+                                                    "assets/textures/skybox/ny.png", "assets/textures/skybox/pz.png", "assets/textures/skybox/nz.png" };
       static SkyboxTexture       skyboxTexture( faceFiles );
       skyboxTexture.Draw( camera.view, camera.projection );
    }
 
    // Draw simple reticle
    {
-      pShader->Bind();
+      pTerrainShader->Bind();
 
       glDisable( GL_DEPTH_TEST );
-      pShader->SetUniform( "u_MVP", glm::mat4( 1.0f ) );
-      pShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
+      pTerrainShader->SetUniform( "u_MVP", glm::mat4( 1.0f ) );
+      pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
 
       const float                r            = 0.01f; // reticle arm length in NDC
       std::array< glm::vec3, 4 > reticleVerts = {
@@ -587,7 +609,7 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
       glDeleteVertexArrays( 1, &reticleVao );
       glEnable( GL_DEPTH_TEST );
 
-      pShader->Unbind();
+      pTerrainShader->Unbind();
    }
 }
 

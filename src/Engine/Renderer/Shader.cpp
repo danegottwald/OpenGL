@@ -49,7 +49,7 @@ Shader::ShaderProgramSource Shader::GetShaderProgramSource( InitType type, std::
             file.read( &content[ 0 ], content.size() );
             return content;
          };
-         return { readFileFn( std::format( "./res/shaders/{}", vertex ) ), readFileFn( std::format( "./res/shaders/{}", fragment ) ) };
+         return { readFileFn( std::format( "assets/shaders/{}", vertex ) ), readFileFn( std::format( "assets/shaders/{}", fragment ) ) };
       }
 
       default: throw std::runtime_error( "Shader::GetShaderProgramSource - Unhandled InitType" );

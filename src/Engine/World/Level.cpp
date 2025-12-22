@@ -223,7 +223,7 @@ BlockId Level::GetBlock( int wx, int wy, int wz ) const
    auto [ cc, local ] = WorldToChunk( wx, wy, wz );
 
    auto it = m_chunks.find( cc );
-   return it != m_chunks.end() ? it->second->GetBlock( local.x, local.y, local.z ) : BlockId::Air;
+   return it != m_chunks.end() ? it->second.GetBlock( local.x, local.y, local.z ) : BlockId::Air;
 }
 
 
@@ -284,9 +284,9 @@ void Level::Explode( int wx, int wy, int wz, uint8_t radius )
 Chunk& Level::EnsureChunk( const ChunkCoord& cc )
 {
    if( auto it = m_chunks.find( cc ); it != m_chunks.end() )
-      return *( it->second );
+      return it->second;
 
-   Chunk& newChunk = *m_chunks.emplace( cc, std::make_unique< Chunk >( *this, cc.x, 0, cc.z ) ).first->second.get();
+   Chunk& newChunk = m_chunks.emplace( cc, Chunk( *this, cc.x, 0, cc.z ) ).first->second;
    GenerateChunkData( newChunk );
 
    // mark adjacent chunks dirty for remeshing since this new chunk may expose faces
@@ -302,7 +302,7 @@ Chunk& Level::EnsureChunk( const ChunkCoord& cc )
       if( it == m_chunks.end() )
          continue;
 
-      Chunk& neighborChunk   = *( it->second );
+      Chunk& neighborChunk   = it->second;
       neighborChunk.m_fDirty = true;
    }
 
@@ -334,7 +334,7 @@ void Level::UpdateVisibleRegion( const glm::vec3& playerPos, int viewRadius )
 
    for( auto it = m_chunks.begin(); it != m_chunks.end(); ++it )
    {
-      Chunk& chunk = *( it->second );
+      Chunk& chunk = it->second;
       if( chunk.m_fDirty )
       {
          chunk.GenerateMesh();
@@ -386,7 +386,7 @@ void Level::SyncChunkRender( const ChunkCoord& coord )
       return;
 
    ChunkRender& render = EnsureChunkRender( coord );
-   render.Upload( it->second->GetMesh() );
+   render.Upload( it->second.GetMesh() );
 }
 
 

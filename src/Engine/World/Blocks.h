@@ -45,10 +45,10 @@ struct BlockInfo
 // BlockData - definition of all block types and their properties
 // ------------------------------------------------------------
 constexpr BlockInfo BlockData[] = {
-   { BlockId::Air,   "",                              BlockFlag::None                      },
-   { BlockId::Dirt,  "res/textures/blocks/dirt.png",  BlockFlag::Solid | BlockFlag::Opaque },
-   { BlockId::Stone, "res/textures/blocks/stone.png", BlockFlag::Solid | BlockFlag::Opaque },
-   { BlockId::Grass, "res/textures/blocks/grass.png", BlockFlag::Solid | BlockFlag::Opaque },
+   { BlockId::Air,   "",                                 BlockFlag::None                      },
+   { BlockId::Dirt,  "assets/textures/blocks/dirt.png",  BlockFlag::Solid | BlockFlag::Opaque },
+   { BlockId::Stone, "assets/textures/blocks/stone.png", BlockFlag::Solid | BlockFlag::Opaque },
+   { BlockId::Grass, "assets/textures/blocks/grass.png", BlockFlag::Solid | BlockFlag::Opaque },
 };
 
 

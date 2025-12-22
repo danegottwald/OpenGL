@@ -175,8 +175,8 @@ private:
    Chunk& EnsureChunk( const ChunkCoord& cc );
    void   GenerateChunkData( Chunk& chunk );
 
-   std::unordered_map< ChunkCoord, std::unique_ptr< Chunk >, ChunkCoordHash > m_chunks;
-   std::unordered_map< ChunkCoord, ChunkRender, ChunkCoordHash >              m_chunkRenders;
+   std::unordered_map< ChunkCoord, Chunk, ChunkCoordHash >       m_chunks;
+   std::unordered_map< ChunkCoord, ChunkRender, ChunkCoordHash > m_chunkRenders;
 
    FastNoiseLite m_noise;
 

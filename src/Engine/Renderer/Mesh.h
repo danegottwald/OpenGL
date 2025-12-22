@@ -118,48 +118,37 @@ public:
    void      SetColor( const glm::vec3& color ) { m_color = color; }
    glm::vec3 GetColor() const { return m_color; }
 
-   virtual void SetPosition( const glm::vec3& position ) = 0;
-   glm::vec3    GetPosition() { return m_position; }
-
    virtual float GetCenterToBottomDistance() const { return 0.0f; }
 
 protected:
+   // Compiles the mesh data into the MeshBuffer
+   virtual void Compile() = 0;
+
    MeshBuffer m_meshBuffer;
-   glm::vec3  m_position { 0.0f, 0.0f, 0.0f };
    glm::vec3  m_color { 0.5f, 0.0f, 0.0f };
 };
 
 class CapsuleMesh : public IMesh
 {
 public:
-   CapsuleMesh( const glm::vec3& position = glm::vec3( 0.0f ), float radius = 0.5f, float height = 2.0f, int segments = 24, int rings = 12 ) :
+   CapsuleMesh( float radius = 0.5f, float height = 2.0f, int segments = 24, int rings = 12 ) :
       m_radius( radius ),
       m_height( height )
    {
-      m_position = position;
       m_meshBuffer.Initialize();
       GenerateCapsule( radius, height, segments, rings );
-      SetPosition( position );
+      Compile();
    }
 
-   void SetPosition( const glm::vec3& position ) override
+   void Compile() override
    {
-      m_position = position;
       m_meshBuffer.Bind();
 
       VertexBufferLayout layout;
       layout.Push< float >( 3 ); // Position
       layout.Push< float >( 3 ); // Normal
 
-      // Offset vertices by position
-      std::vector< float > offsetVertices = m_vertices;
-      for( size_t i = 0; i < offsetVertices.size(); i += 6 )
-      {
-         offsetVertices[ i ] += position.x;
-         offsetVertices[ i + 1 ] += position.y;
-         offsetVertices[ i + 2 ] += position.z;
-      }
-      m_meshBuffer.SetVertexData( offsetVertices, std::move( layout ) );
+      m_meshBuffer.SetVertexData( m_vertices, std::move( layout ) );
       m_meshBuffer.SetIndexData( m_indices );
       m_meshBuffer.Unbind();
    }
@@ -301,18 +290,16 @@ private:
 class SphereMesh : public IMesh
 {
 public:
-   SphereMesh( const glm::vec3& position = glm::vec3( 0.0f ), float radius = 0.5f, int segments = 24, int rings = 12 ) :
+   SphereMesh( float radius = 0.5f, int segments = 24, int rings = 12 ) :
       m_radius( radius )
    {
-      m_position = position;
       m_meshBuffer.Initialize();
       GenerateSphere( radius, segments, rings );
-      SetPosition( position );
+      Compile();
    }
 
-   void SetPosition( const glm::vec3& position ) override
+   void Compile() override
    {
-      m_position = position;
       m_meshBuffer.Bind();
 
       VertexBufferLayout layout;
@@ -320,14 +307,7 @@ public:
       layout.Push< float >( 3 ); // Normal
 
       // Offset vertices by position
-      std::vector< float > offsetVertices = m_vertices;
-      for( size_t i = 0; i < offsetVertices.size(); i += 6 )
-      {
-         offsetVertices[ i ] += position.x;
-         offsetVertices[ i + 1 ] += position.y;
-         offsetVertices[ i + 2 ] += position.z;
-      }
-      m_meshBuffer.SetVertexData( offsetVertices, std::move( layout ) );
+      m_meshBuffer.SetVertexData( m_vertices, std::move( layout ) );
       m_meshBuffer.SetIndexData( m_indices );
       m_meshBuffer.Unbind();
    }
@@ -402,37 +382,22 @@ private:
 class CubeMesh : public IMesh
 {
 public:
-   CubeMesh( const glm::vec3& position = glm::vec3( 0.0f ), float size = 1.0f ) :
+   CubeMesh( float size = 1.0f ) :
       m_size( size )
    {
-      m_position = position;
       m_meshBuffer.Initialize();
-      SetPosition( position );
+      Compile();
    }
 
-   void SetPosition( const glm::vec3& position ) override
+   void Compile() override
    {
-      m_position = position;
       m_meshBuffer.Bind();
 
       VertexBufferLayout layout;
       layout.Push< float >( 3 ); // Position
       layout.Push< float >( 3 ); // Normal
 
-      if( position != glm::vec3( 0.0f ) )
-      {
-         std::array< float, m_verticesSize > newVertices = m_vertices;
-         for( size_t i = 0; i < m_vertices.size(); i += m_vertexSize )
-         {
-            newVertices[ i ] += position.x;
-            newVertices[ i + 1 ] += position.y;
-            newVertices[ i + 2 ] += position.z;
-         }
-         m_meshBuffer.SetVertexData( newVertices, std::move( layout ) );
-      }
-      else
-         m_meshBuffer.SetVertexData( m_vertices, std::move( layout ) );
-
+      m_meshBuffer.SetVertexData( m_vertices, std::move( layout ) );
       m_meshBuffer.SetIndexData( m_indices );
       m_meshBuffer.Unbind();
    }
