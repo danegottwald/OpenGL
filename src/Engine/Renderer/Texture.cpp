@@ -3,7 +3,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
-#include <Renderer/Shader.h>
+#include <Engine/Renderer/Shader.h>
 
 
 constexpr std::string_view SKYBOX_VERT_SHADER = R"(

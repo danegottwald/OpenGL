@@ -2,8 +2,8 @@
 #include "Window.h"
 
 // Project dependencies
-#include <Renderer/Shader.h>
-#include <Renderer/Texture.h>
+#include <Engine/Renderer/Shader.h>
+#include <Engine/Renderer/Texture.h>
 
 std::vector< float >        v;
 std::vector< unsigned int > i;

@@ -6,22 +6,22 @@
 #include "Window.h"
 
 // Project dependencies
-#include <Events/ApplicationEvent.h>
-#include <Events/KeyEvent.h>
-#include <Events/MouseEvent.h>
-#include <Input/Input.h>
-#include <Network/Network.h>
+#include <Engine/Events/ApplicationEvent.h>
+#include <Engine/Events/KeyEvent.h>
+#include <Engine/Events/MouseEvent.h>
+#include <Engine/Input/Input.h>
+#include <Engine/Network/Network.h>
 
-#include <World/Level.h>
-#include <Renderer/Shader.h>
-#include <Renderer/Texture.h>
+#include <Engine/World/Level.h>
+#include <Engine/Renderer/Shader.h>
+#include <Engine/Renderer/Texture.h>
 
 //#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
 // Component includes
-#include <Entity/Components.h>
-#include <Entity/Registry.h>
+#include <Engine/ECS/Components.h>
+#include <Engine/ECS/Registry.h>
 
 // ================ SYSTEMS ================
 constexpr float GRAVITY           = -32.0f;

@@ -1,7 +1,7 @@
 #include "NetworkClient.h"
 
 // Project dependencies
-#include <Events/NetworkEvent.h>
+#include <Engine/Events/NetworkEvent.h>
 
 namespace
 {

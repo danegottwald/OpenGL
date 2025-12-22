@@ -8,7 +8,7 @@
 #include "Packet.h"
 
 // Project dependencies
-#include <Core/GUIManager.h>
+#include <Engine/Core/GUIManager.h>
 
 #define DEFAULT_ADDRESS "127.0.0.1"
 #define DEFAULT_PORT 8080

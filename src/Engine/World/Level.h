@@ -2,7 +2,7 @@
 
 #include <FastNoiseLite/FastNoiseLite.h>
 
-#include <World/Blocks.h>
+#include <Engine/World/Blocks.h>
 
 // Fixed chunk dimensions
 static constexpr int CHUNK_SIZE_X = 16;

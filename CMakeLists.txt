@@ -23,8 +23,8 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
 # Copy resource directory to build directory
-set(RES_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/res")
-add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_DIRECTORY} "${CMAKE_CURRENT_BINARY_DIR}/res")
+set(RES_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_DIRECTORY} "${CMAKE_CURRENT_BINARY_DIR}/assets")
 
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE

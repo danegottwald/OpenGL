@@ -4,10 +4,10 @@
 #include "GUIManager.h"
 
 // Project dependencies
-#include <Events/ApplicationEvent.h>
-#include <Events/KeyEvent.h>
-#include <Events/MouseEvent.h>
-#include <Input/Input.h>
+#include <Engine/Events/ApplicationEvent.h>
+#include <Engine/Events/KeyEvent.h>
+#include <Engine/Events/MouseEvent.h>
+#include <Engine/Input/Input.h>
 
 Window::Window( const WindowData& winData ) :
    m_WindowData( winData )

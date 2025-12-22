@@ -1,7 +1,7 @@
 #pragma once
 
 // Project dependencies
-#include <Events/Event.h>
+#include <Engine/Events/Event.h>
 
 // Forward Declarations
 struct GLFWwindow;

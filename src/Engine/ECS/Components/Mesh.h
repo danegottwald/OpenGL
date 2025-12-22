@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Renderer/Mesh.h>
+#include <Engine/Renderer/Mesh.h>
 
 struct CMesh
 {

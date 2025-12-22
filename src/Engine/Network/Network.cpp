@@ -5,10 +5,10 @@
 #include "Packet.h"
 
 // Project dependencies
-#include <Core/GUIManager.h>
-#include <Core/Window.h>
-#include <Events/NetworkEvent.h>
-#include <Input/Input.h>
+#include <Engine/Core/GUIManager.h>
+#include <Engine/Core/Window.h>
+#include <Engine/Events/NetworkEvent.h>
+#include <Engine/Input/Input.h>
 
 // ===================================================
 //      INetwork

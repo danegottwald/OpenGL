@@ -1,7 +1,7 @@
 #include "NetworkHost.h"
 
 // Project dependencies
-#include <Events/NetworkEvent.h>
+#include <Engine/Events/NetworkEvent.h>
 
 constexpr size_t RECV_BUFFER_SIZE = 4096;
 

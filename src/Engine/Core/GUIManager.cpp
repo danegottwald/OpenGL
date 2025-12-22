@@ -4,10 +4,10 @@
 #include "Window.h"
 
 // Project dependencies
-#include <Core/Timestep.h>
-#include <Entity/Registry.h>
-#include <Entity/Components/Transform.h>
-#include <Entity/Components/Velocity.h>
+#include <Engine/Core/Timestep.h>
+#include <Engine/ECS/Registry.h>
+#include <Engine/ECS/Components/Transform.h>
+#include <Engine/ECS/Components/Velocity.h>
 
 // ========================================================================
 //      GUIManager

@@ -1,7 +1,7 @@
 #pragma once
 
 // Project dependencies
-#include <Renderer/VertexBufferLayout.h>
+#include <Engine/Renderer/VertexBufferLayout.h>
 
 class MeshBuffer
 {

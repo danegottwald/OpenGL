@@ -4,7 +4,7 @@
 #include "Event.h"
 
 // Project dependencies
-#include <Input/Codes.h>
+#include <Engine/Input/Codes.h>
 
 namespace Events
 {
