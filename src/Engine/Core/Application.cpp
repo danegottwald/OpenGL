@@ -15,6 +15,7 @@
 #include <Engine/World/Level.h>
 #include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/World/Raycast.h>
 
 //#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -281,118 +282,6 @@ void CameraSystem( Entity::Registry& registry, Window& window )
    }
 }
 
-// Simple helper to load a 2D image; replace with your own loader.
-// Returns raw RGBA8 data + width/height, or false on failure.
-struct ImageData
-{
-   int            width  = 0;
-   int            height = 0;
-   unsigned char* pixels = nullptr; // RGBA8
-};
-
-GLuint      blockTextureArrayId = 0;
-static void InitBlockTextureArray()
-{
-   if( blockTextureArrayId != 0 )
-      return; // already initialized
-
-   // List your block textures here, order = layer index
-   // layer 0 can be a dummy/air texture if you want
-   struct TexDef
-   {
-      const char* path;
-   };
-
-   const std::vector< TexDef > texDefs = {
-      { "assets/textures/dirt.png" },  // layer 0 (optional)
-      { "assets/textures/dirt.png" },  // layer 1 (BLOCK_DIRT)
-      { "assets/textures/stone.png" }, // layer 2 (BLOCK_STONE)
-   };
-
-   std::vector< ImageData > images;
-   images.reserve( texDefs.size() );
-
-   int atlasWidth  = 0;
-   int atlasHeight = 0;
-
-   // Load all images
-   //stbi_set_flip_vertically_on_load( true );
-   for( const auto& def : texDefs )
-   {
-
-      ImageData img;
-      int       bpp;
-      img.pixels = stbi_load( def.path, &img.width, &img.height, &bpp, 4 );
-      if( !img.pixels )
-      {
-         std::cerr << "Failed to load texture: " << def.path << " | Reason: " << stbi_failure_reason() << "\n";
-         continue;
-      }
-
-      if( atlasWidth == 0 )
-      {
-         atlasWidth  = img.width;
-         atlasHeight = img.height;
-      }
-      else
-      {
-         // All layers must have same size
-         if( img.width != atlasWidth || img.height != atlasHeight )
-         {
-            std::cerr << "Block texture size mismatch: " << def.path << "\n";
-            return;
-         }
-      }
-
-      images.push_back( std::move( img ) );
-   }
-
-   // Create texture array
-   glGenTextures( 1, &blockTextureArrayId );
-   glBindTexture( GL_TEXTURE_2D_ARRAY, blockTextureArrayId );
-
-   const GLsizei layers = static_cast< GLsizei >( images.size() );
-
-   glTexImage3D( GL_TEXTURE_2D_ARRAY,
-                 0,        // level
-                 GL_RGBA8, // internal format
-                 atlasWidth,
-                 atlasHeight,
-                 layers,           // depth = number of layers
-                 0,                // border
-                 GL_RGBA,          // data format
-                 GL_UNSIGNED_BYTE, // data type
-                 nullptr           // no data yet, we'll upload per-layer
-   );
-
-   // Upload each layer
-   for( GLsizei layer = 0; layer < layers; ++layer )
-   {
-      const auto& img = images[ layer ];
-      glTexSubImage3D( GL_TEXTURE_2D_ARRAY,
-                       0, // level
-                       0,
-                       0,
-                       layer, // x, y, zoffset
-                       atlasWidth,
-                       atlasHeight,
-                       1, // depth = 1 layer
-                       GL_RGBA,
-                       GL_UNSIGNED_BYTE,
-                       img.pixels );
-   }
-
-   // Set filtering and wrapping
-   glTexParameteri( GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST );
-   glTexParameteri( GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-   glTexParameteri( GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT );
-   glTexParameteri( GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT );
-
-   glGenerateMipmap( GL_TEXTURE_2D_ARRAY );
-
-   glBindTexture( GL_TEXTURE_2D_ARRAY, 0 );
-}
-
 
 class ViewFrustum
 {
@@ -433,8 +322,8 @@ private:
 };
 
 
-std::optional< glm::vec3 > g_highlightBlock;
-void                       RenderSystem( Entity::Registry& registry, Level& level, const CCamera& camera, const glm::vec3& camPosition )
+std::optional< glm::ivec3 > g_highlightBlock;
+void                        RenderSystem( Entity::Registry& registry, Level& level, const CCamera& camera, const glm::vec3& camPosition )
 {
    //PROFILE_SCOPE( "RenderSystem" );
    // TODO - refactor this system, Shader should be within component data for entity
@@ -464,10 +353,9 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    ViewFrustum frustum( camera.viewProjection );
 
    {
-      g_textureAtlasManager.Bind();
+      TextureAtlasManager::Get().Bind();
 
       pTerrainShader->SetUniform( "u_blockTextures", 0 );
-      pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
 
       for( const auto& [ coord, chunk ] : level.GetChunks() )
       {
@@ -487,7 +375,7 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
          pRender->Render();
       }
 
-      g_textureAtlasManager.Unbind();
+      TextureAtlasManager::Get().Unbind();
    }
 
    // Render all entities with CMesh component
@@ -502,7 +390,7 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
 
       const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
       const glm::mat4 mvp   = camera.viewProjection * model;
-      pTerrainShader->SetUniform( "u_color", mesh.mesh->GetColor() );
+      //pTerrainShader->SetUniform( "u_color", mesh.mesh->GetColor() );
       pTerrainShader->SetUniform( "u_MVP", mvp );
       pTerrainShader->SetUniform( "u_Model", model );
 
@@ -568,7 +456,7 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
 
          const glm::mat4 mvp = camera.viewProjection * model;
          pTerrainShader->SetUniform( "u_MVP", mvp );
-         pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) ); // white
+         //pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) ); // white
 
          // Unit cube wireframe in local space [-0.5,0.5]^3
          const glm::vec3 min           = glm::vec3( -0.5f );
@@ -629,7 +517,7 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
 
       glDisable( GL_DEPTH_TEST );
       pTerrainShader->SetUniform( "u_MVP", glm::mat4( 1.0f ) );
-      pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
+      //pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
 
       const float                r            = 0.01f; // reticle arm length in NDC
       std::array< glm::vec3, 4 > reticleVerts = {
@@ -673,70 +561,12 @@ void TickingSystem( Entity::Registry& registry, float /*delta*/ )
       registry.Destroy( e );
 }
 
-struct Ray
+
+static float RandRange( float min, float max )
 {
-   glm::vec3 origin;
-   glm::vec3 direction;
-};
-
-struct RaycastResult
-{
-   glm::vec3  position;
-   glm::ivec3 normal;
-   float      distance;
-};
-
-// add debug rendering for Raycasts
-
-std::optional< RaycastResult > DoRaycast( const Level& level, const Ray& ray, float maxDistance )
-{
-   PROFILE_SCOPE( "DoRaycast" );
-
-   glm::vec3 dir = glm::normalize( ray.direction );
-   if( glm::dot( dir, dir ) < 1e-12f )
-      return std::nullopt;
-
-   // Current voxel
-   glm::ivec3 blockPos = glm::floor( ray.origin );
-
-   // If we start inside a block, hit it immediately
-   if( FSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
-      return RaycastResult { glm::vec3( blockPos ), glm::ivec3( 0 ) /*normal*/, 0.0f /*distance*/ };
-
-   // DDA setup
-   glm::ivec3 step( dir.x < 0.0f ? -1 : 1, dir.y < 0.0f ? -1 : 1, dir.z < 0.0f ? -1 : 1 );
-   glm::vec3  invDir( dir.x != 0.0f ? 1.0f / dir.x : std::numeric_limits< float >::infinity(),
-                     dir.y != 0.0f ? 1.0f / dir.y : std::numeric_limits< float >::infinity(),
-                     dir.z != 0.0f ? 1.0f / dir.z : std::numeric_limits< float >::infinity() );
-
-   // Distance from origin to first voxel boundary on each axis
-   glm::vec3 tMax {};
-   for( int i = 0; i < 3; ++i )
-      tMax[ i ] = ( static_cast< float >( blockPos[ i ] ) + ( step[ i ] > 0 ? 1.0f : 0.0f ) - ray.origin[ i ] ) * invDir[ i ];
-
-   float      dist      = 0.0f;
-   glm::vec3  tDelta    = glm::abs( invDir );
-   glm::ivec3 hitNormal = glm::ivec3( 0 );
-   while( dist <= maxDistance )
-   {
-      if( FSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
-         return RaycastResult { glm::vec3( blockPos ), hitNormal, dist };
-
-      // Determine next axis to step
-      int axis = 0;
-      if( tMax.y < tMax.x )
-         axis = 1;
-      if( tMax.z < tMax[ axis ] )
-         axis = 2;
-
-      dist = tMax[ axis ];
-      tMax[ axis ] += tDelta[ axis ];
-      blockPos[ axis ] += step[ axis ];
-      hitNormal         = glm::ivec3( 0 );
-      hitNormal[ axis ] = -step[ axis ];
-   }
-
-   return std::nullopt;
+   thread_local static std::mt19937                            rng( std::random_device {}() );
+   thread_local static std::uniform_real_distribution< float > dist( 0.0f, 1.0f );
+   return min + ( dist( rng ) * ( max - min ) );
 }
 
 
@@ -804,8 +634,7 @@ void Application::Run()
 
       // Get camera transform
       CTransform* pCamTran = registry.TryGet< CTransform >( camera );
-      CCamera*    pCamComp = registry.TryGet< CCamera >( camera );
-      if( !pCamTran || !pCamComp )
+      if( !pCamTran )
          return;
 
       // Camera forward vector from yaw (y) and pitch (x). This is equivalent
@@ -824,9 +653,6 @@ void Application::Run()
 
       if( e.GetMouseButton() == Input::ButtonLeft )
       {
-         std::mt19937                            rng( std::random_device {}() );
-         std::uniform_real_distribution< float > dist01( 0.0f, 1.0f );
-
          constexpr float CONE_ANGLE_DEG = 8.0f; // shotgun spread
          constexpr float SPEED          = 50.0f;
 
@@ -836,14 +662,11 @@ void Application::Run()
          glm::vec3 up      = glm::cross( right, forward );
          float     cosMax  = glm::cos( glm::radians( CONE_ANGLE_DEG ) );
 
-         constexpr float MUZZLE_OFFSET = 1.0f;
-         glm::vec3       spawnPos      = rayOrigin + forward * MUZZLE_OFFSET;
+         const glm::vec3 spawnPos = rayOrigin + forward;
          for( int i = 0; i < 500; ++i )
          {
             // Uniform random direction in cone
-            float u = dist01( rng );
-            float v = dist01( rng );
-
+            float u = RandRange( 0.0f, 1.0f ), v = RandRange( 0.0f, 1.0f );
             float cosTheta = glm::mix( cosMax, 1.0f, u );
             float sinTheta = std::sqrt( 1.0f - cosTheta * cosTheta );
             float phi      = glm::two_pi< float >() * v;
@@ -863,30 +686,15 @@ void Application::Run()
          return;
       }
 
-      if( std::optional< RaycastResult > result = DoRaycast( level, Ray { rayOrigin, dir }, maxDistance ) )
+      if( std::optional< RaycastResult > result = TryRaycast( level, Ray { rayOrigin, dir, maxDistance } ) )
       {
-         std::cout << "Raycast hit at position: " << result->position.x << ", " << result->position.y << ", " << result->position.z << "\n";
+         std::cout << "Raycast hit at position: " << result->point.x << ", " << result->point.y << ", " << result->point.z << "\n";
 
          switch( e.GetMouseButton() )
          {
-            case Input::ButtonLeft:
-            {
-               const glm::vec3 pos = result->position;
-               level.SetBlock( static_cast< int >( pos.x ), static_cast< int >( pos.y ), static_cast< int >( pos.z ), BlockId::Air /*id*/ );
-               break;
-            }
-            case Input::ButtonRight:
-            {
-               const glm::vec3 pos = result->position + glm::vec3( result->normal );
-               level.SetBlock( static_cast< int >( pos.x ), static_cast< int >( pos.y ), static_cast< int >( pos.z ), BlockId::Grass /*id*/ );
-               break;
-            }
-            case Input::ButtonMiddle:
-            {
-               const glm::vec3 pos = result->position;
-               level.Explode( static_cast< int >( pos.x ), static_cast< int >( pos.y ), static_cast< int >( pos.z ), 36 /*radius*/ );
-               break;
-            }
+            case Input::ButtonLeft:   level.SetBlock( result->block, BlockId::Air /*id*/ ); break;
+            case Input::ButtonRight:  level.SetBlock( result->block + result->faceNormal, BlockId::Grass /*id*/ ); break;
+            case Input::ButtonMiddle: level.Explode( result->block, 36 /*radius*/ ); break;
          }
       }
       else
@@ -895,8 +703,7 @@ void Application::Run()
    // -----------------------------------
 
    // Initialize things
-   g_textureAtlasManager.Compile();
-   InitBlockTextureArray();
+   TextureAtlasManager::Get().CompileBlockAtlas();
 
    GUIManager::Init();
    INetwork::RegisterGUI();
@@ -914,7 +721,7 @@ void Application::Run()
    registry.Add< CTransform >( psCube->Get(), 6.0f, 128.0f, 8.0f );
    registry.Add< CMesh >( psCube->Get(), std::make_shared< CubeMesh >() );
    registry.Add< CVelocity >( psCube->Get(), glm::vec3( 0.0f, 0.0f, 0.0f ) );
-   registry.Add< CPhysics >( psCube->Get(), CPhysics { glm::vec3( 1.0f ) } );
+   registry.Add< CPhysics >( psCube->Get(), CPhysics { glm::vec3( 0.5f ) } );
 
    while( window.IsOpen() )
    {
@@ -953,24 +760,8 @@ void Application::Run()
 
          if( pCameraTran && pCameraComp )
          {
-            // Recompute camera forward like in mouse handler
-            float pitch = glm::radians( pCameraTran->rotation.x );
-            float yaw   = glm::radians( pCameraTran->rotation.y );
-
-            glm::vec3 dir {};
-            dir.x = glm::cos( pitch ) * glm::sin( yaw );
-            dir.y = -glm::sin( pitch );
-            dir.z = -glm::cos( pitch ) * glm::cos( yaw );
-            dir   = glm::normalize( dir );
-
-            glm::vec3 rayOrigin   = pCameraTran->position;
-            float     maxDistance = 64.0f;
-
-            std::optional< glm::vec3 > highlightBlock;
-            if( std::optional< RaycastResult > result = DoRaycast( level, Ray { rayOrigin, dir }, maxDistance ) )
-               highlightBlock = result->position; // result->position is integer block coords
-
-            g_highlightBlock = highlightBlock;
+            auto optResult   = TryRaycast( level, CreateRay( pCameraTran->position, pCameraTran->rotation, 64.0f /*maxDistance*/ ) );
+            g_highlightBlock = optResult ? std::optional< glm::ivec3 >( optResult->block ) : std::nullopt;
          }
 
          if( !window.FMinimized() && pCameraComp && pCameraTran )

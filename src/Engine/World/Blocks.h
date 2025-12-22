@@ -36,7 +36,7 @@ constexpr BlockFlag operator|( BlockFlag a, BlockFlag b )
 struct BlockInfo
 {
    BlockId          id;
-   std::string_view texture;
+   std::string_view json;
    BlockFlag        flags;
 };
 
@@ -45,14 +45,14 @@ struct BlockInfo
 // BlockData - definition of all block types and their properties
 // ------------------------------------------------------------
 constexpr BlockInfo BlockData[] = {
-   { BlockId::Air,   "",                                 BlockFlag::None                      },
-   { BlockId::Dirt,  "assets/textures/blocks/dirt.png",  BlockFlag::Solid | BlockFlag::Opaque },
-   { BlockId::Stone, "assets/textures/blocks/stone.png", BlockFlag::Solid | BlockFlag::Opaque },
-   { BlockId::Grass, "assets/textures/blocks/grass.png", BlockFlag::Solid | BlockFlag::Opaque },
+   { BlockId::Air,   "",                         BlockFlag::None                      },
+   { BlockId::Dirt,  "assets/models/dirt.json",  BlockFlag::Solid | BlockFlag::Opaque },
+   { BlockId::Stone, "assets/models/stone.json", BlockFlag::Solid | BlockFlag::Opaque },
+   { BlockId::Grass, "assets/models/grass.json", BlockFlag::Solid | BlockFlag::Opaque },
 };
 
 
-constexpr const BlockInfo& GetBlockInfo( BlockId id )
+constexpr const BlockInfo& GetBlockInfo( BlockId id ) noexcept
 {
    return BlockData[ static_cast< size_t >( id ) ];
 }
@@ -74,13 +74,13 @@ constexpr auto _blockDataValidation = []()
 // ------------------------------------------------------------
 // Utility functions
 // ------------------------------------------------------------
-constexpr bool FHasFlag( BlockFlag v, BlockFlag f )
+constexpr bool FHasFlag( BlockFlag v, BlockFlag f ) noexcept
 {
    return ( static_cast< uint8_t >( v ) & static_cast< uint8_t >( f ) ) != 0;
 }
 
 
-constexpr bool FSolid( BlockId id )
+constexpr bool FSolid( BlockId id ) noexcept
 {
    return FHasFlag( GetBlockInfo( id ).flags, BlockFlag::Solid );
 }

@@ -20,10 +20,8 @@ public:
    void Run();
 
 private:
-   Application()                                = default;
-   ~Application()                               = default;
-   Application( const Application& )            = delete;
-   Application& operator=( const Application& ) = delete;
+   Application() = default;
+   NO_COPY_MOVE( Application )
 
    ApplicationState m_state { APP_STATE_NONE };
 };

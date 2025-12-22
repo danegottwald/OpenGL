@@ -13,6 +13,7 @@ find_package(glm CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # Collect all source files
 file(GLOB_RECURSE SRC_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.h" "src/*.cpp")
@@ -40,6 +41,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
    glm::glm-header-only
    glad::glad
    imgui::imgui
+   nlohmann_json::nlohmann_json
 )
 
 # Prevent console window from showing on Release builds

@@ -156,10 +156,12 @@ public:
    Level();
    ~Level() = default;
 
-   BlockId GetBlock( int wx, int wy, int wz ) const;
+   BlockId GetBlock( int wx, int wy, int wz ) const noexcept;
    void    SetBlock( int wx, int wy, int wz, BlockId id );
+   void    SetBlock( glm::ivec3 pos, BlockId id ) { SetBlock( pos.x, pos.y, pos.z, id ); }
 
    void Explode( int wx, int wy, int wz, uint8_t radius );
+   void Explode( glm::ivec3 pos, uint8_t radius ) { Explode( pos.x, pos.y, pos.z, radius ); }
 
    // Call during update to load/unload chunks around player
    void UpdateVisibleRegion( const glm::vec3& playerPos, int viewRadius );
@@ -173,7 +175,7 @@ public:
    void               SyncChunkRender( const ChunkCoord& coord );
 
 private:
-   auto   WorldToChunk( int wx, int wy, int wz ) const;
+   auto   WorldToChunk( int wx, int wy, int wz ) const noexcept;
    Chunk& EnsureChunk( const ChunkCoord& cc );
    void   GenerateChunkData( Chunk& chunk );
 

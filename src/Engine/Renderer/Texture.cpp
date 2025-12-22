@@ -3,10 +3,33 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
+#include <nlohmann/json.hpp>
+
 #include <Engine/Renderer/Shader.h>
 
 
-constexpr std::string_view SKYBOX_VERT_SHADER = R"(
+// ----------------------------------------------------------------
+// STBFlipVerticallyOnLoad - RAII helper to flip STB image loading
+// ----------------------------------------------------------------
+class STBFlipVerticallyOnLoad
+{
+public:
+   STBFlipVerticallyOnLoad( bool fValue ) noexcept :
+      m_fRestore( static_cast< bool >( stbi__vertically_flip_on_load_global ) )
+   {
+      stbi_set_flip_vertically_on_load( fValue );
+   }
+   ~STBFlipVerticallyOnLoad() noexcept { stbi_set_flip_vertically_on_load( m_fRestore ); }
+
+private:
+   const bool m_fRestore { false };
+};
+
+
+// ----------------------------------------------------------------
+// SkyboxTexture
+// ----------------------------------------------------------------
+static constexpr std::string_view SKYBOX_VERT_SHADER = R"(
    #version 330 core
 
    layout(location = 0) in vec3 aPos;
@@ -25,7 +48,7 @@ constexpr std::string_view SKYBOX_VERT_SHADER = R"(
    } )";
 
 
-constexpr std::string_view SKYBOX_FRAG_SHADER = R"(
+static constexpr std::string_view SKYBOX_FRAG_SHADER = R"(
    #version 330 core
 
    in vec3 v_TexDir;
@@ -39,9 +62,6 @@ constexpr std::string_view SKYBOX_FRAG_SHADER = R"(
    } )";
 
 
-// ----------------------------------------------------------------
-// SkyboxTexture
-// ----------------------------------------------------------------
 SkyboxTexture::SkyboxTexture( std::span< const std::string_view > faces ) :
    m_pShader( std::make_unique< Shader >( Shader::SOURCE, SKYBOX_VERT_SHADER.data(), SKYBOX_FRAG_SHADER.data() ) )
 {
@@ -56,45 +76,6 @@ SkyboxTexture::~SkyboxTexture()
    glDeleteBuffers( 1, &m_vbo );
    glDeleteTextures( 1, &m_textureID );
 }
-
-
-void SkyboxTexture::Draw( const glm::mat4& view, const glm::mat4& projection )
-{
-   glDepthFunc( GL_LEQUAL ); // skybox depth trick
-   glDepthMask( GL_FALSE );
-
-   m_pShader->Bind();
-   m_pShader->SetUniform( "u_View", glm::mat4( glm::mat3( view ) ) );
-   m_pShader->SetUniform( "u_Projection", projection );
-
-   glActiveTexture( GL_TEXTURE0 );
-   glBindTexture( GL_TEXTURE_CUBE_MAP, m_textureID );
-   m_pShader->SetUniform( "u_Skybox", 0 );
-
-   glBindVertexArray( m_vao );
-   glDrawArrays( GL_TRIANGLES, 0, 36 );
-   glBindVertexArray( 0 );
-
-   m_pShader->Unbind();
-
-   glDepthMask( GL_TRUE );
-   glDepthFunc( GL_LESS );
-}
-
-
-class STBFlipVerticallyOnLoad
-{
-public:
-   STBFlipVerticallyOnLoad( bool fValue ) :
-      m_fRestore( static_cast< bool >( stbi__vertically_flip_on_load_global ) )
-   {
-      stbi_set_flip_vertically_on_load( fValue );
-   }
-   ~STBFlipVerticallyOnLoad() { stbi_set_flip_vertically_on_load( m_fRestore ); }
-
-private:
-   bool m_fRestore { false };
-};
 
 
 void SkyboxTexture::LoadCubemap( std::span< const std::string_view > faces )
@@ -149,21 +130,41 @@ void SkyboxTexture::InitGeometry()
 }
 
 
+void SkyboxTexture::Draw( const glm::mat4& view, const glm::mat4& projection )
+{
+   glDepthFunc( GL_LEQUAL ); // skybox depth trick
+   glDepthMask( GL_FALSE );
+
+   m_pShader->Bind();
+   m_pShader->SetUniform( "u_View", glm::mat4( glm::mat3( view ) ) );
+   m_pShader->SetUniform( "u_Projection", projection );
+
+   glActiveTexture( GL_TEXTURE0 );
+   glBindTexture( GL_TEXTURE_CUBE_MAP, m_textureID );
+   m_pShader->SetUniform( "u_Skybox", 0 );
+
+   glBindVertexArray( m_vao );
+   glDrawArrays( GL_TRIANGLES, 0, 36 );
+   glBindVertexArray( 0 );
+
+   m_pShader->Unbind();
+
+   glDepthMask( GL_TRUE );
+   glDepthFunc( GL_LESS );
+}
+
+
 // ----------------------------------------------------------------
 // TextureAtlas
 // ----------------------------------------------------------------
-TextureAtlas::TextureAtlas() noexcept = default;
-
-
 TextureAtlas::~TextureAtlas()
 {
    if( m_rendererID )
       glDeleteTextures( 1, &m_rendererID );
 }
 
-namespace
-{
-uint64_t HashStringViewFNV1a( std::string_view s )
+
+static uint64_t HashStringViewFNV1a( std::string_view s )
 {
    uint64_t h = 1469598103934665603ull;
    for( unsigned char c : s )
@@ -171,44 +172,90 @@ uint64_t HashStringViewFNV1a( std::string_view s )
       h ^= static_cast< uint64_t >( c );
       h *= 1099511628211ull;
    }
+
    return h;
 }
-}
+
 
 void TextureAtlas::PrepareTexture( BlockId blockId )
 {
-   const BlockInfo& info = GetBlockInfo( blockId );
-
-   auto addPathIfAny = [ & ]( std::string_view path )
+   auto addPath = [ & ]( std::string_view path ) -> uint64_t
    {
       if( path.empty() )
-         return;
+         return 0ull;
 
       const uint64_t key = HashStringViewFNV1a( path );
-      if( m_pending.contains( key ) )
-         return;
+      if( !m_pending.contains( key ) )
+      {
+         int            width = 0, height = 0, bpp = 0;
+         unsigned char* pData = stbi_load( path.data(), &width, &height, &bpp, 4 );
+         if( !pData )
+         {
+            std::cerr << "TextureAtlas::PrepareTexture - failed to load texture: " << path << " reason: " << stbi_failure_reason() << "\n";
+            return 0ull;
+         }
 
-      int            width = 0, height = 0, bpp = 0;
-      unsigned char* pData = stbi_load( path.data(), &width, &height, &bpp, 4 );
-      if( !pData )
-         throw std::runtime_error( "TextureAtlas::PrepareTexture - failed to load texture: " + std::string( path ) + " reason: " + stbi_failure_reason() );
+         PendingTexture texture;
+         texture.filepath = path;
+         texture.width    = width;
+         texture.height   = height;
+         texture.pixels   = std::vector< unsigned char >( pData, pData + static_cast< size_t >( width ) * height * 4 );
+         m_pending[ key ] = std::move( texture );
+         stbi_image_free( pData );
+      }
 
-      PendingTexture texture;
-      texture.filepath = path;
-      texture.width    = width;
-      texture.height   = height;
-      texture.pixels   = std::vector< unsigned char >( pData, pData + static_cast< size_t >( width ) * height * 4 );
-      m_pending[ key ] = std::move( texture );
-
-      stbi_image_free( pData );
+      return key;
    };
+
+   const BlockInfo& info = GetBlockInfo( blockId );
+   if( info.json.empty() )
+      return;
+
+   std::ifstream file( info.json.data() );
+   if( !file.is_open() )
+   {
+      std::cerr << "TextureAtlas::PrepareTexture - warning: could not open block json: " << info.json << "\n";
+      return;
+   }
+
+   nlohmann::json json;
+   file >> json;
+
+   auto&       attrTexture = json[ "textures" ];
+   std::string top, bottom, north, south, west, east;
+   if( attrTexture.is_string() )
+      north = east = south = west = top = bottom = attrTexture.get< std::string >();
+   else if( attrTexture.is_object() )
+   {
+      top    = attrTexture.value( "top", "" );
+      bottom = attrTexture.value( "bottom", "" );
+
+      if( std::string side = attrTexture.value( "side", "" ); !side.empty() )
+         north = south = west = east = side;
+      else
+      {
+         north = attrTexture.value( "north", "" );
+         south = attrTexture.value( "south", "" );
+         west  = attrTexture.value( "west", "" );
+         east  = attrTexture.value( "east", "" );
+      }
+   }
+   else
+   {
+      std::cerr << "TextureAtlas::PrepareTexture - warning: block json 'textures' attribute is neither string nor object: " << info.json << "\n";
+      return;
+   }
 
    STBFlipVerticallyOnLoad flipGuard( true );
 
-   // Always prepare the textures referenced by this block.
-   addPathIfAny( info.texture );
-   //addPathIfAny( info.textureTop.empty() ? info.textureSide : info.textureTop );
-   //addPathIfAny( info.textureBottom.empty() ? info.textureSide : info.textureBottom );
+   // Prepare all face textures
+   auto& keys                                                  = m_blockFaceKeys[ static_cast< size_t >( blockId ) ];
+   keys.faceKeys[ static_cast< size_t >( BlockFace::Top ) ]    = addPath( top );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::Bottom ) ] = addPath( bottom );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::North ) ]  = addPath( north );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::South ) ]  = addPath( south );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::West ) ]   = addPath( west );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::East ) ]   = addPath( east );
 }
 
 void TextureAtlas::Compile()
@@ -219,18 +266,16 @@ void TextureAtlas::Compile()
       m_rendererID = 0;
    }
 
-   m_regions.clear();
    m_width  = 0;
    m_height = 0;
-
+   m_regions.clear();
    if( m_pending.empty() )
       return;
 
-   constexpr int padding = 1;
-
    // Horizontal packing with per-image gutters
-   int totalWidth = 0;
-   int maxHeight  = 0;
+   int           totalWidth = 0;
+   int           maxHeight  = 0;
+   constexpr int padding    = 1;
    for( auto& [ _, texture ] : m_pending )
    {
       totalWidth += texture.width + padding * 2;
@@ -259,27 +304,24 @@ void TextureAtlas::Compile()
       {
          for( int x = 0; x < texture.width + padding * 2; ++x )
          {
-            const int            srcX       = x - padding;
-            const int            srcY       = y - padding;
-            const unsigned char* rgba       = getPixel( texture, srcX, srcY );
-            const int            writeX     = dstX0 + x;
-            const int            writeY     = dstY0 + y;
-            const size_t         atlasIndex = static_cast< size_t >( writeY * m_width + writeX );
-            unsigned char*       dst        = atlas.data() + atlasIndex * 4;
-            dst[ 0 ]                        = rgba[ 0 ];
-            dst[ 1 ]                        = rgba[ 1 ];
-            dst[ 2 ]                        = rgba[ 2 ];
-            dst[ 3 ]                        = rgba[ 3 ];
+            const unsigned char* rgba = getPixel( texture, x - padding, y - padding );
+            const int            dstX = dstX0 + x;
+            const int            dstY = dstY0 + y;
+            unsigned char*       dst  = &atlas[ ( size_t( dstY ) * m_width + dstX ) * 4u ];
+            dst[ 0 ]                  = rgba[ 0 ];
+            dst[ 1 ]                  = rgba[ 1 ];
+            dst[ 2 ]                  = rgba[ 2 ];
+            dst[ 3 ]                  = rgba[ 3 ];
          }
       }
 
+      // UVs
       const float invW = 1.0f / static_cast< float >( m_width );
       const float invH = 1.0f / static_cast< float >( m_height );
-
-      float u0 = static_cast< float >( dstX0 + padding ) * invW;
-      float v0 = static_cast< float >( dstY0 + padding ) * invH;
-      float u1 = static_cast< float >( dstX0 + padding + texture.width ) * invW;
-      float v1 = static_cast< float >( dstY0 + padding + texture.height ) * invH;
+      float       u0   = static_cast< float >( dstX0 + padding ) * invW;
+      float       v0   = static_cast< float >( dstY0 + padding ) * invH;
+      float       u1   = static_cast< float >( dstX0 + padding + texture.width ) * invW;
+      float       v1   = static_cast< float >( dstY0 + padding + texture.height ) * invH;
 
       m_regions[ key ] = Region {
          .uvs = { glm::vec2( u0, v0 ), glm::vec2( u1, v0 ), glm::vec2( u1, v1 ), glm::vec2( u0, v1 ) }
@@ -287,6 +329,7 @@ void TextureAtlas::Compile()
 
       xOffset += texture.width + padding * 2;
    }
+   m_pending.clear(); // No longer needed
 
    glGenTextures( 1, &m_rendererID );
    glBindTexture( GL_TEXTURE_2D, m_rendererID );
@@ -294,7 +337,6 @@ void TextureAtlas::Compile()
 
    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-
    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0 );
@@ -313,4 +355,30 @@ void TextureAtlas::Bind( unsigned int slot ) const
 void TextureAtlas::Unbind() const
 {
    glBindTexture( GL_TEXTURE_2D, 0 );
+}
+
+
+// ----------------------------------------------------------------
+// TextureAtlasManager
+// ----------------------------------------------------------------
+/*static*/ TextureAtlasManager& TextureAtlasManager::Get() noexcept
+{
+   static TextureAtlasManager instance;
+   return instance;
+}
+
+
+void TextureAtlasManager::CompileBlockAtlas()
+{
+   try
+   {
+      for( int i = 0; i < static_cast< int >( BlockId::Count ); ++i )
+         m_blockAtlas.PrepareTexture( static_cast< BlockId >( i ) );
+
+      m_blockAtlas.Compile();
+   }
+   catch( ... )
+   {
+      std::cerr << "TextureManager::CompileBlockAtlas - failed to compile block atlas" << std::endl;
+   }
 }

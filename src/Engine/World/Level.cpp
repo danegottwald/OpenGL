@@ -6,17 +6,18 @@ namespace
 {
 struct Direction
 {
-   int       dx, dy, dz;
-   glm::vec3 normal;
+   TextureAtlas::BlockFace face;
+   int                     dx, dy, dz;
+   glm::vec3               normal;
 };
 
-constexpr Direction kDirections[ 6 ] = {
-   { 1,  0,  0,  { 1.f, 0.f, 0.f }  }, // +X
-   { -1, 0,  0,  { -1.f, 0.f, 0.f } }, // -X
-   { 0,  1,  0,  { 0.f, 1.f, 0.f }  }, // +Y
-   { 0,  -1, 0,  { 0.f, -1.f, 0.f } }, // -Y
-   { 0,  0,  1,  { 0.f, 0.f, 1.f }  }, // +Z
-   { 0,  0,  -1, { 0.f, 0.f, -1.f } }, // -Z
+constexpr std::array< Direction, 6 > directions = {
+   Direction { TextureAtlas::BlockFace::East,   1,  0,  0,  glm::vec3( 1.f,  0.f,  0.f )  },
+   Direction { TextureAtlas::BlockFace::West,   -1, 0,  0,  glm::vec3( -1.f, 0.f,  0.f )  },
+   Direction { TextureAtlas::BlockFace::Top,    0,  1,  0,  glm::vec3( 0.f,  1.f,  0.f )  },
+   Direction { TextureAtlas::BlockFace::Bottom, 0,  -1, 0,  glm::vec3( 0.f,  -1.f, 0.f )  },
+   Direction { TextureAtlas::BlockFace::South,  0,  0,  1,  glm::vec3( 0.f,  0.f,  1.f )  },
+   Direction { TextureAtlas::BlockFace::North,  0,  0,  -1, glm::vec3( 0.f,  0.f,  -1.f ) },
 };
 
 // For each direction, define a unit quad in [0,1] block space.
@@ -82,17 +83,6 @@ constexpr std::array< std::array< int, 4 >, 6 > kFaceUVs = {
    identity, // +Z
    identity, // -Z (flip U)
 };
-
-uint64_t HashStringViewFNV1a( std::string_view s )
-{
-   uint64_t h = 1469598103934665603ull;
-   for( unsigned char c : s )
-   {
-      h ^= static_cast< uint64_t >( c );
-      h *= 1099511628211ull;
-   }
-   return h;
-}
 }
 
 // ----------------------------------------------------------------
@@ -162,41 +152,35 @@ void Chunk::GenerateMesh()
             const int       wy = baseWY + y;
             const int       wz = baseWZ + z;
             const glm::vec3 basePos( static_cast< float >( x ), static_cast< float >( y ), static_cast< float >( z ) );
-            for( int dir = 0; dir < 6; ++dir )
+            for( const Direction& dir : directions )
             {
-               const Direction& d  = kDirections[ dir ];
-               const int        nx = x + d.dx;
-               const int        ny = y + d.dy;
-               const int        nz = z + d.dz;
+               const int nx = x + dir.dx;
+               const int ny = y + dir.dy;
+               const int nz = z + dir.dz;
 
-               BlockId neighborId = FInBounds( nx, ny, nz ) ? GetBlock( nx, ny, nz ) : m_level.GetBlock( wx + d.dx, wy + d.dy, wz + d.dz );
+               BlockId neighborId = FInBounds( nx, ny, nz ) ? GetBlock( nx, ny, nz ) : m_level.GetBlock( wx + dir.dx, wy + dir.dy, wz + dir.dz );
                if( neighborId != BlockId::Air )
                   continue;
 
                // Pick face texture
-               std::string_view facePath = info.texture;
                //if( dir == 2 ) // +Y (top)
                //   facePath = info.textureTop.empty() ? info.textureSide : info.textureTop;
                //else if( dir == 3 ) // -Y (bottom)
                //   facePath = info.textureBottom.empty() ? info.textureSide : info.textureBottom;
 
                glm::vec3 tint = glm::vec3( 1.0f );
-               if( id == BlockId::Dirt && dir == 2 )
-               {
-                  facePath = "assets/textures/blocks/grass.png";
-                  tint     = glm::vec3( 0.79f, 0.75f, 0.35f ); // example tint for grass
-               }
+               //tint     = glm::vec3( 0.79f, 0.75f, 0.35f ); // example tint for grass
 
-               const uint64_t              textureKey = HashStringViewFNV1a( facePath );
-               const TextureAtlas::Region& region     = g_textureAtlasManager.GetRegionByKey( textureKey );
+               // id -> face uvs
 
-               const uint32_t indexOffset = static_cast< uint32_t >( m_mesh.vertices.size() );
+               const TextureAtlas::Region& region      = TextureAtlasManager::Get().GetRegion( id, dir.face );
+               const uint32_t              indexOffset = static_cast< uint32_t >( m_mesh.vertices.size() );
                for( int i = 0; i < 4; ++i )
                {
                   ChunkVertex v {};
-                  v.position = basePos + kFaceVerts[ dir ][ i ];
-                  v.normal   = d.normal;
-                  v.uv       = region.uvs[ kFaceUVs[ dir ][ i ] ];
+                  v.position = basePos + kFaceVerts[ static_cast< size_t >( dir.face ) ][ i ];
+                  v.normal   = dir.normal;
+                  v.uv       = region.uvs[ kFaceUVs[ static_cast< size_t >( dir.face ) ][ i ] ];
                   v.tint     = tint;
                   m_mesh.vertices.push_back( v );
                }
@@ -234,7 +218,7 @@ Level::Level()
 }
 
 
-auto Level::WorldToChunk( int wx, int wy, int wz ) const
+auto Level::WorldToChunk( int wx, int wy, int wz ) const noexcept
 {
    // floor division for negative values
    auto divFloor = []( int a, int b )
@@ -256,7 +240,7 @@ auto Level::WorldToChunk( int wx, int wy, int wz ) const
 }
 
 
-BlockId Level::GetBlock( int wx, int wy, int wz ) const
+BlockId Level::GetBlock( int wx, int wy, int wz ) const noexcept
 {
    auto [ cc, local ] = WorldToChunk( wx, wy, wz );
 

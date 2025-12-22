@@ -88,4 +88,10 @@ private:
 };
 #define PROFILE_SCOPE( name ) ScopeTimer timer##__LINE__{name}
 
+#define NO_COPY_MOVE( ClassName )            \
+    ClassName(const ClassName&) = delete;    \
+    ClassName(ClassName&&) = delete;         \
+    ClassName& operator=(const ClassName&) = delete; \
+    ClassName& operator=(ClassName&&) = delete;
+
 #endif // PCH_H

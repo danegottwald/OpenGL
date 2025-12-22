@@ -1,0 +1,7 @@
+{
+  "textures": {
+    "top": "assets/textures/blocks/grass_top.png",
+    "bottom": "assets/textures/blocks/dirt.png",
+    "side": "assets/textures/blocks/grass_block_side.png"
+  }
+}

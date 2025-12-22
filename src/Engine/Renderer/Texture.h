@@ -34,75 +34,78 @@ private:
 class TextureAtlas
 {
 public:
+   TextureAtlas() noexcept = default;
+   ~TextureAtlas();
+
+   int GetWidth() const { return m_width; }
+   int GetHeight() const { return m_height; }
+
+   // Prepares the textures referenced by this block (top/bottom/side).
+   void PrepareTexture( BlockId blockId );
+   void Compile();
+   void Bind( unsigned int slot = 0 ) const;
+   void Unbind() const;
+
    struct Region
    {
       std::array< glm::vec2, 4 > uvs;
    };
 
-   TextureAtlas() noexcept;
-   ~TextureAtlas();
-
-   // Prepares the textures referenced by this block (top/bottom/side).
-   void PrepareTexture( BlockId blockId );
-
-   // Pack all prepared textures, compute UVs/regions, and upload to OpenGL.
-   void Compile();
-
-   void Bind( unsigned int slot = 0 ) const;
-   void Unbind() const;
-
-   const Region& GetRegionByKey( uint64_t key ) const { return m_regions.at( key ); }
-
-   int GetWidth() const { return m_width; }
-   int GetHeight() const { return m_height; }
+   enum class BlockFace : uint8_t
+   {
+      East,
+      West,
+      Top,
+      Bottom,
+      South,
+      North,
+      Count
+   };
+   const Region& GetRegion( BlockId blockId, BlockFace face ) const
+   {
+      return m_regions.at( m_blockFaceKeys[ static_cast< size_t >( blockId ) ].faceKeys[ static_cast< size_t >( face ) ] );
+   }
 
 private:
    struct PendingTexture
    {
       std::string_view             filepath;
-      int                          width  = 0;
-      int                          height = 0;
+      int                          width { 0 };
+      int                          height { 0 };
       std::vector< unsigned char > pixels; // RGBA8
    };
 
-   unsigned int m_rendererID = 0;
-   int          m_width      = 0;
-   int          m_height     = 0;
+   unsigned int m_rendererID { 0 };
+   int          m_width { 0 };
+   int          m_height { 0 };
 
    std::unordered_map< uint64_t, PendingTexture > m_pending;
    std::unordered_map< uint64_t, Region >         m_regions;
+
+   struct BlockFaceKeys
+   {
+      std::array< uint64_t, static_cast< size_t >( BlockFace::Count ) > faceKeys { 0 };
+   };
+   std::array< BlockFaceKeys, static_cast< size_t >( BlockId::Count ) > m_blockFaceKeys { 0 };
 };
 
 
 // ----------------------------------------------------------------
-// TextureAtlasManager - Global Texture Atlas Manager
+// TextureAtlasManager - Manages Texture Atlases
 // ----------------------------------------------------------------
 class TextureAtlasManager
 {
 public:
-   TextureAtlasManager() noexcept
-   {
-      try
-      {
-         for( int i = 0; i < static_cast< int >( BlockId::Count ); ++i )
-            m_atlas.PrepareTexture( static_cast< BlockId >( i ) );
-      }
-      catch( ... )
-      {
-         std::cerr << "TextureAtlasManager - failed to initialize texture atlas\n";
-         std::abort();
-      }
-   }
+   static TextureAtlasManager& Get() noexcept;
+   void                        CompileBlockAtlas();
+   void                        Bind( unsigned int slot = 0 ) const { m_blockAtlas.Bind( slot ); }
+   void                        Unbind() const { m_blockAtlas.Unbind(); }
 
-   void Compile() { m_atlas.Compile(); }
-
-   const TextureAtlas::Region& GetRegionByKey( uint64_t key ) const { return m_atlas.GetRegionByKey( key ); }
-
-   void Bind( unsigned int slot = 0 ) const { m_atlas.Bind( slot ); }
-   void Unbind() const { m_atlas.Unbind(); }
+   const TextureAtlas::Region& GetRegion( BlockId blockId, TextureAtlas::BlockFace face ) const { return m_blockAtlas.GetRegion( blockId, face ); }
 
 private:
-   TextureAtlas m_atlas;
-};
+   TextureAtlasManager() noexcept = default;
+   NO_COPY_MOVE( TextureAtlasManager )
 
-inline TextureAtlasManager g_textureAtlasManager;
+   TextureAtlas m_blockAtlas;
+};
