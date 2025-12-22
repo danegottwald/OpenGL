@@ -36,7 +36,7 @@ constexpr BlockFlag operator|( BlockFlag a, BlockFlag b )
 struct BlockInfo
 {
    BlockId          id;
-   std::string_view texturePath;
+   std::string_view texture;
    BlockFlag        flags;
 };
 

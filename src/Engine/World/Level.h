@@ -15,7 +15,7 @@ struct ChunkVertex
    glm::vec3 position;
    glm::vec3 normal;
    glm::vec2 uv;
-   // add color/light/ao if needed
+   glm::vec3 tint;
 };
 
 struct ChunkMesh
@@ -116,15 +116,17 @@ struct ChunkRender
 
       // Setup vertex attributes
       {
-         // layout(location = 0) vec3 position
          glEnableVertexAttribArray( 0 );
          glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, position ) );
-         // layout(location = 1) vec3 normal
+
          glEnableVertexAttribArray( 1 );
          glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, normal ) );
-         // layout(location = 2) vec2 uv
+
          glEnableVertexAttribArray( 2 );
          glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, uv ) );
+
+         glEnableVertexAttribArray( 3 );
+         glVertexAttribPointer( 3, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, tint ) );
       }
 
       glBindVertexArray( 0 );

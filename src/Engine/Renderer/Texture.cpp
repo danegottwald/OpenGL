@@ -161,31 +161,55 @@ TextureAtlas::~TextureAtlas()
       glDeleteTextures( 1, &m_rendererID );
 }
 
+namespace
+{
+uint64_t HashStringViewFNV1a( std::string_view s )
+{
+   uint64_t h = 1469598103934665603ull;
+   for( unsigned char c : s )
+   {
+      h ^= static_cast< uint64_t >( c );
+      h *= 1099511628211ull;
+   }
+   return h;
+}
+}
 
 void TextureAtlas::PrepareTexture( BlockId blockId )
 {
-   std::string_view filepath = GetBlockInfo( blockId ).texturePath;
-   if( filepath.empty() )
-      return;
+   const BlockInfo& info = GetBlockInfo( blockId );
 
-   STBFlipVerticallyOnLoad flipGuard( false );
+   auto addPathIfAny = [ & ]( std::string_view path )
+   {
+      if( path.empty() )
+         return;
 
-   int            width = 0, height = 0, bpp = 0;
-   unsigned char* pData = stbi_load( filepath.data(), &width, &height, &bpp, 4 );
-   if( !pData )
-      throw std::runtime_error( "TextureAtlas::AddTexture - failed to load texture: " + std::string( filepath ) + " reason: " + stbi_failure_reason() );
+      const uint64_t key = HashStringViewFNV1a( path );
+      if( m_pending.contains( key ) )
+         return;
 
-   PendingTexture texture;
-   texture.blockId      = blockId;
-   texture.filepath     = filepath;
-   texture.width        = width;
-   texture.height       = height;
-   texture.pixels       = std::vector< unsigned char >( pData, pData + static_cast< size_t >( width ) * height * 4 );
-   m_pending[ blockId ] = std::move( texture );
+      int            width = 0, height = 0, bpp = 0;
+      unsigned char* pData = stbi_load( path.data(), &width, &height, &bpp, 4 );
+      if( !pData )
+         throw std::runtime_error( "TextureAtlas::PrepareTexture - failed to load texture: " + std::string( path ) + " reason: " + stbi_failure_reason() );
 
-   stbi_image_free( pData );
+      PendingTexture texture;
+      texture.filepath = path;
+      texture.width    = width;
+      texture.height   = height;
+      texture.pixels   = std::vector< unsigned char >( pData, pData + static_cast< size_t >( width ) * height * 4 );
+      m_pending[ key ] = std::move( texture );
+
+      stbi_image_free( pData );
+   };
+
+   STBFlipVerticallyOnLoad flipGuard( true );
+
+   // Always prepare the textures referenced by this block.
+   addPathIfAny( info.texture );
+   //addPathIfAny( info.textureTop.empty() ? info.textureSide : info.textureTop );
+   //addPathIfAny( info.textureBottom.empty() ? info.textureSide : info.textureBottom );
 }
-
 
 void TextureAtlas::Compile()
 {
@@ -202,9 +226,7 @@ void TextureAtlas::Compile()
    if( m_pending.empty() )
       return;
 
-   int padding = ( std::max )( 0, m_padding );
-   if( m_filtering == Filtering::MipmappedAnisotropic )
-      padding = ( std::max )( padding, 16 );
+   constexpr int padding = 1;
 
    // Horizontal packing with per-image gutters
    int totalWidth = 0;
@@ -227,7 +249,7 @@ void TextureAtlas::Compile()
 
    int                          xOffset = 0;
    std::vector< unsigned char > atlas( static_cast< size_t >( m_width ) * m_height * 4, 0 );
-   for( auto& [ blockId, texture ] : m_pending )
+   for( auto& [ key, texture ] : m_pending )
    {
       const int dstX0 = xOffset;
       const int dstY0 = 0;
@@ -259,24 +281,13 @@ void TextureAtlas::Compile()
       float u1 = static_cast< float >( dstX0 + padding + texture.width ) * invW;
       float v1 = static_cast< float >( dstY0 + padding + texture.height ) * invH;
 
-      if( m_filtering == Filtering::MipmappedAnisotropic )
-      {
-         const float halfTexelU = 0.5f * invW;
-         const float halfTexelV = 0.5f * invH;
-         u0 += halfTexelU;
-         v0 += halfTexelV;
-         u1 -= halfTexelU;
-         v1 -= halfTexelV;
-      }
-
-      m_regions[ blockId ] = Region {
+      m_regions[ key ] = Region {
          .uvs = { glm::vec2( u0, v0 ), glm::vec2( u1, v0 ), glm::vec2( u1, v1 ), glm::vec2( u0, v1 ) }
       };
 
       xOffset += texture.width + padding * 2;
    }
 
-   // Upload to OpenGL
    glGenTextures( 1, &m_rendererID );
    glBindTexture( GL_TEXTURE_2D, m_rendererID );
    glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, m_width, m_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, atlas.data() );
@@ -284,24 +295,9 @@ void TextureAtlas::Compile()
    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
    glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
 
-   if( m_filtering == Filtering::PixelPerfect )
-   {
-      glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
-      glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
-      glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0 );
-   }
-   else
-   {
-      glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR );
-      glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
-
-      GLfloat maxAniso = 0.0f;
-      glGetFloatv( GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso );
-      if( maxAniso > 0.0f )
-         glTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, ( std::min )( 16.0f, maxAniso ) );
-
-      glGenerateMipmap( GL_TEXTURE_2D );
-   }
+   glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST );
+   glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST );
+   glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0 );
 
    glBindTexture( GL_TEXTURE_2D, 0 );
 }

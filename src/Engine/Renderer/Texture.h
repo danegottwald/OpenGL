@@ -39,30 +39,19 @@ public:
       std::array< glm::vec2, 4 > uvs;
    };
 
-   enum class Filtering
-   {
-      PixelPerfect,        // no mipmaps
-      MipmappedAnisotropic // mipmaps (and optional aniso)
-   };
-
    TextureAtlas() noexcept;
    ~TextureAtlas();
 
-   // Incremental build: call AddTexture() N times then Compile() once.
-   void SetPadding( int pixels ) { m_padding = ( std::max )( 0, pixels ); }
-   void SetFiltering( Filtering filtering ) { m_filtering = filtering; }
-
-   // Prepares the texture to be packed during Compile().
+   // Prepares the textures referenced by this block (top/bottom/side).
    void PrepareTexture( BlockId blockId );
 
-   // Pack all added textures, compute UVs/regions, and upload to OpenGL.
+   // Pack all prepared textures, compute UVs/regions, and upload to OpenGL.
    void Compile();
 
    void Bind( unsigned int slot = 0 ) const;
    void Unbind() const;
 
-   const Region& GetRegion( BlockId blockId ) const { return m_regions.at( blockId ); }
-   //std::optional< Region > GetRegion( const std::string& name ) const;
+   const Region& GetRegionByKey( uint64_t key ) const { return m_regions.at( key ); }
 
    int GetWidth() const { return m_width; }
    int GetHeight() const { return m_height; }
@@ -70,7 +59,6 @@ public:
 private:
    struct PendingTexture
    {
-      BlockId                      blockId;
       std::string_view             filepath;
       int                          width  = 0;
       int                          height = 0;
@@ -81,11 +69,8 @@ private:
    int          m_width      = 0;
    int          m_height     = 0;
 
-   int       m_padding   = 16;
-   Filtering m_filtering = Filtering::MipmappedAnisotropic;
-
-   std::unordered_map< BlockId, PendingTexture > m_pending;
-   std::unordered_map< BlockId, Region >         m_regions;
+   std::unordered_map< uint64_t, PendingTexture > m_pending;
+   std::unordered_map< uint64_t, Region >         m_regions;
 };
 
 
@@ -101,8 +86,6 @@ public:
       {
          for( int i = 0; i < static_cast< int >( BlockId::Count ); ++i )
             m_atlas.PrepareTexture( static_cast< BlockId >( i ) );
-
-         //m_atlas.Compile();
       }
       catch( ... )
       {
@@ -111,8 +94,9 @@ public:
       }
    }
 
-   void                        Compile() { m_atlas.Compile(); }
-   const TextureAtlas::Region& GetRegion( BlockId blockId ) const { return m_atlas.GetRegion( blockId ); }
+   void Compile() { m_atlas.Compile(); }
+
+   const TextureAtlas::Region& GetRegionByKey( uint64_t key ) const { return m_atlas.GetRegionByKey( key ); }
 
    void Bind( unsigned int slot = 0 ) const { m_atlas.Bind( slot ); }
    void Unbind() const { m_atlas.Unbind(); }

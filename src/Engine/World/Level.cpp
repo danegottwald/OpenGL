@@ -66,13 +66,33 @@ constexpr glm::vec3 kFaceVerts[ 6 ][ 4 ] = {
     },
 };
 
+constexpr std::array< int, 4 > identity { 0, 1, 2, 3 };  // 0 rotation
+constexpr std::array< int, 4 > rotate90 { 1, 2, 3, 0 };  // 90 clockwise
+constexpr std::array< int, 4 > rotate180 { 2, 3, 0, 1 }; // 180 rotation
+constexpr std::array< int, 4 > rotate270 { 3, 0, 1, 2 }; // 270 clockwise
 
-constexpr glm::vec2 kFaceUVs[ 4 ] = {
-   { 0.0f, 0.0f },
-   { 1.0f, 0.0f },
-   { 1.0f, 1.0f },
-   { 0.0f, 1.0f },
+// Face UVs - define which UV corner to use for each vertex of each face
+constexpr std::array< std::array< int, 4 >, 6 > kFaceUVs = {
+   // maps vertex i -> which uv corner to use
+   // uv corners are: 0:(0,0) 1:(1,0) 2:(1,1) 3:(0,1)
+   rotate90, // +X
+   rotate90, // -X
+   identity, // +Y
+   identity, // -Y
+   identity, // +Z
+   identity, // -Z (flip U)
 };
+
+uint64_t HashStringViewFNV1a( std::string_view s )
+{
+   uint64_t h = 1469598103934665603ull;
+   for( unsigned char c : s )
+   {
+      h ^= static_cast< uint64_t >( c );
+      h *= 1099511628211ull;
+   }
+   return h;
+}
 }
 
 // ----------------------------------------------------------------
@@ -136,6 +156,8 @@ void Chunk::GenerateMesh()
             if( id == BlockId::Air )
                continue;
 
+            const BlockInfo& info = GetBlockInfo( id );
+
             const int       wx = baseWX + x;
             const int       wy = baseWY + y;
             const int       wz = baseWZ + z;
@@ -149,20 +171,36 @@ void Chunk::GenerateMesh()
 
                BlockId neighborId = FInBounds( nx, ny, nz ) ? GetBlock( nx, ny, nz ) : m_level.GetBlock( wx + d.dx, wy + d.dy, wz + d.dz );
                if( neighborId != BlockId::Air )
-                  continue; // face hidden by neighbor (even across chunks)
+                  continue;
 
-               const uint32_t              indexOffset = static_cast< uint32_t >( m_mesh.vertices.size() );
-               const TextureAtlas::Region& region      = g_textureAtlasManager.GetRegion( id );
+               // Pick face texture
+               std::string_view facePath = info.texture;
+               //if( dir == 2 ) // +Y (top)
+               //   facePath = info.textureTop.empty() ? info.textureSide : info.textureTop;
+               //else if( dir == 3 ) // -Y (bottom)
+               //   facePath = info.textureBottom.empty() ? info.textureSide : info.textureBottom;
+
+               glm::vec3 tint = glm::vec3( 1.0f );
+               if( id == BlockId::Dirt && dir == 2 )
+               {
+                  facePath = "assets/textures/blocks/grass.png";
+                  tint     = glm::vec3( 0.79f, 0.75f, 0.35f ); // example tint for grass
+               }
+
+               const uint64_t              textureKey = HashStringViewFNV1a( facePath );
+               const TextureAtlas::Region& region     = g_textureAtlasManager.GetRegionByKey( textureKey );
+
+               const uint32_t indexOffset = static_cast< uint32_t >( m_mesh.vertices.size() );
                for( int i = 0; i < 4; ++i )
                {
                   ChunkVertex v {};
                   v.position = basePos + kFaceVerts[ dir ][ i ];
                   v.normal   = d.normal;
-                  v.uv       = region.uvs[ i ];
+                  v.uv       = region.uvs[ kFaceUVs[ dir ][ i ] ];
+                  v.tint     = tint;
                   m_mesh.vertices.push_back( v );
                }
 
-               // Two CCW triangles: (0,1,2) and (0,2,3)
                m_mesh.indices.push_back( indexOffset + 0 );
                m_mesh.indices.push_back( indexOffset + 1 );
                m_mesh.indices.push_back( indexOffset + 2 );

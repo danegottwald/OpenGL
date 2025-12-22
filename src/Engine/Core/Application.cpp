@@ -444,8 +444,19 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
 
    pTerrainShader->Bind();                                       // Bind the shader program
    pTerrainShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
-   pTerrainShader->SetUniform( "u_viewPos", camPosition );       // Set camera position
-   pTerrainShader->SetUniform( "u_lightPos", camPosition );      // Set light position at camera position
+   pTerrainShader->SetUniform( "u_Model", glm::mat4( 1.0f ) );
+   pTerrainShader->SetUniform( "u_viewPos", camPosition ); // Set camera position
+
+   // Sun lighting (directional)
+   {
+      glm::vec3 sunDir       = glm::normalize( glm::vec3( -0.35f, 0.85f, -0.25f ) ); // points from fragment toward sun
+      glm::vec3 sunColor     = glm::vec3( 1.0f, 0.98f, 0.92f ) * 3.0f;
+      glm::vec3 ambientColor = glm::vec3( 0.12f, 0.16f, 0.22f );
+
+      pTerrainShader->SetUniform( "u_sunDirection", sunDir );
+      pTerrainShader->SetUniform( "u_sunColor", sunColor );
+      pTerrainShader->SetUniform( "u_ambientColor", ambientColor );
+   }
 
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); // clear color and depth buffers
 
@@ -455,8 +466,6 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    {
       g_textureAtlasManager.Bind();
 
-      //glActiveTexture( GL_TEXTURE0 );
-      //glBindTexture( GL_TEXTURE_2D_ARRAY, blockTextureArrayId );
       pTerrainShader->SetUniform( "u_blockTextures", 0 );
       pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
 
@@ -466,11 +475,10 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
          if( !pRender )
             continue;
 
-         // Compute chunk AABB in world space
          const glm::vec3 chunkMin = glm::vec3( coord.x * CHUNK_SIZE_X, 0.0f, coord.z * CHUNK_SIZE_Z );
-         const glm::vec3 chunkMax = chunkMin + glm::vec3( CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z ); // terrain height
+         const glm::vec3 chunkMax = chunkMin + glm::vec3( CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z );
          if( !frustum.FInFrustum( chunkMin, chunkMax ) )
-            continue; // skip chunk outside frustum
+            continue;
 
          const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), chunkMin );
          const glm::mat4 mvp   = camera.viewProjection * model;
@@ -483,10 +491,9 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    }
 
    // Render all entities with CMesh component
-   pTerrainShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
+   pTerrainShader->SetUniform( "u_MVP", camera.viewProjection );
    for( auto [ e, tran, mesh ] : registry.ECView< CTransform, CMesh >() )
    {
-      // Frustum cull based on CPhysics AABB if available
       if( CPhysics* pPhys = registry.TryGet< CPhysics >( e ) )
       {
          if( !frustum.FInFrustum( tran.position - pPhys->halfExtents, tran.position + pPhys->halfExtents ) )
