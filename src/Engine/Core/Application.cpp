@@ -32,7 +32,7 @@ constexpr float PLAYER_EYE_HEIGHT = 1.62f;
 constexpr float GROUND_MAXSPEED   = 4.3f;
 constexpr float AIR_MAXSPEED      = 10.0f;
 constexpr float AIR_CONTROL       = 0.3f;
-constexpr float SPRINT_MODIFIER   = 15.3f;
+constexpr float SPRINT_MODIFIER   = 1.3f;
 
 void PlayerInputSystem( Entity::Registry& registry, float delta )
 {
@@ -186,9 +186,17 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
             pos[ axis ] = static_cast< float >( hit + 1 ) + phys.halfExtents[ axis ] + SKIN;
          }
 
-         // Zero velocity along this axis
-         vel[ axis ] = 0.0f;
-         if( axis == Axis::Y )
+         // Apply restitution on collision for this axis.
+         // If bounciness is 0, this matches the old behavior (velocity becomes 0).
+         const float restitution = std::clamp( phys.bounciness, 0.0f, 1.0f );
+         vel[ axis ]             = -vel[ axis ] * restitution;
+
+         // Avoid tiny jitter bounces
+         if( std::abs( vel[ axis ] ) < 0.01f )
+            vel[ axis ] = 0.0f;
+
+         // Consider on-ground only if we hit while moving downward and we're not bouncing significantly.
+         if( axis == Axis::Y && !positive && restitution < 0.5f )
             phys.fOnGround = true;
       };
 
@@ -210,6 +218,31 @@ void PlayerPhysicsSystem( Entity::Registry& registry, Level& level, float delta 
    }
 
    // ---- Optional: entity-vs-entity stays after world, but note it can fight world resolution ----
+   //for( auto [ tranA, velA, physA ] : registry.CView< CTransform, CVelocity, CPhysics >() )
+   //{
+   //   for( auto [ tranB, velB, physB ] : registry.CView< CTransform, CVelocity, CPhysics >() )
+   //   {
+   //      if( &tranA == &tranB )
+   //         continue;
+   //
+   //      // AABB vs AABB collision
+   //      glm::vec3 minA     = tranA.position - physA.halfExtents;
+   //      glm::vec3 maxA     = tranA.position + physA.halfExtents;
+   //      glm::vec3 minB     = tranB.position - physB.halfExtents;
+   //      glm::vec3 maxB     = tranB.position + physB.halfExtents;
+   //      bool      overlapX = ( minA.x <= maxB.x ) && ( maxA.x >= minB.x );
+   //      bool      overlapY = ( minA.y <= maxB.y ) && ( maxA.y >= minB.y );
+   //      bool      overlapZ = ( minA.z <= maxB.z ) && ( maxA.z >= minB.z );
+   //      if( overlapX && overlapY && overlapZ )
+   //      {
+   //         // Simple resolution: push A back along its velocity vector
+   //         glm::vec3 normVelA = glm::normalize( velA.velocity );
+   //         tranA.position -= normVelA * 0.1f; // arbitrary small pushback
+   //         // Zero A's velocity
+   //         velA.velocity = glm::vec3( 0.0f );
+   //      }
+   //   }
+   //}
 }
 
 
@@ -613,9 +646,24 @@ void                       RenderSystem( Entity::Registry& registry, Level& leve
    }
 }
 
-void TickingSystem( Entity::Registry& /*registry*/, float /*delta*/ )
+struct CTick
+{
+   uint32_t currentTick = 0;
+   uint32_t maxTicks    = 0;
+};
+
+void TickingSystem( Entity::Registry& registry, float /*delta*/ )
 {
    //PROFILE_SCOPE( "TickingSystem" );
+   std::unordered_set< Entity::Entity > entitiesToDestory;
+   for( auto [ e, tick ] : registry.ECView< CTick >() )
+   {
+      if( tick.currentTick++ >= tick.maxTicks )
+         entitiesToDestory.insert( e );
+   }
+
+   for( Entity::Entity e : entitiesToDestory )
+      registry.Destroy( e );
 }
 
 struct Ray
@@ -744,8 +792,8 @@ void Application::Run()
    Level level;
    eventSubscriber.Subscribe< Events::MouseButtonPressedEvent >( [ & ]( const Events::MouseButtonPressedEvent& e ) noexcept
    {
-      if( e.GetMouseButton() != Input::ButtonLeft && e.GetMouseButton() != Input::ButtonRight && e.GetMouseButton() != Input::ButtonMiddle )
-         return;
+      //if( e.GetMouseButton() != Input::ButtonLeft && e.GetMouseButton() != Input::ButtonRight && e.GetMouseButton() != Input::ButtonMiddle )
+      //   return;
 
       // Get camera transform
       CTransform* pCamTran = registry.TryGet< CTransform >( camera );
@@ -766,6 +814,47 @@ void Application::Run()
 
       glm::vec3 rayOrigin   = pCamTran->position;
       float     maxDistance = 64.0f;
+
+      if( e.GetMouseButton() == Input::ButtonLeft )
+      {
+         std::mt19937                            rng( std::random_device {}() );
+         std::uniform_real_distribution< float > dist01( 0.0f, 1.0f );
+
+         constexpr float CONE_ANGLE_DEG = 8.0f; // shotgun spread
+         constexpr float SPEED          = 50.0f;
+
+         glm::vec3 forward = glm::normalize( dir );
+         glm::vec3 right   = glm::normalize( glm::abs( forward.y ) < 0.99f ? glm::cross( forward, glm::vec3( 0, 1, 0 ) )
+                                                                         : glm::cross( forward, glm::vec3( 1, 0, 0 ) ) );
+         glm::vec3 up      = glm::cross( right, forward );
+         float     cosMax  = glm::cos( glm::radians( CONE_ANGLE_DEG ) );
+
+         constexpr float MUZZLE_OFFSET = 1.0f;
+         glm::vec3       spawnPos      = rayOrigin + forward * MUZZLE_OFFSET;
+         for( int i = 0; i < 500; ++i )
+         {
+            // Uniform random direction in cone
+            float u = dist01( rng );
+            float v = dist01( rng );
+
+            float cosTheta = glm::mix( cosMax, 1.0f, u );
+            float sinTheta = std::sqrt( 1.0f - cosTheta * cosTheta );
+            float phi      = glm::two_pi< float >() * v;
+
+            glm::vec3 spreadDir = forward * cosTheta + right * ( std::cos( phi ) * sinTheta ) + up * ( std::sin( phi ) * sinTheta );
+
+            Entity::Entity projectile = registry.Create();
+            registry.Add< CTransform >( projectile, spawnPos );
+            registry.Add< CMesh >( projectile, std::make_shared< SphereMesh >( 0.1f ) );
+            registry.Add< CVelocity >( projectile, spreadDir * SPEED );
+            CPhysics phys {};
+            phys.halfExtents = glm::vec3( 0.05f );
+            phys.bounciness  = 0.8f;
+            registry.Add< CPhysics >( projectile, phys );
+            registry.Add< CTick >( projectile, 0, 200 );
+         }
+         return;
+      }
 
       if( std::optional< RaycastResult > result = DoRaycast( level, Ray { rayOrigin, dir }, maxDistance ) )
       {
