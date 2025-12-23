@@ -7,9 +7,6 @@ using Entity = uint64_t;
 
 struct CParent
 {
-   Entity::Entity parent { 0 }; //{ Entity::InvalidEntityID };
-   CParent() = default;
-   CParent( Entity::Entity parent ) :
-      parent( parent )
-   {}
+   Entity::Entity parent { 0 };                     //{ Entity::InvalidEntityID };
+   glm::vec3      localOffset { 0.0f, 0.0f, 0.0f }; // position offset relative to parent
 };

@@ -13,8 +13,8 @@
         "opengl3-binding"
       ]
     },
+    "jsoncpp",
     "opengl",
-    "stb",
-    "nlohmann-json"
+    "stb"
   ]
 }

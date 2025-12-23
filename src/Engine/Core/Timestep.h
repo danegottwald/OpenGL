@@ -48,7 +48,7 @@ public:
    float GetLastDelta() const noexcept { return m_delta; }
 
    // Returns true if enough time has passed to advance a tick
-   bool     FTick() noexcept { return m_accumulator >= m_interval; }
+   bool     FDidTick() noexcept { return m_accumulator >= m_interval; }
    uint64_t GetLastTick() const { return m_tick; }
 
 private:

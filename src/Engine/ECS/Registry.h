@@ -9,7 +9,8 @@ namespace Entity
 #define FORCE_INLINE inline __attribute__( ( always_inline ) )
 #endif
 
-using Entity = uint64_t;
+using Entity                = uint64_t;
+constexpr Entity NullEntity = ( std::numeric_limits< Entity >::max )();
 
 class EntityHandle
 {
@@ -37,7 +38,7 @@ public:
    FORCE_INLINE bool operator<( const EntityHandle& other ) const noexcept { return m_entity < other.m_entity; }
 
 private:
-   const Entity m_entity { 0 };
+   const Entity m_entity { NullEntity };
    Registry&    m_registry;
 };
 
@@ -138,7 +139,7 @@ public:
    // ----- Entity lifecycle -----
    [[nodiscard]] FORCE_INLINE Entity Create() noexcept
    {
-      Entity entity;
+      Entity entity { NullEntity };
       if( !m_recycled.empty() )
       {
          entity = m_recycled.back();

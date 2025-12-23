@@ -1,10 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
-project(OpenGL)
+project(OpenGL LANGUAGES CXX)
 
-# Set options
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /ENTRY:mainCRTStartup")
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5) # For vcpkg compatibility
 
 # Find external dependencies using vcpkg
 find_package(OpenGL REQUIRED)
@@ -12,45 +11,38 @@ find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-find_package(Stb REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
+find_package(jsoncpp CONFIG REQUIRED)
 
-# Collect all source files
-file(GLOB_RECURSE SRC_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} "src/*.h" "src/*.cpp")
+# Collect source files
+file(GLOB_RECURSE SRC_FILES "src/*.h" "src/*.cpp")
 list(FILTER SRC_FILES EXCLUDE REGEX ".*[/\\]pch\\.h$")
 
-# Create the executable and link necessary libraries
+# Create executable
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/pch.h)
 
-# Copy resource directory to build directory
-set(RES_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets")
-add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD COMMAND ${CMAKE_COMMAND} -E copy_directory ${RES_DIRECTORY} "${CMAKE_CURRENT_BINARY_DIR}/assets")
-
 # Include directories
 target_include_directories(${PROJECT_NAME} PRIVATE
-   ${CMAKE_SOURCE_DIR}/src
-   ${CMAKE_SOURCE_DIR}/include
-   ${CMAKE_SOURCE_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
 )
 
-# Link external libraries
+# Link libraries
 target_link_libraries(${PROJECT_NAME} PRIVATE
-   OpenGL::GL
-   glfw
-   glm::glm-header-only
-   glad::glad
-   imgui::imgui
-   nlohmann_json::nlohmann_json
+    OpenGL::GL
+    glfw
+    glm::glm-header-only
+    glad::glad
+    imgui::imgui
+    JsonCpp::JsonCpp
 )
 
-# Prevent console window from showing on Release builds
+# Copy resource directory
+add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    ${CMAKE_SOURCE_DIR}/assets
+    $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+)
+
+# Optional: prevent console in Release
 set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
-
-# Install the executable and copy dependencies
-install(DIRECTORY ${RES_DIRECTORY} DESTINATION ${CMAKE_INSTALL_PREFIX})
-install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX})
-install(FILES $<TARGET_RUNTIME_DLLS:${PROJECT_NAME}> DESTINATION ${CMAKE_INSTALL_PREFIX} OPTIONAL)
-
-# Policies
-cmake_policy(SET CMP0087 NEW)

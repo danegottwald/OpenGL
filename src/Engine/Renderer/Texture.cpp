@@ -1,11 +1,10 @@
 #include "Texture.h"
 
+// Project Dependencies
+#include <Engine/Renderer/Shader.h>
+#include <json/json.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-
-#include <nlohmann/json.hpp>
-
-#include <Engine/Renderer/Shader.h>
 
 
 // ----------------------------------------------------------------
@@ -218,7 +217,41 @@ void TextureAtlas::PrepareTexture( BlockId blockId )
       return;
    }
 
-   nlohmann::json json;
+   Json::Value             root;
+   Json::CharReaderBuilder builder;
+   std::string             errs;
+   if( !Json::parseFromStream( builder, file, &root, &errs ) )
+   {
+      std::cerr << "TextureAtlas::PrepareTexture - warning: failed to parse block json: " << errs << "\n";
+      return;
+   }
+
+   const Json::Value& attrTexture = root[ "textures" ];
+   std::string        top, bottom, north, south, west, east;
+   if( attrTexture.isString() )
+      north = south = west = east = top = bottom = attrTexture.asString();
+   else if( attrTexture.isObject() )
+   {
+      auto getString = []( const Json::Value& v, const char* k ) -> std::string { return v.isMember( k ) ? v[ k ].asString() : ""; };
+      top            = getString( attrTexture, "top" );
+      bottom         = getString( attrTexture, "bottom" );
+      if( std::string side = getString( attrTexture, "side" ); !side.empty() )
+         north = south = west = east = side;
+      else
+      {
+         north = getString( attrTexture, "north" );
+         south = getString( attrTexture, "south" );
+         west  = getString( attrTexture, "west" );
+         east  = getString( attrTexture, "east" );
+      }
+   }
+   else
+   {
+      std::cerr << "TextureAtlas::PrepareTexture - warning: block json 'textures' attribute is neither string nor object: " << info.json << "\n";
+      return;
+   }
+
+   /*nlohmann::json json;
    file >> json;
 
    auto&       attrTexture = json[ "textures" ];
@@ -244,7 +277,7 @@ void TextureAtlas::PrepareTexture( BlockId blockId )
    {
       std::cerr << "TextureAtlas::PrepareTexture - warning: block json 'textures' attribute is neither string nor object: " << info.json << "\n";
       return;
-   }
+   }*/
 
    STBFlipVerticallyOnLoad flipGuard( true );
 
