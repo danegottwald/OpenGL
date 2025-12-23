@@ -251,34 +251,6 @@ void TextureAtlas::PrepareTexture( BlockId blockId )
       return;
    }
 
-   /*nlohmann::json json;
-   file >> json;
-
-   auto&       attrTexture = json[ "textures" ];
-   std::string top, bottom, north, south, west, east;
-   if( attrTexture.is_string() )
-      north = east = south = west = top = bottom = attrTexture.get< std::string >();
-   else if( attrTexture.is_object() )
-   {
-      top    = attrTexture.value( "top", "" );
-      bottom = attrTexture.value( "bottom", "" );
-
-      if( std::string side = attrTexture.value( "side", "" ); !side.empty() )
-         north = south = west = east = side;
-      else
-      {
-         north = attrTexture.value( "north", "" );
-         south = attrTexture.value( "south", "" );
-         west  = attrTexture.value( "west", "" );
-         east  = attrTexture.value( "east", "" );
-      }
-   }
-   else
-   {
-      std::cerr << "TextureAtlas::PrepareTexture - warning: block json 'textures' attribute is neither string nor object: " << info.json << "\n";
-      return;
-   }*/
-
    STBFlipVerticallyOnLoad flipGuard( true );
 
    // Prepare all face textures
