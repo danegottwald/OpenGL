@@ -37,12 +37,18 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     JsonCpp::JsonCpp
 )
 
-# Copy resource directory
+# Copy 'assets' directory
 add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
     ${CMAKE_SOURCE_DIR}/assets
     $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
 )
 
-# Optional: prevent console in Release
-set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
+# For Release
+target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>) # Set entry point for release builds
+set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>) # Prevent console
+
+install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_PREFIX}) # Install executable
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets DESTINATION ${CMAKE_INSTALL_PREFIX}) # Install assets
+install(FILES $<TARGET_RUNTIME_DLLS:${PROJECT_NAME}> DESTINATION ${CMAKE_INSTALL_PREFIX} OPTIONAL) # Install DLLs
+cmake_policy(SET CMP0087 NEW) # Enable automatic runtime dependency copying (for installing DLLs)
