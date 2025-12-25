@@ -435,10 +435,7 @@ void Application::Run()
          return; // Transform component not found
       }
 
-      glm::vec3 meshOffset( 0.0f, 1.0f, 0.0f ); // Offset for the mesh position
-      if( CMesh* pClientMesh = registry.TryGet< CMesh >( it->second ) )
-         meshOffset.y = pClientMesh->mesh->GetCenterToBottomDistance();
-
+      glm::vec3 meshOffset( 0.0f, 1.0f, 0.0f );                  // Offset for the mesh position
       pClientTransform->position = e.GetPosition() + meshOffset; // position is at feet level, so adjust for height
    } );
 

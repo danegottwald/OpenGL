@@ -73,6 +73,8 @@ public:
 
    void SetIndexData( const std::vector< unsigned int >& indices ) { SetIndexData( indices.data(), indices.size() ); }
 
+   inline unsigned int GetVertexArrayID() const { return m_vertexArrayID; }
+   inline unsigned int GetVertexBufferID() const { return m_vertexBufferID; }
    inline unsigned int GetIndexCount() const { return m_indexCount; }
 
 private:
@@ -118,7 +120,7 @@ public:
    void      SetColor( const glm::vec3& color ) { m_color = color; }
    glm::vec3 GetColor() const { return m_color; }
 
-   virtual float GetCenterToBottomDistance() const { return 0.0f; }
+   const MeshBuffer& GetMeshBuffer() { return m_meshBuffer; }
 
 protected:
    // Compiles the mesh data into the MeshBuffer
@@ -131,9 +133,7 @@ protected:
 class CapsuleMesh : public IMesh
 {
 public:
-   CapsuleMesh( float radius = 0.5f, float height = 2.0f, int segments = 24, int rings = 12 ) :
-      m_radius( radius ),
-      m_height( height )
+   CapsuleMesh( float radius = 0.5f, float height = 2.0f, int segments = 24, int rings = 12 )
    {
       m_meshBuffer.Initialize();
       GenerateCapsule( radius, height, segments, rings );
@@ -153,13 +153,9 @@ public:
       m_meshBuffer.Unbind();
    }
 
-   float GetCenterToBottomDistance() const override { return m_height * 0.5f; }
-
 private:
    std::vector< float >        m_vertices;
    std::vector< unsigned int > m_indices;
-   float                       m_radius;
-   float                       m_height;
 
    void GenerateCapsule( float radius, float height, int segments, int rings )
    {
@@ -192,7 +188,7 @@ private:
       for( int y = 0; y < totalRings; ++y )
       {
          // Decide which section we're in
-         int topEnd   = hemiRings; // inclusive
+         int topEnd   = hemiRings;                             // inclusive
          int cylEnd   = topEnd + ( std::max )( 0, rings - 1 ); // inclusive
          int botStart = cylEnd + 1;
 
@@ -290,8 +286,7 @@ private:
 class SphereMesh : public IMesh
 {
 public:
-   SphereMesh( float radius = 0.5f, int segments = 24, int rings = 12 ) :
-      m_radius( radius )
+   SphereMesh( float radius = 0.5f, int segments = 24, int rings = 12 )
    {
       m_meshBuffer.Initialize();
       GenerateSphere( radius, segments, rings );
@@ -311,12 +306,9 @@ public:
       m_meshBuffer.Unbind();
    }
 
-   float GetCenterToBottomDistance() const override { return m_radius; }
-
 private:
    std::vector< float >        m_vertices;
    std::vector< unsigned int > m_indices;
-   float                       m_radius;
 
    void GenerateSphere( float radius, int segments, int rings )
    {
@@ -415,8 +407,6 @@ public:
       m_meshBuffer.SetIndexData( m_indices );
       m_meshBuffer.Unbind();
    }
-
-   float GetCenterToBottomDistance() const override { return m_size * 0.5f; }
 
 private:
    // clang-format off
