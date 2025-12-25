@@ -153,7 +153,7 @@ public:
       m_meshBuffer.Unbind();
    }
 
-   float GetCenterToBottomDistance() const override { return ( m_height * 0.5f ) + m_radius; }
+   float GetCenterToBottomDistance() const override { return m_height * 0.5f; }
 
 private:
    std::vector< float >        m_vertices;
@@ -166,7 +166,9 @@ private:
       m_vertices.clear();
       m_indices.clear();
 
-      float halfHeight   = ( height - 2.0f * radius ) * 0.5f;
+      // `height` is the full capsule height (top pole to bottom pole).
+      // The cylinder portion can become negative if height < 2*radius; clamp to 0.
+      float halfHeight   = ( std::max )( 0.0f, height - 2.0f * radius ) * 0.5f;
       int   hemiRings    = rings / 2; // rings for each hemisphere
       int   vertsPerRing = segments + 1;
 
@@ -191,10 +193,8 @@ private:
       {
          // Decide which section we're in
          int topEnd   = hemiRings; // inclusive
-         int cylStart = topEnd + 1;
          int cylEnd   = topEnd + ( std::max )( 0, rings - 1 ); // inclusive
          int botStart = cylEnd + 1;
-         // int botEnd = botStart + hemiRings; // (unused) inclusive
 
          for( int x = 0; x <= segments; ++x )
          {
@@ -306,7 +306,6 @@ public:
       layout.Push< float >( 3 ); // Position
       layout.Push< float >( 3 ); // Normal
 
-      // Offset vertices by position
       m_meshBuffer.SetVertexData( m_vertices, std::move( layout ) );
       m_meshBuffer.SetIndexData( m_indices );
       m_meshBuffer.Unbind();
@@ -324,7 +323,7 @@ private:
       m_vertices.clear();
       m_indices.clear();
 
-      // Vertices
+      // Vertices (sphere is centered at origin)
       for( int y = 0; y <= rings; ++y )
       {
          float v      = float( y ) / float( rings );
@@ -397,7 +396,22 @@ public:
       layout.Push< float >( 3 ); // Position
       layout.Push< float >( 3 ); // Normal
 
-      m_meshBuffer.SetVertexData( m_vertices, std::move( layout ) );
+      // Scale unit cube positions by `m_size` but keep normals unchanged.
+      std::vector< float > scaled;
+      scaled.reserve( m_vertices.size() );
+
+      for( size_t i = 0; i < m_vertices.size(); i += m_vertexSize )
+      {
+         scaled.push_back( m_vertices[ i + 0 ] * m_size );
+         scaled.push_back( m_vertices[ i + 1 ] * m_size );
+         scaled.push_back( m_vertices[ i + 2 ] * m_size );
+
+         scaled.push_back( m_vertices[ i + 3 ] );
+         scaled.push_back( m_vertices[ i + 4 ] );
+         scaled.push_back( m_vertices[ i + 5 ] );
+      }
+
+      m_meshBuffer.SetVertexData( scaled, std::move( layout ) );
       m_meshBuffer.SetIndexData( m_indices );
       m_meshBuffer.Unbind();
    }
@@ -429,10 +443,10 @@ private:
          -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  // v12
 
          // Right face
-         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  // v13
-         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  // v14
-         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  // v15
-         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  // v16
+          0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  // v13
+          0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  // v14
+          0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  // v15
+          0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  // v16
 
          // Top face
          -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  // v17

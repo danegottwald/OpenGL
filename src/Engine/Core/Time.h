@@ -19,14 +19,9 @@
 class Timestep
 {
 public:
-   Timestep( uint8_t tickrate ) :
+   explicit Timestep( uint8_t tickrate ) noexcept :
       m_interval( 1.0f / tickrate )
    {}
-
-   Timestep( const Timestep& )            = delete;
-   Timestep& operator=( const Timestep& ) = delete;
-   Timestep( Timestep&& )                 = delete;
-   Timestep& operator=( Timestep&& )      = delete;
 
    // Step the Timestep to update delta time and tick state
    float Step() noexcept
@@ -52,6 +47,8 @@ public:
    uint64_t GetLastTick() const { return m_tick; }
 
 private:
+   NO_COPY_MOVE( Timestep )
+
    // Delta
    float m_lastTime { 0.0f };
    float m_delta { 0.0f };
@@ -60,4 +57,45 @@ private:
    const float m_interval { 0.0f };
    float       m_accumulator { 0.0f };
    uint64_t    m_tick { 0 };
+};
+
+
+/**
+ * @brief Utility class for accumulating time and triggering actions at fixed intervals.
+ * 
+ * This class tracks elapsed time and determines when a certain interval has passed.
+ * Useful for implementing fixed-timestep updates, periodic events, or throttled operations.
+ *
+ * Example usage:
+ * TimeAccumulator accumulator(0.5f); // Trigger every 0.5 seconds
+ * 
+ * while (game.IsRunning())
+ * {
+ *     float dt = GetDeltaTime();
+ *     if (accumulator.FShouldRun(dt))
+ *         game.Update(); // Called every 0.5 seconds
+ * }
+ */
+class TimeAccumulator
+{
+public:
+   explicit TimeAccumulator( float interval ) noexcept :
+      m_interval( interval )
+   {}
+
+   bool FShouldRun( float dt ) noexcept
+   {
+      m_accumulator += dt;
+      if( m_accumulator < m_interval )
+         return false;
+
+      m_accumulator -= m_interval; // make sure we keep remainder to it carries over
+      return true;
+   }
+
+private:
+   NO_COPY_MOVE( TimeAccumulator )
+
+   float m_interval { 0.0f };
+   float m_accumulator { 0.0f };
 };

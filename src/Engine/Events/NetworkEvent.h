@@ -124,4 +124,53 @@ private:
    glm::vec3 m_position;
 };
 
+//=========================================================================
+// NetworkBlockUpdateEvent
+//=========================================================================
+class NetworkBlockUpdateEvent final : public NetworkEvent
+{
+public:
+   NetworkBlockUpdateEvent( uint64_t clientID, const glm::ivec3& pos, uint16_t blockId ) :
+      NetworkEvent( clientID ),
+      m_pos( pos ),
+      m_blockId( blockId )
+   {}
+
+   std::string ToString() const noexcept override { return std::format( "NetworkBlockUpdateEvent: {} @ ({},{},{}) block={}", m_clientID, m_pos.x, m_pos.y, m_pos.z, m_blockId ); }
+
+   const glm::ivec3& GetBlockPos() const noexcept { return m_pos; }
+   uint16_t          GetBlockId() const noexcept { return m_blockId; }
+
+   EVENT_CLASS_TYPE( EventType::NetworkBlockUpdate )
+
+private:
+   glm::ivec3 m_pos { 0, 0, 0 };
+   uint16_t   m_blockId { 0 };
+};
+
+//=========================================================================
+// NetworkRequestBlockUpdateEvent
+//=========================================================================
+class NetworkRequestBlockUpdateEvent final : public IEvent
+{
+public:
+   NetworkRequestBlockUpdateEvent( const glm::ivec3& pos, uint16_t blockId, uint8_t action ) :
+      m_pos( pos ),
+      m_blockId( blockId ),
+      m_action( action )
+   {}
+
+   EVENT_CLASS_CATEGORY( EventCategory::Network )
+   EVENT_CLASS_TYPE( EventType::NetworkRequestBlockUpdate )
+
+   const glm::ivec3& GetBlockPos() const noexcept { return m_pos; }
+   uint16_t          GetBlockId() const noexcept { return m_blockId; }
+   uint8_t           GetAction() const noexcept { return m_action; }
+
+private:
+   glm::ivec3 m_pos { 0, 0, 0 };
+   uint16_t   m_blockId { 0 };
+   uint8_t    m_action { 0 };
+};
+
 } // namespace Events

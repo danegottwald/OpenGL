@@ -2,9 +2,10 @@
 
 // Project Dependencies
 #include <Engine/Renderer/Shader.h>
-#include <json/json.h>
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <json/json.h>
 
 
 // ----------------------------------------------------------------
@@ -33,16 +34,15 @@ static constexpr std::string_view SKYBOX_VERT_SHADER = R"(
 
    layout(location = 0) in vec3 aPos;
 
-   out vec3 v_TexDir;
+   out vec3 v_textureDir;
 
-   uniform mat4 u_View;
-   uniform mat4 u_Projection;
+   uniform mat4 u_viewProjection;
 
    void main()
    {
-       v_TexDir = aPos;
+       v_textureDir = aPos;
 
-       vec4 pos = u_Projection * u_View * vec4(aPos, 1.0);
+       vec4 pos = u_viewProjection * vec4(aPos, 1.0);
        gl_Position = pos.xyww;
    } )";
 
@@ -50,19 +50,19 @@ static constexpr std::string_view SKYBOX_VERT_SHADER = R"(
 static constexpr std::string_view SKYBOX_FRAG_SHADER = R"(
    #version 330 core
 
-   in vec3 v_TexDir;
+   in vec3 v_textureDir;
    out vec4 frag_color;
 
-   uniform samplerCube u_Skybox;
+   uniform samplerCube u_skybox;
 
    void main()
    {
-       frag_color = texture(u_Skybox, normalize(v_TexDir));
+       frag_color = texture(u_skybox, normalize(v_textureDir));
    } )";
 
 
 SkyboxTexture::SkyboxTexture( std::span< const std::string_view > faces ) :
-   m_pShader( std::make_unique< Shader >( Shader::SOURCE, SKYBOX_VERT_SHADER.data(), SKYBOX_FRAG_SHADER.data() ) )
+   m_shader( Shader::SOURCE, SKYBOX_VERT_SHADER.data(), SKYBOX_FRAG_SHADER.data() )
 {
    LoadCubemap( faces );
    InitGeometry();
@@ -134,19 +134,21 @@ void SkyboxTexture::Draw( const glm::mat4& view, const glm::mat4& projection )
    glDepthFunc( GL_LEQUAL ); // skybox depth trick
    glDepthMask( GL_FALSE );
 
-   m_pShader->Bind();
-   m_pShader->SetUniform( "u_View", glm::mat4( glm::mat3( view ) ) );
-   m_pShader->SetUniform( "u_Projection", projection );
+   m_shader.Bind();
+
+   // Remove translation from the view matrix
+   const glm::mat4 skyboxViewProjection = projection * glm::mat4( glm::mat3( view ) );
+   m_shader.SetUniform( "u_viewProjection", skyboxViewProjection );
 
    glActiveTexture( GL_TEXTURE0 );
    glBindTexture( GL_TEXTURE_CUBE_MAP, m_textureID );
-   m_pShader->SetUniform( "u_Skybox", 0 );
+   m_shader.SetUniform( "u_skybox", 0 );
 
    glBindVertexArray( m_vao );
    glDrawArrays( GL_TRIANGLES, 0, 36 );
    glBindVertexArray( 0 );
 
-   m_pShader->Unbind();
+   m_shader.Unbind();
 
    glDepthMask( GL_TRUE );
    glDepthFunc( GL_LESS );

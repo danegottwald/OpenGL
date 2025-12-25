@@ -18,10 +18,18 @@ enum class NetworkCode : uint8_t
    // Game Messages
    Chat           = 0x20,
    PositionUpdate = 0x21,
+   BlockUpdate    = 0x22,
 };
 
 template< NetworkCode TCode >
 struct NetworkCodeType;
+
+struct NetBlockUpdate
+{
+   glm::ivec3 pos { 0, 0, 0 };
+   uint16_t   blockId { 0 }; // BlockId serialized as uint16
+   uint8_t    action { 0 };  // 0 = place/set, 1 = break (set to air)
+};
 
 // =========================================================================
 // Packet
@@ -79,9 +87,10 @@ inline constexpr size_t Packet::HeaderSize() noexcept
       static auto ParseBuffer(const uint8_t* pBuffer, size_t bufferLength) { \
          if constexpr (std::is_fundamental_v<Type>) { Type value{0}; std::memcpy( &value, pBuffer, bufferLength ); return value; } \
          else if constexpr( std::is_same_v< Type, glm::vec3 > ) { return Type( *reinterpret_cast< const glm::vec3* >( pBuffer ) ); } \
+         else if constexpr( std::is_same_v< Type, glm::ivec3 > ) { return Type( *reinterpret_cast< const glm::ivec3* >( pBuffer ) ); } \
          else if constexpr( std::is_same_v< Type, std::string > ) { return Type( reinterpret_cast< const char* >( pBuffer ), bufferLength ); } \
-         else if constexpr( std::is_same_v< Type, std::vector< type::value_type > > ) { return Type( pBuffer, pBuffer + bufferLength ); } \
          else if constexpr( std::is_same_v< Type, PacketBuffer > ) { PacketBuffer arrBuffer; std::memcpy( arrBuffer.data(), pBuffer, bufferLength ); return arrBuffer; } \
+         else { Type value{}; std::memcpy( &value, pBuffer, bufferLength ); return value; } \
       } \
    };
 
@@ -96,6 +105,7 @@ DEFINE_NETWORK_CODE_TYPE( NetworkCode::HandshakeAccept, uint64_t, sizeof( uint64
 // Game
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::Chat, std::string, 0 )
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::PositionUpdate, glm::vec3, sizeof( glm::vec3 ) )
+DEFINE_NETWORK_CODE_TYPE( NetworkCode::BlockUpdate, NetBlockUpdate, sizeof( NetBlockUpdate ) )
 
 template< NetworkCode TCode >
 inline Packet Packet::Create( uint64_t srcID, uint64_t destID, const typename NetworkCodeType< TCode >::Type& data )

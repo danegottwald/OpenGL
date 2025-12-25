@@ -26,7 +26,8 @@ enum class BlockFlag : uint32_t
 
 constexpr BlockFlag operator|( BlockFlag a, BlockFlag b )
 {
-   return static_cast< BlockFlag >( static_cast< uint8_t >( a ) | static_cast< uint8_t >( b ) );
+   using T = std::underlying_type_t< BlockFlag >;
+   return static_cast< BlockFlag >( static_cast< T >( a ) | static_cast< T >( b ) );
 }
 
 
@@ -44,11 +45,11 @@ struct BlockInfo
 // ------------------------------------------------------------
 // BlockData - definition of all block types and their properties
 // ------------------------------------------------------------
-constexpr BlockInfo BlockData[] = {
-   { BlockId::Air,   "",                         BlockFlag::None                      },
-   { BlockId::Dirt,  "assets/models/dirt.json",  BlockFlag::Solid | BlockFlag::Opaque },
-   { BlockId::Stone, "assets/models/stone.json", BlockFlag::Solid | BlockFlag::Opaque },
-   { BlockId::Grass, "assets/models/grass.json", BlockFlag::Solid | BlockFlag::Opaque },
+inline constexpr std::array BlockData = {
+   BlockInfo { BlockId::Air,   "",                         BlockFlag::None                      },
+   BlockInfo { BlockId::Dirt,  "assets/models/dirt.json",  BlockFlag::Solid | BlockFlag::Opaque },
+   BlockInfo { BlockId::Stone, "assets/models/stone.json", BlockFlag::Solid | BlockFlag::Opaque },
+   BlockInfo { BlockId::Grass, "assets/models/grass.json", BlockFlag::Solid | BlockFlag::Opaque },
 };
 
 
@@ -61,10 +62,10 @@ constexpr const BlockInfo& GetBlockInfo( BlockId id ) noexcept
 // compile-time eval
 constexpr auto _blockDataValidation = []()
 {
-   static_assert( sizeof( BlockData ) / sizeof( BlockInfo ) == static_cast< size_t >( BlockId::Count ), "BlockData size mismatch" );
-   if constexpr( std::any_of( std::begin( BlockData ),
-                              std::end( BlockData ),
-                              []( const BlockInfo& info ) { return info.id != static_cast< BlockId >( &info - BlockData ); } ) )
+   static_assert( std::size( BlockData ) == static_cast< size_t >( BlockId::Count ), "BlockData size mismatch" );
+   if constexpr( std::any_of( BlockData.begin(),
+                              BlockData.end(),
+                              []( const BlockInfo& info ) { return info.id != static_cast< BlockId >( &info - BlockData.data() ); } ) )
       throw "BlockData ID mismatch";
 
    return 0;

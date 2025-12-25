@@ -14,7 +14,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(jsoncpp CONFIG REQUIRED)
 
 # Collect source files
-file(GLOB_RECURSE SRC_FILES "src/*.h" "src/*.cpp")
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "src/*.h" "src/*.cpp")
 list(FILTER SRC_FILES EXCLUDE REGEX ".*[/\\]pch\\.h$")
 
 # Create executable

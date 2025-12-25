@@ -71,6 +71,7 @@ private:
    {
       std::unique_ptr< void, void ( * )( void* ) > pStorage { nullptr, nullptr }; // owns Storage<T>
       void ( *removeFn )( void*, Entity ) noexcept { nullptr };                   // removes entity from storage
+      void* ( *getPtrFn )( void*, uint32_t ) noexcept { nullptr };                // denseIndex -> component pointer
    };
 
    template< typename TType >
@@ -79,9 +80,26 @@ private:
       using DenseIndexType                 = uint32_t;
       static constexpr DenseIndexType npos = ( std::numeric_limits< DenseIndexType >::max )();
 
-      std::vector< TType >          m_types;
-      std::vector< Entity >         m_entities;      // dense entity list (parallel to m_types)
-      std::vector< DenseIndexType > m_entityToIndex; // sparse mapping entity -> dense index
+      // Fixed-size paged storage to keep stable pointers while preserving dense indexing.
+      static constexpr DenseIndexType kPageSize = 1024;
+
+      std::vector< std::unique_ptr< TType[] > > m_pages;
+      std::vector< Entity >                     m_entities;      // dense entity list (parallel to dense indices)
+      std::vector< DenseIndexType >             m_entityToIndex; // sparse mapping entity -> dense index
+
+      FORCE_INLINE TType* DensePtr( DenseIndexType index ) noexcept
+      {
+         const DenseIndexType page   = index / kPageSize;
+         const DenseIndexType offset = index % kPageSize;
+         return m_pages[ page ].get() + offset;
+      }
+
+      FORCE_INLINE const TType* DensePtr( DenseIndexType index ) const noexcept
+      {
+         const DenseIndexType page   = index / kPageSize;
+         const DenseIndexType offset = index % kPageSize;
+         return m_pages[ page ].get() + offset;
+      }
 
       template< typename... Args >
       FORCE_INLINE TType& EmplaceConstruct( Entity entity, Args&&... args )
@@ -89,11 +107,18 @@ private:
          if( entity >= m_entityToIndex.size() )
             m_entityToIndex.resize( static_cast< size_t >( entity ) + 1, npos );
 
-         DenseIndexType index = static_cast< DenseIndexType >( m_types.size() );
-         m_types.emplace_back( std::forward< Args >( args )... );
+         DenseIndexType index = static_cast< DenseIndexType >( m_entities.size() );
+
+         const DenseIndexType neededPages = ( index / kPageSize ) + 1;
+         if( m_pages.size() < neededPages )
+            m_pages.emplace_back( std::make_unique< TType[] >( kPageSize ) );
+
+         TType* p = DensePtr( index );
+         *p       = TType( std::forward< Args >( args )... );
+
          m_entities.emplace_back( entity );
          m_entityToIndex[ entity ] = index;
-         return m_types.back();
+         return *p;
       }
 
       FORCE_INLINE TType* Get( Entity entity ) noexcept
@@ -102,30 +127,30 @@ private:
             return nullptr;
 
          DenseIndexType index = m_entityToIndex[ entity ];
-         return index != npos ? &m_types[ index ] : nullptr;
+         return index != npos ? DensePtr( index ) : nullptr;
       }
 
       FORCE_INLINE void Remove( Entity entity ) noexcept
       {
-         if( entity < m_entityToIndex.size() )
-         {
-            DenseIndexType index = m_entityToIndex[ entity ];
-            if( index != npos )
-            {
-               DenseIndexType backIndex = static_cast< DenseIndexType >( m_types.size() - 1 );
-               if( index != backIndex )
-               {
-                  m_types[ index ]         = std::move( m_types[ backIndex ] );
-                  Entity moved             = m_entities[ backIndex ];
-                  m_entities[ index ]      = moved;
-                  m_entityToIndex[ moved ] = index;
-               }
+         if( entity >= m_entityToIndex.size() )
+            return;
 
-               m_types.pop_back();
-               m_entities.pop_back();
-               m_entityToIndex[ entity ] = npos;
-            }
+         DenseIndexType index = m_entityToIndex[ entity ];
+         if( index == npos )
+            return;
+
+         DenseIndexType backIndex = static_cast< DenseIndexType >( m_entities.size() - 1 );
+         if( index != backIndex )
+         {
+            *DensePtr( index ) = std::move( *DensePtr( backIndex ) );
+
+            Entity moved        = m_entities[ backIndex ];
+            m_entities[ index ] = moved;
+            m_entityToIndex[ moved ] = index;
          }
+
+         m_entities.pop_back();
+         m_entityToIndex[ entity ] = npos;
       }
    };
 
@@ -209,8 +234,8 @@ public:
       {
          if( auto dense = sparse[ entity ]; dense != Storage< TType >::npos )
          {
-            pStorage->m_types[ dense ] = TType( std::forward< TArgs >( args )... );
-            return pStorage->m_types[ dense ];
+            *pStorage->DensePtr( dense ) = TType( std::forward< TArgs >( args )... );
+            return *pStorage->DensePtr( dense );
          }
       }
 
@@ -285,7 +310,8 @@ public:
       auto getOneRef = [ & ]< typename T >() -> T&
       {
          using CType = std::remove_cv_t< std::remove_pointer_t< std::remove_reference_t< T > > >;
-         return *static_cast< Storage< CType >* >( m_storagePools[ GetTypeIndex< T >() ].pStorage.get() )->Get( entity );
+         auto* pStorage = static_cast< Storage< CType >* >( m_storagePools[ GetTypeIndex< T >() ].pStorage.get() );
+         return *pStorage->Get( entity );
       };
 
       if constexpr( sizeof...( TOthers ) == 0 )
@@ -364,13 +390,18 @@ private:
       {
          rec.pStorage = { new Storage< TType >(), []( void* pStorage ) { delete static_cast< Storage< TType >* >( pStorage ); } };
          rec.removeFn = []( void* pStorage, Entity e ) noexcept { static_cast< Storage< TType >* >( pStorage )->Remove( e ); };
+         rec.getPtrFn = []( void* pStorage, uint32_t denseIndex ) noexcept -> void*
+         {
+            using S = Storage< TType >;
+            return static_cast< void* >( static_cast< S* >( pStorage )->DensePtr( denseIndex ) );
+         };
       }
    }
 
    Entity                               m_nextEntity { 0 };
    std::vector< Entity >                m_recycled;
    std::vector< uint8_t >               m_entityAlive;
-   std::vector< StoragePool >           m_storagePools; // type-erased pools
+   std::vector< StoragePool >           m_storagePools;
    std::vector< std::vector< size_t > > m_entityTypes;
 };
 
@@ -395,13 +426,13 @@ public:
    struct Iterator
    {
       size_t                                                       index { 0 };
-      std::vector< Entity >*                                       pEntities { nullptr }; // dense entity list of smallest pool
+      std::vector< Entity >*                                       pEntities { nullptr };
       std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... >& storages;
 
       FORCE_INLINE void Skip() noexcept
       {
          if constexpr( sizeof...( TOthers ) == 0 )
-            return; // No skipping needed: single type iteration
+            return;
 
          auto has = []< typename T >( Entity e, auto pStorage ) -> bool
          { return pStorage && e < pStorage->m_entityToIndex.size() && pStorage->m_entityToIndex[ e ] != Registry::Storage< T >::npos; };
@@ -411,7 +442,7 @@ public:
             Entity e = ( *pEntities )[ index ];
             if( ( has.template operator()< TType >( e, std::get< StoragePtr< TType > >( storages ) ) && ... &&
                   has.template operator()< TOthers >( e, std::get< StoragePtr< TOthers > >( storages ) ) ) )
-               break; // entity has all required components
+               break;
 
             ++index;
          }
@@ -429,18 +460,24 @@ public:
       FORCE_INLINE auto operator*() const noexcept
       {
          Entity entity = ( *pEntities )[ index ];
-         if constexpr( sizeof...( TOthers ) == 0 ) // fast path for single type iteration
+         if constexpr( sizeof...( TOthers ) == 0 )
          {
             if constexpr( TViewType == ViewType::Entity )
                return entity;
             else if constexpr( TViewType == ViewType::Components )
-               return std::tuple< TType& >( std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
+               return std::tuple< TType& >( *std::get< StoragePtr< TType > >( storages )->DensePtr( static_cast< uint32_t >( index ) ) );
             else if constexpr( TViewType == ViewType::EntityAndComponents )
-               return std::tuple< Entity, TType& >( entity, std::get< StoragePtr< TType > >( storages )->m_types[ index ] );
+               return std::tuple< Entity, TType& >( entity, *std::get< StoragePtr< TType > >( storages )->DensePtr( static_cast< uint32_t >( index ) ) );
          }
 
-         // General path for multiple types
-         auto getRef = [ & ]( auto* pStorage ) -> decltype( auto ) { return pStorage->m_types[ pStorage->m_entityToIndex[ entity ] ]; };
+         auto getRef = [ & ]( auto* pStorage ) -> decltype( auto )
+         {
+            using S = std::remove_pointer_t< decltype( pStorage ) >;
+            using DenseIndexType = typename S::DenseIndexType;
+            DenseIndexType dense = pStorage->m_entityToIndex[ entity ];
+            return *pStorage->DensePtr( dense );
+         };
+
          if constexpr( TViewType == ViewType::Entity )
             return entity;
          else if constexpr( TViewType == ViewType::Components )
@@ -471,12 +508,11 @@ private:
             return;
 
          const size_t    index = Registry::GetTypeIndex< T >();
-         StoragePtr< T > pPool = index < m_registry.m_storagePools.size() ? static_cast< StoragePtr< T > >( m_registry.m_storagePools[ index ].pStorage.get() )
-                                                                          : nullptr;
+         StoragePtr< T > pPool = index < m_registry.m_storagePools.size() ? static_cast< StoragePtr< T > >( m_registry.m_storagePools[ index ].pStorage.get() ) : nullptr;
          if( !pPool || pPool->m_entities.empty() )
          {
             minSize             = 0;
-            m_pSmallestEntities = nullptr; // empty -> no iteration
+            m_pSmallestEntities = nullptr;
          }
          else if( pPool->m_entities.size() < minSize )
          {
@@ -505,14 +541,13 @@ private:
    }
 
    Registry&                                                   m_registry;
-   std::vector< Entity >*                                      m_pSmallestEntities { nullptr }; // points to entity list of smallest pool
-   std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... > m_typeStorages {};               // cached storage pointers
+   std::vector< Entity >*                                      m_pSmallestEntities { nullptr };
+   std::tuple< StoragePtr< TType >, StoragePtr< TOthers >... > m_typeStorages {};
 };
 
 
 } // namespace Entity
 
-// hash specialization
 template<>
 struct std::hash< Entity::EntityHandle >
 {

@@ -86,8 +86,8 @@ public:
 
    // Send Helpers
    void         Send( SOCKET targetSocket, const std::vector< uint8_t >& serializedData );
-   virtual void SendPacket( const Packet& packet )                  = 0;
-   virtual void SendPackets( const std::vector< Packet >& packets ) = 0; // send aggregated packets (single send call)
+   virtual void SendPacket( const Packet& packet )         = 0;
+   virtual void SendPackets( std::span< Packet > packets ) = 0; // send aggregated packets (single send call)
 
 protected:
    INetwork();

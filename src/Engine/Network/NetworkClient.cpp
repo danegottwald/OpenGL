@@ -5,163 +5,45 @@
 
 namespace
 {
-constexpr size_t RECV_BUFFER_SIZE = 4096;
+constexpr size_t   RECV_CHUNK_SIZE  = 4096;
+constexpr uint32_t PROTOCOL_VERSION = 1;
 }
 
 NetworkClient::NetworkClient()
 {
+   m_ID = 0;
+
    u_long mode  = 1; // non-blocking mode
    m_hostSocket = socket( AF_INET, SOCK_STREAM, 0 );
-   ioctlsocket( m_hostSocket, FIONBIO, &mode );
+   if( m_hostSocket != INVALID_SOCKET )
+      ioctlsocket( m_hostSocket, FIONBIO, &mode );
 
    m_socketAddressIn.sin_family      = AF_INET;
    m_socketAddressIn.sin_addr.s_addr = inet_addr( DEFAULT_ADDRESS );
    m_socketAddressIn.sin_port        = htons( DEFAULT_PORT );
+
+   m_recvBuffer.reserve( RECV_CHUNK_SIZE );
+
+   // Gameplay -> Network outbox (decoupled)
+   static Events::EventSubscriber s_outboxSubscriber;
+   s_outboxSubscriber.Subscribe< Events::NetworkRequestBlockUpdateEvent >( [ this ]( const Events::NetworkRequestBlockUpdateEvent& e ) noexcept
+   {
+      if( m_state != State::Connected || m_ID == 0 )
+         return;
+
+      NetBlockUpdate upd;
+      upd.pos     = e.GetBlockPos();
+      upd.blockId = e.GetBlockId();
+      upd.action  = e.GetAction();
+
+      QueueSend_( Packet::Create< NetworkCode::BlockUpdate >( m_ID, 0 /*to host*/, upd ) );
+   } );
 }
 
 NetworkClient::~NetworkClient()
 {
-   StopRecvThread();
-   if( m_udpRunning )
-   {
-      m_udpRunning = false;
-      if( m_udpRecvThread.joinable() )
-         m_udpRecvThread.join();
-   }
-   if( m_udpSocket != INVALID_SOCKET )
-      closesocket( m_udpSocket );
-
-   closesocket( m_hostSocket );
-   for( const Client& client : m_clients )
-   {
-      closesocket( client.m_socket );
-      Events::Dispatch< Events::NetworkClientDisconnectEvent >( client.m_clientID );
-   }
-
-   if( m_fConnected )
-      Events::Dispatch< Events::NetworkClientDisconnectEvent >( m_serverID );
-}
-
-void NetworkClient::StartRecvThread()
-{
-   m_running    = true;
-   m_recvThread = std::thread( &NetworkClient::RecvThread, this );
-}
-
-void NetworkClient::StopRecvThread()
-{
-   m_running = false;
-   if( m_recvThread.joinable() )
-      m_recvThread.join();
-}
-
-void NetworkClient::InitUDP( uint16_t port )
-{
-   m_udpSocket = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
-   if( m_udpSocket == INVALID_SOCKET )
-   {
-      s_logs.push_back( std::format( "Failed to create UDP socket (client): {}", WSAGetLastError() ) );
-      return;
-   }
-
-   sockaddr_in localAddr {};
-   localAddr.sin_family      = AF_INET;
-   localAddr.sin_addr.s_addr = INADDR_ANY; // any local interface
-   localAddr.sin_port        = 0;          // let OS pick a port
-   if( bind( m_udpSocket, reinterpret_cast< sockaddr* >( &localAddr ), sizeof( localAddr ) ) == SOCKET_ERROR )
-   {
-      s_logs.push_back( std::format( "Failed to bind UDP client socket: {}", WSAGetLastError() ) );
-      closesocket( m_udpSocket );
-      m_udpSocket = INVALID_SOCKET;
-      return;
-   }
-
-   u_long mode = 1;
-   ioctlsocket( m_udpSocket, FIONBIO, &mode );
-
-   // Setup server UDP address
-   m_serverUdpAddr.sin_family      = AF_INET;
-   m_serverUdpAddr.sin_addr.s_addr = inet_addr( m_serverIpAddress.c_str() );
-   m_serverUdpAddr.sin_port        = htons( port );
-
-   m_udpRunning    = true;
-   m_udpRecvThread = std::thread( &NetworkClient::UDPRecvThread, this );
-}
-
-void NetworkClient::UDPRecvThread()
-{
-   std::vector< uint8_t > buffer( RECV_BUFFER_SIZE );
-   while( m_udpRunning )
-   {
-      sockaddr_in fromAddr {};
-      int         fromLen = sizeof( fromAddr );
-      int         bytes   = recvfrom(
-         m_udpSocket, reinterpret_cast< char* >( buffer.data() ), ( int )buffer.size(), 0, reinterpret_cast< sockaddr* >( &fromAddr ), &fromLen );
-      if( bytes > 0 )
-      {
-         size_t offset = 0;
-         while( offset < static_cast< size_t >( bytes ) )
-         {
-            auto inPacket = Packet::Deserialize( buffer, offset );
-            if( !inPacket )
-               break;
-            offset += inPacket->Size();
-
-            // Only handle real-time packets expected over UDP
-            if( inPacket->m_code == NetworkCode::PositionUpdate )
-            {
-               Events::Dispatch< Events::NetworkPositionUpdateEvent >( inPacket->m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( *inPacket ) );
-            }
-         }
-      }
-      std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
-   }
-}
-
-void NetworkClient::RecvThread()
-{
-   std::vector< uint8_t > buffer( RECV_BUFFER_SIZE );
-   while( m_running )
-   {
-      int bytesReceived = recv( m_hostSocket, reinterpret_cast< char* >( buffer.data() ), ( int )buffer.size(), 0 );
-      if( bytesReceived > 0 )
-      {
-         size_t offset = 0;
-         while( offset < static_cast< size_t >( bytesReceived ) )
-         {
-            if( auto inPacket = Packet::Deserialize( buffer, offset ) )
-            {
-               offset += inPacket->Size();
-               std::lock_guard< std::mutex > lock( m_queueMutex );
-               m_incomingPackets.push( *inPacket );
-            }
-            else
-            {
-               s_logs.push_back( std::format( "Failed to deserialize packet: {}", std::to_underlying( inPacket.error() ) ) );
-               break;
-            }
-         }
-      }
-      else if( bytesReceived == 0 || ( bytesReceived < 0 && WSAGetLastError() != WSAEWOULDBLOCK ) )
-      {
-         m_fConnected = false;
-         m_running    = false;
-         break;
-      }
-
-      std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
-   }
-}
-
-std::optional< Packet > NetworkClient::PollPacket()
-{
-   std::lock_guard< std::mutex > lock( m_queueMutex );
-   if( m_incomingPackets.empty() )
-      return std::nullopt; // No packets to process
-
-   const Packet& packet = m_incomingPackets.front();
-   m_incomingPackets.pop();
-   return packet;
+   if( m_hostSocket != INVALID_SOCKET )
+      closesocket( m_hostSocket );
 }
 
 void NetworkClient::Connect( const char* ipAddress, uint16_t port )
@@ -169,107 +51,152 @@ void NetworkClient::Connect( const char* ipAddress, uint16_t port )
    m_serverIpAddress                 = ipAddress;
    m_socketAddressIn.sin_addr.s_addr = inet_addr( m_serverIpAddress.c_str() );
    m_socketAddressIn.sin_port        = htons( port );
-   if( connect( m_hostSocket, ( struct sockaddr* )&m_socketAddressIn, sizeof( m_socketAddressIn ) ) == SOCKET_ERROR )
+
+   m_state = State::Connecting;
+
+   int r = connect( m_hostSocket, ( struct sockaddr* )&m_socketAddressIn, sizeof( m_socketAddressIn ) );
+   if( r == SOCKET_ERROR )
    {
-      if( WSAGetLastError() != WSAEWOULDBLOCK )
+      const int err = WSAGetLastError();
+      if( err != WSAEWOULDBLOCK && err != WSAEINPROGRESS && err != WSAEALREADY )
       {
-         std::println( std::cerr, "Failed to connect to server: {}:{}", m_serverIpAddress, port );
-         std::println( std::cerr, "connect error: {}", WSAGetLastError() );
-         m_fConnected = false;
+         s_logs.push_back( std::format( "Failed to connect to server: {}:{} (err={})", m_serverIpAddress, port, err ) );
+         m_state = State::Disconnected;
          return;
       }
    }
 
-   //m_fConnected = true; // Set to true only if connect did not fail
-   StartRecvThread();
-   InitUDP( port );
+   // Immediately start handshake attempts
+   m_state         = State::AwaitingHandshakeAccept;
+   m_handshakeTick = 0;
+   QueueSend_( Packet::Create< NetworkCode::HandshakeInit >( 0, 0, PROTOCOL_VERSION ) );
 }
 
-void NetworkClient::SendUDPPacket( const Packet& packet )
+void NetworkClient::QueueSend_( const Packet& packet )
 {
-   if( m_udpSocket == INVALID_SOCKET )
-      return;
+   auto bytes = Packet::Serialize( packet );
+   m_sendBuffer.insert( m_sendBuffer.end(), bytes.begin(), bytes.end() );
+}
 
-   auto data = Packet::Serialize( packet );
-   sendto( m_udpSocket,
-           reinterpret_cast< const char* >( data.data() ),
-           ( int )data.size(),
-           0,
-           reinterpret_cast< const sockaddr* >( &m_serverUdpAddr ),
-           sizeof( m_serverUdpAddr ) );
+void NetworkClient::FlushSend_()
+{
+   while( !m_sendBuffer.empty() )
+   {
+      int sent = send( m_hostSocket, reinterpret_cast< const char* >( m_sendBuffer.data() ), static_cast< int >( m_sendBuffer.size() ), 0 );
+
+      if( sent == SOCKET_ERROR )
+      {
+         const int err = WSAGetLastError();
+         if( err == WSAEWOULDBLOCK )
+            return;
+
+         m_state = State::Disconnected;
+         return;
+      }
+
+      if( sent <= 0 )
+         return;
+
+      m_sendBuffer.erase( m_sendBuffer.begin(), m_sendBuffer.begin() + sent );
+   }
 }
 
 void NetworkClient::SendPacket( const Packet& packet )
 {
-   if( packet.m_code == NetworkCode::PositionUpdate )
-   {
-      // Send unreliable over UDP
-      SendUDPPacket( packet );
-      return;
-   }
-
-   Send( m_hostSocket, Packet::Serialize( packet ) );
+   QueueSend_( packet );
 }
 
-void NetworkClient::SendPackets( const std::vector< Packet >& packets )
+void NetworkClient::SendPackets( std::span< Packet > packets )
 {
-   std::vector< uint8_t > serializedPackets;
-   for( const Packet& packet : packets )
-   {
-      std::vector< uint8_t > serializedPacket = Packet::Serialize( packet );
-      serializedPackets.insert( serializedPackets.end(), serializedPacket.begin(), serializedPacket.end() );
-   }
-
-   if( send( m_hostSocket, reinterpret_cast< char* >( serializedPackets.data() ), ( int )serializedPackets.size(), 0 ) == SOCKET_ERROR )
-      s_logs.push_back( std::format( "Failed to send packet to host: {}", m_hostSocket ) );
+   for( const auto& p : packets )
+      QueueSend_( p );
 }
 
 void NetworkClient::HandleIncomingPacket( const Packet& inPacket )
 {
    switch( inPacket.m_code )
    {
-      case NetworkCode::HostShutdown:
-         m_fConnected = false;
-         Events::Dispatch< Events::NetworkHostShutdownEvent >( inPacket.m_sourceID );
-         break;
-      case NetworkCode::ClientConnect:
+      case NetworkCode::HandshakeAccept:
       {
-         if( m_fConnected )
-            break; // Already connected
-
-         s_logs.push_back( std::format( "Connected to server: {}:{}", INetwork::GetHostAddress(), m_port ) );
-         m_fConnected = true;
-         m_serverID   = inPacket.m_sourceID;
-         m_ID         = inPacket.m_destinationID;
-
-         Client newClient;
-         newClient.m_clientID = inPacket.m_sourceID;
-         newClient.m_socket   = m_hostSocket;
-         m_clients.push_back( newClient );
-         Events::Dispatch< Events::NetworkClientConnectEvent >( inPacket.m_sourceID );
-
-         // Register UDP endpoint (unreliable channel)
-         SendUDPPacket( Packet::Create< NetworkCode::UDPRegister >( m_ID, m_serverID, m_ID ) );
+         const uint64_t assignedID = Packet::ParseBuffer< NetworkCode::HandshakeAccept >( inPacket );
+         m_serverID                = inPacket.m_sourceID;
+         m_ID                      = assignedID;
+         m_state                   = State::Connected;
+         s_logs.push_back( std::format( "Handshake accepted. Assigned client id: {}", assignedID ) );
          break;
       }
+
+      case NetworkCode::ClientConnect:
+      {
+         const uint64_t joinedID = Packet::ParseBuffer< NetworkCode::ClientConnect >( inPacket );
+         Events::Dispatch< Events::NetworkClientConnectEvent >( joinedID );
+         break;
+      }
+
+      case NetworkCode::ClientDisconnect:
+      {
+         const uint64_t leftID = Packet::ParseBuffer< NetworkCode::ClientDisconnect >( inPacket );
+         Events::Dispatch< Events::NetworkClientDisconnectEvent >( leftID );
+         break;
+      }
+
       case NetworkCode::Chat:
          Events::Dispatch< Events::NetworkChatReceivedEvent >( inPacket.m_sourceID, Packet::ParseBuffer< NetworkCode::Chat >( inPacket ) );
          break;
+
       case NetworkCode::PositionUpdate:
-         // These normally come over UDP, but allow TCP fallback
          Events::Dispatch< Events::NetworkPositionUpdateEvent >( inPacket.m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( inPacket ) );
          break;
-      case NetworkCode::ClientDisconnect:
-         s_logs.push_back( std::format( "Client disconnected: {}", inPacket.m_sourceID ) );
-         m_clients.erase( std::remove_if( m_clients.begin(),
-                                          m_clients.end(),
-                                          [ &inPacket ]( const Client& client ) { return client.m_clientID == inPacket.m_sourceID; } ),
-                          m_clients.end() );
-         Events::Dispatch< Events::NetworkClientDisconnectEvent >( inPacket.m_sourceID );
+
+      case NetworkCode::BlockUpdate:
+      {
+         const auto upd = Packet::ParseBuffer< NetworkCode::BlockUpdate >( inPacket );
+         Events::Dispatch< Events::NetworkBlockUpdateEvent >( inPacket.m_sourceID, upd.pos, upd.blockId );
          break;
-      case NetworkCode::Heartbeat: break;
-      default:                     std::println( std::cerr, "Unhandled network code: {}", std::to_underlying( inPacket.m_code ) );
+      }
+
+      case NetworkCode::HostShutdown:
+         Events::Dispatch< Events::NetworkHostShutdownEvent >( inPacket.m_sourceID );
+         m_state = State::Disconnected;
+         break;
+
+      case NetworkCode::Heartbeat:
+      default:                     break;
    }
+}
+
+void NetworkClient::ProcessStream_()
+{
+   size_t bytesToProcess = m_recvBuffer.size();
+   size_t offset         = 0;
+   size_t maxPackets     = 64;
+   size_t processed      = 0;
+
+   while( offset < bytesToProcess && processed < maxPackets )
+   {
+      auto pkt = Packet::Deserialize( m_recvBuffer, offset );
+      if( !pkt )
+         break;
+
+      // During handshake, accept only handshake packet
+      if( m_state == State::AwaitingHandshakeAccept )
+      {
+         if( pkt->m_code != NetworkCode::HandshakeAccept )
+         {
+            offset += pkt->Size();
+            processed++;
+            continue;
+         }
+      }
+
+      HandleIncomingPacket( *pkt );
+
+      offset += pkt->Size();
+      processed++;
+   }
+
+   if( offset > 0 )
+      m_recvBuffer.erase( m_recvBuffer.begin(), m_recvBuffer.begin() + offset );
 }
 
 void NetworkClient::Poll( const glm::vec3& playerPosition )
@@ -277,9 +204,40 @@ void NetworkClient::Poll( const glm::vec3& playerPosition )
    if( m_hostSocket == INVALID_SOCKET )
       return;
 
-   if( m_fConnected )
-      SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, m_serverID, playerPosition ) );
+   // recv
+   std::array< uint8_t, RECV_CHUNK_SIZE > chunk {};
+   int                                    bytes = recv( m_hostSocket, reinterpret_cast< char* >( chunk.data() ), static_cast< int >( chunk.size() ), 0 );
+   if( bytes > 0 )
+   {
+      m_recvBuffer.insert( m_recvBuffer.end(), chunk.begin(), chunk.begin() + bytes );
+      ProcessStream_();
+   }
+   else if( bytes == 0 )
+   {
+      m_state = State::Disconnected;
+      return;
+   }
+   else
+   {
+      const int err = WSAGetLastError();
+      if( err != WSAEWOULDBLOCK )
+      {
+         m_state = State::Disconnected;
+         return;
+      }
+   }
 
-   while( std::optional< Packet > optInPacket = PollPacket() )
-      HandleIncomingPacket( *optInPacket );
+   // handshake retransmit (TCP, but this covers partial-send / late connect state)
+   if( m_state == State::AwaitingHandshakeAccept )
+   {
+      if( ( ++m_handshakeTick % 60u ) == 0u )
+         QueueSend_( Packet::Create< NetworkCode::HandshakeInit >( 0, 0, PROTOCOL_VERSION ) );
+   }
+
+   // gameplay update
+   if( m_state == State::Connected && m_ID != 0 )
+      QueueSend_( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0 /*to host*/, playerPosition ) );
+
+   // send
+   FlushSend_();
 }

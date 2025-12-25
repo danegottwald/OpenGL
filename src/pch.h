@@ -14,9 +14,11 @@
 #include <cstring>
 #include <exception>
 #include <expected>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <future>
+#include <iomanip>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -30,6 +32,7 @@
 #include <random>
 #include <regex>
 #include <set>
+#include <shared_mutex>
 #include <span>
 #include <sstream>
 #include <stack>
@@ -88,10 +91,13 @@ private:
 };
 #define PROFILE_SCOPE( name ) ScopeTimer timer##__LINE__{name}
 
-#define NO_COPY_MOVE( ClassName )            \
+// Class macros
+#define NO_COPY( ClassName )                 \
     ClassName(const ClassName&) = delete;    \
+    ClassName& operator=(const ClassName&) = delete;
+#define NO_MOVE( ClassName )                 \
     ClassName(ClassName&&) = delete;         \
-    ClassName& operator=(const ClassName&) = delete; \
     ClassName& operator=(ClassName&&) = delete;
+#define NO_COPY_MOVE( ClassName ) NO_COPY( ClassName ) NO_MOVE( ClassName )
 
 #endif // PCH_H

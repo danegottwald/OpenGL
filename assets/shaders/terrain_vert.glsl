@@ -13,17 +13,17 @@ out vec2 v_uv;
 out vec3 v_tint;
 
 // Uniforms
-uniform mat4 u_MVP;
-uniform mat4 u_Model;
+uniform mat4 u_mvp;
+uniform mat4 u_model;
 
 void main()
 {
-    vec4 worldPos = u_Model * vec4(a_position, 1.0);
+    vec4 worldPos = u_model * vec4(a_position, 1.0);
 
     v_worldPos = worldPos.xyz;
-    v_normal   = normalize(mat3(transpose(inverse(u_Model))) * a_normals);
+    v_normal   = normalize(mat3(transpose(inverse(u_model))) * a_normals);
     v_uv       = a_uv;
     v_tint     = a_tint;
 
-    gl_Position = u_MVP * vec4(a_position, 1.0);
+    gl_Position = u_mvp * vec4(a_position, 1.0);
 }

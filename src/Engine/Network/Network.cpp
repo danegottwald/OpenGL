@@ -130,6 +130,52 @@ public:
 
    ~NetworkGUI() = default;
 
+   void CreateChatBox()
+   {
+      ImGui::NewLine();
+      ImGui::Text( "Chat:" );
+      ImGui::BeginDisabled( !m_fHosting && !m_fConnected );
+      // Chat log area
+      if( ImGui::BeginChild( "ChatLog", ImVec2( 0, -ImGui::GetFrameHeightWithSpacing() ), true, ImGuiWindowFlags_HorizontalScrollbar ) )
+      {
+         for( const std::string& message : m_messages )
+            ImGui::TextWrapped( "%s", message.c_str() );
+
+         // Auto-scroll to the bottom if enabled (if chat auto scroll setting is set to true, will auto-scroll to bottom)
+         static bool m_fChatAutoScrollLastState = m_fChatAutoScroll;
+         if( ( !m_fChatAutoScrollLastState && m_fChatAutoScroll ) || ( m_fChatAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() ) )
+            ImGui::SetScrollHereY( 1.0f ); // Auto scroll to bottom
+
+         m_fChatAutoScrollLastState = m_fChatAutoScroll;
+         ImGui::EndChild();
+      }
+
+      // Input area
+      if( ImGui::InputText( "##ChatInput", m_inputBuffer, sizeof( m_inputBuffer ), ImGuiInputTextFlags_EnterReturnsTrue ) )
+      {
+         if( strlen( m_inputBuffer ) > 0 )
+         {
+            m_messages.push_back( std::format( "You: {}", m_inputBuffer ) );
+
+            if( INetwork* pNetwork = INetwork::Get() )
+               pNetwork->SendPacket( Packet::Create< NetworkCode::Chat >( pNetwork->GetID(), 0 /*destID*/, m_inputBuffer ) );
+
+            memset( m_inputBuffer, 0, sizeof( m_inputBuffer ) );
+            ImGui::SetKeyboardFocusHere( -1 ); // keep focus on the input box
+         }
+      }
+      ImGui::EndDisabled();
+
+      // Clear chat button
+      ImGui::SameLine();
+      if( ImGui::Button( "Clear" ) )
+         m_messages.clear();
+
+      // Auto-scroll toggle
+      ImGui::SameLine();
+      ImGui::Checkbox( "Auto-scroll", &m_fChatAutoScroll );
+   }
+
    void Draw() override
    {
       ImGui::SetNextWindowSize( ImVec2( 650, 250 ), ImGuiCond_FirstUseEver );
@@ -162,6 +208,9 @@ public:
                   INetwork::Shutdown();
                }
             }
+
+            if( m_fHosting )
+               CreateChatBox();
 
             ImGui::EndTabItem();
          }
@@ -198,54 +247,13 @@ public:
                }
             }
 
+            // Chat box
+            if( m_fConnected )
+               CreateChatBox();
+
             ImGui::EndTabItem();
          }
          ImGui::EndDisabled();
-
-         if( ImGui::BeginTabItem( "Chat" ) ) // Chat Tab
-         {
-            ImGui::BeginDisabled( !m_fHosting && !m_fConnected );
-            // Chat log area
-            if( ImGui::BeginChild( "ChatLog", ImVec2( 0, -ImGui::GetFrameHeightWithSpacing() ), true, ImGuiWindowFlags_HorizontalScrollbar ) )
-            {
-               for( const std::string& message : m_messages )
-                  ImGui::TextWrapped( "%s", message.c_str() );
-
-               // Auto-scroll to the bottom if enabled (if chat auto scroll setting is set to true, will auto-scroll to bottom)
-               static bool m_fChatAutoScrollLastState = m_fChatAutoScroll;
-               if( ( !m_fChatAutoScrollLastState && m_fChatAutoScroll ) || ( m_fChatAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY() ) )
-                  ImGui::SetScrollHereY( 1.0f ); // Auto scroll to bottom
-
-               m_fChatAutoScrollLastState = m_fChatAutoScroll;
-               ImGui::EndChild();
-            }
-
-            // Input area
-            if( ImGui::InputText( "##ChatInput", m_inputBuffer, sizeof( m_inputBuffer ), ImGuiInputTextFlags_EnterReturnsTrue ) )
-            {
-               if( strlen( m_inputBuffer ) > 0 )
-               {
-                  m_messages.push_back( std::format( "You: {}", m_inputBuffer ) );
-
-                  if( INetwork* pNetwork = INetwork::Get() )
-                     pNetwork->SendPacket( Packet::Create< NetworkCode::Chat >( pNetwork->GetID(), 0 /*destID*/, m_inputBuffer ) );
-
-                  memset( m_inputBuffer, 0, sizeof( m_inputBuffer ) );
-                  ImGui::SetKeyboardFocusHere( -1 ); // keep focus on the input box
-               }
-            }
-            ImGui::EndDisabled();
-
-            // Clear chat button
-            ImGui::SameLine();
-            if( ImGui::Button( "Clear" ) )
-               m_messages.clear();
-
-            // Auto-scroll toggle
-            ImGui::SameLine();
-            ImGui::Checkbox( "Auto-scroll", &m_fChatAutoScroll );
-            ImGui::EndTabItem();
-         }
 
          if( ImGui::BeginTabItem( "Log" ) ) // Log Tab
          {

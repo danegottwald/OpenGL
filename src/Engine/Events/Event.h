@@ -49,7 +49,9 @@ enum EventType
    NetworkClientTimeout,
    NetworkPositionUpdate,
    NetworkChatReceived,
-   NetworkHostDisconnected
+   NetworkHostDisconnected,
+   NetworkBlockUpdate,
+   NetworkRequestBlockUpdate
 };
 
 enum EventCategory

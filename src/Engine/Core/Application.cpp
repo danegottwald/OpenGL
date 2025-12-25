@@ -2,7 +2,7 @@
 
 // Local dependencies
 #include "GUIManager.h"
-#include "Timestep.h"
+#include "Time.h"
 #include "Window.h"
 
 // Project dependencies
@@ -13,9 +13,15 @@
 #include <Engine/Network/Network.h>
 
 #include <Engine/World/Level.h>
+#include <Engine/World/ChunkRenderer.h>
+#include <Engine/World/RenderSystem.h>
+
 #include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/World/Raycast.h>
+
+#include <Engine/Events/NetworkEvent.h>
+
 
 //#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -318,267 +324,12 @@ static void CameraViewSystem( Entity::Registry& registry )
 }
 
 
-class ViewFrustum
-{
-public:
-   ViewFrustum( const glm::mat4& pv )
-   {
-      m_planes[ 0 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 0 ] );
-      m_planes[ 1 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 0 ] );
-      m_planes[ 2 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 1 ] );
-      m_planes[ 3 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 1 ] );
-      m_planes[ 4 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 2 ] );
-      m_planes[ 5 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 2 ] );
-      for( glm::vec4& plane : m_planes )
-         plane /= glm::length( glm::vec3( plane ) );
-   }
-
-   // Check if point is inside frustum
-   bool FInFrustum( const glm::vec3& point ) const
-   {
-      return std::none_of( m_planes.begin(), m_planes.end(), [ & ]( const glm::vec4& plane ) { return glm::dot( glm::vec3( plane ), point ) + plane.w < 0; } );
-   }
-
-   // Check if AABB is inside/intersecting frustum
-   bool FInFrustum( const glm::vec3& min, const glm::vec3& max ) const
-   {
-      for( const glm::vec4& plane : m_planes )
-      {
-         const glm::vec3 point( plane.x >= 0 ? max.x : min.x, plane.y >= 0 ? max.y : min.y, plane.z >= 0 ? max.z : min.z );
-         if( glm::dot( glm::vec3( plane ), point ) + plane.w < 0 )
-            return false;
-      }
-
-      return true; // inside or intersecting
-   }
-
-private:
-   std::array< glm::vec4, 6 > m_planes; // planes: left, right, top, bottom, near, far
-};
-
-
-std::optional< glm::ivec3 > g_highlightBlock;
-static void                 RenderSystem( Entity::Registry& registry, Level& level, const CCamera& camera, const glm::vec3& camPosition )
-{
-   //PROFILE_SCOPE( "RenderSystem" );
-   // TODO - refactor this system, Shader should be within component data for entity
-
-   // hack to get working
-   static std::unique_ptr< Shader > pTerrainShader = std::make_unique< Shader >( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
-
-   pTerrainShader->Bind();                                       // Bind the shader program
-   pTerrainShader->SetUniform( "u_MVP", camera.viewProjection ); // Set Model-View-Projection matrix
-   pTerrainShader->SetUniform( "u_Model", glm::mat4( 1.0f ) );
-   pTerrainShader->SetUniform( "u_viewPos", camPosition ); // Set camera position
-
-   // Sun lighting (directional)
-   {
-      glm::vec3 sunDir       = glm::normalize( glm::vec3( -0.35f, 0.85f, -0.25f ) ); // points from fragment toward sun
-      glm::vec3 sunColor     = glm::vec3( 1.0f, 0.98f, 0.92f ) * 3.0f;
-      glm::vec3 ambientColor = glm::vec3( 0.12f, 0.16f, 0.22f );
-
-      pTerrainShader->SetUniform( "u_sunDirection", sunDir );
-      pTerrainShader->SetUniform( "u_sunColor", sunColor );
-      pTerrainShader->SetUniform( "u_ambientColor", ambientColor );
-   }
-
-   glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT ); // clear color and depth buffers
-
-   // Frustum for culling
-   ViewFrustum frustum( camera.viewProjection );
-
-   {
-      TextureAtlasManager::Get().Bind();
-
-      pTerrainShader->SetUniform( "u_blockTextures", 0 );
-
-      for( const auto& [ coord, chunk ] : level.GetChunks() )
-      {
-         const ChunkRender* pRender = level.GetChunkRender( coord );
-         if( !pRender )
-            continue;
-
-         const glm::vec3 chunkMin = glm::vec3( coord.x * CHUNK_SIZE_X, 0.0f, coord.z * CHUNK_SIZE_Z );
-         const glm::vec3 chunkMax = chunkMin + glm::vec3( CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z );
-         if( !frustum.FInFrustum( chunkMin, chunkMax ) )
-            continue;
-
-         const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), chunkMin );
-         const glm::mat4 mvp   = camera.viewProjection * model;
-         pTerrainShader->SetUniform( "u_MVP", mvp );
-         pTerrainShader->SetUniform( "u_Model", model );
-         pRender->Render();
-      }
-
-      TextureAtlasManager::Get().Unbind();
-   }
-
-   // Render all entities with CMesh component
-   pTerrainShader->SetUniform( "u_MVP", camera.viewProjection );
-   for( auto [ e, tran, mesh ] : registry.ECView< CTransform, CMesh >() )
-   {
-      if( CPhysics* pPhys = registry.TryGet< CPhysics >( e ) )
-      {
-         if( !frustum.FInFrustum( tran.position + pPhys->bbMin, tran.position + pPhys->bbMax ) )
-            continue;
-      }
-
-      const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
-      const glm::mat4 mvp   = camera.viewProjection * model;
-      //pTerrainShader->SetUniform( "u_color", mesh.mesh->GetColor() );
-      pTerrainShader->SetUniform( "u_MVP", mvp );
-      pTerrainShader->SetUniform( "u_Model", model );
-
-      mesh.mesh->Render();
-   }
-
-   // Render CAABB bounds for debugging
-   for( auto [ tran, phys ] : registry.CView< CTransform, CPhysics >() )
-   {
-      const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
-      const glm::mat4 mvp   = camera.viewProjection * model; // MVP = Projection * View * Model
-      pTerrainShader->SetUniform( "u_MVP", mvp );
-
-      // Build vertices relative to origin
-      const glm::vec3 vertices[ 8 ] = {
-         { phys.bbMin.x, phys.bbMin.y, phys.bbMin.z },
-         { phys.bbMax.x, phys.bbMin.y, phys.bbMin.z },
-         { phys.bbMax.x, phys.bbMax.y, phys.bbMin.z },
-         { phys.bbMin.x, phys.bbMax.y, phys.bbMin.z },
-         { phys.bbMin.x, phys.bbMin.y, phys.bbMax.z },
-         { phys.bbMax.x, phys.bbMin.y, phys.bbMax.z },
-         { phys.bbMax.x, phys.bbMax.y, phys.bbMax.z },
-         { phys.bbMin.x, phys.bbMax.y, phys.bbMax.z }
-      };
-
-      constexpr unsigned int indices[ 24 ] = { 0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7 };
-
-      unsigned int vao, vbo, ebo;
-      glGenVertexArrays( 1, &vao );
-      glGenBuffers( 1, &vbo );
-      glGenBuffers( 1, &ebo );
-
-      glBindVertexArray( vao );
-      glBindBuffer( GL_ARRAY_BUFFER, vbo );
-      glBufferData( GL_ARRAY_BUFFER, sizeof( vertices ), vertices, GL_STATIC_DRAW );
-
-      glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, ebo );
-      glBufferData( GL_ELEMENT_ARRAY_BUFFER, sizeof( indices ), indices, GL_STATIC_DRAW );
-
-      glEnableVertexAttribArray( 0 );
-      glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void* )0 );
-
-      glDrawElements( GL_LINES, 24, GL_UNSIGNED_INT, 0 );
-
-      glDeleteBuffers( 1, &vbo );
-      glDeleteBuffers( 1, &ebo );
-      glDeleteVertexArrays( 1, &vao );
-   }
-
-   // Highlight block under crosshair
-   {
-      // Highlight current block
-      if( g_highlightBlock.has_value() )
-      {
-         // Use the same shader; we draw a simple wireframe cube around the block
-         const glm::vec3 blockPos = *g_highlightBlock;
-
-         // Model: translate to block center, scale to slightly larger than 1x1x1
-         glm::mat4 model = glm::translate( glm::mat4( 1.0f ), blockPos + glm::vec3( 0.5f ) );
-         model           = glm::scale( model, glm::vec3( 1.02f ) ); // tiny inflation
-
-         const glm::mat4 mvp = camera.viewProjection * model;
-         pTerrainShader->SetUniform( "u_MVP", mvp );
-         //pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) ); // white
-
-         // Unit cube wireframe in local space [-0.5,0.5]^3
-         const glm::vec3 min           = glm::vec3( -0.5f );
-         const glm::vec3 max           = glm::vec3( 0.5f );
-         const glm::vec3 vertices[ 8 ] = {
-            { min.x, min.y, min.z },
-            { max.x, min.y, min.z },
-            { max.x, max.y, min.z },
-            { min.x, max.y, min.z },
-            { min.x, min.y, max.z },
-            { max.x, min.y, max.z },
-            { max.x, max.y, max.z },
-            { min.x, max.y, max.z },
-         };
-
-         constexpr unsigned int indices[ 24 ] = {
-            0, 1, 1, 2, 2, 3, 3, 0, // bottom
-            4, 5, 5, 6, 6, 7, 7, 4, // top
-            0, 4, 1, 5, 2, 6, 3, 7  // verticals
-         };
-
-         GLuint vao = 0, vbo = 0, ebo = 0;
-         glGenVertexArrays( 1, &vao );
-         glGenBuffers( 1, &vbo );
-         glGenBuffers( 1, &ebo );
-
-         glBindVertexArray( vao );
-         glBindBuffer( GL_ARRAY_BUFFER, vbo );
-         glBufferData( GL_ARRAY_BUFFER, sizeof( vertices ), vertices, GL_STATIC_DRAW );
-
-         glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, ebo );
-         glBufferData( GL_ELEMENT_ARRAY_BUFFER, sizeof( indices ), indices, GL_STATIC_DRAW );
-
-         glEnableVertexAttribArray( 0 );
-         glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void* )0 );
-
-         glDrawElements( GL_LINES, 24, GL_UNSIGNED_INT, 0 );
-
-         glDeleteBuffers( 1, &vbo );
-         glDeleteBuffers( 1, &ebo );
-         glDeleteVertexArrays( 1, &vao );
-      }
-   }
-
-   pTerrainShader->Unbind();
-
-   // Draw Skybox
-   {
-      constexpr std::string_view faceFiles[ 6 ] = { "assets/textures/skybox/px.png", "assets/textures/skybox/nx.png", "assets/textures/skybox/py.png",
-                                                    "assets/textures/skybox/ny.png", "assets/textures/skybox/pz.png", "assets/textures/skybox/nz.png" };
-      static SkyboxTexture       skyboxTexture( faceFiles );
-      skyboxTexture.Draw( camera.view, camera.projection );
-   }
-
-   // Draw simple reticle
-   {
-      pTerrainShader->Bind();
-
-      glDisable( GL_DEPTH_TEST );
-      pTerrainShader->SetUniform( "u_MVP", glm::mat4( 1.0f ) );
-      //pTerrainShader->SetUniform( "u_color", glm::vec3( 1.0f, 1.0f, 1.0f ) );
-
-      const float                r            = 0.01f; // reticle arm length in NDC
-      std::array< glm::vec3, 4 > reticleVerts = {
-         { { -r, 0.0f, 0.0f }, { r, 0.0f, 0.0f }, { 0.0f, -r, 0.0f }, { 0.0f, r, 0.0f } }
-      };
-
-      GLuint reticleVao = 0, reticleVbo = 0;
-      glGenVertexArrays( 1, &reticleVao );
-      glGenBuffers( 1, &reticleVbo );
-      glBindVertexArray( reticleVao );
-      glBindBuffer( GL_ARRAY_BUFFER, reticleVbo );
-      glBufferData( GL_ARRAY_BUFFER, sizeof( reticleVerts ), reticleVerts.data(), GL_STATIC_DRAW );
-      glEnableVertexAttribArray( 0 );
-      glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof( float ), ( void* )0 );
-      glDrawArrays( GL_LINES, 0, reticleVerts.size() );
-      glDeleteBuffers( 1, &reticleVbo );
-      glDeleteVertexArrays( 1, &reticleVao );
-      glEnable( GL_DEPTH_TEST );
-
-      pTerrainShader->Unbind();
-   }
-}
-
 struct CTick
 {
    uint32_t currentTick = 0;
    uint32_t maxTicks    = 0;
 };
+
 
 static void TickingSystem( Entity::Registry& registry, float /*delta*/ )
 {
@@ -615,7 +366,8 @@ void Application::Run()
    WindowData& windowData = window.GetWindowData();
    window.Init();
 
-   Level level;
+   Level                level( "default" /*worldName*/ );
+   Engine::RenderSystem renderSystem( level );
 
    // ECS Registry
    Entity::Registry registry;
@@ -654,6 +406,42 @@ void Application::Run()
    registry.Add< CPhysics >( psCube->Get(), CPhysics { .bbMin = glm::vec3( -0.5f ), .bbMax = glm::vec3( 0.5f ) } );
 
    Events::EventSubscriber eventSubscriber;
+
+   std::unordered_map< uint64_t, Entity::Entity > connectedPlayers;
+   eventSubscriber.Subscribe< Events::NetworkClientConnectEvent >( [ & ]( const auto& e ) noexcept
+   {
+      Entity::Entity newPlayer = registry.Create();
+      registry.Add< CTransform >( newPlayer, 0.0f, 128.0f, 0.0f );
+
+      std::shared_ptr< CapsuleMesh > psClientMesh = std::make_shared< CapsuleMesh >();
+      psClientMesh->SetColor( glm::vec3( 100.0f / 255.0f, 147.0f / 255.0f, 237.0f / 255.0f ) ); // cornflower blue
+      registry.Add< CMesh >( newPlayer, psClientMesh );
+      connectedPlayers.insert( { e.GetClientID(), newPlayer } );
+   } );
+
+   eventSubscriber.Subscribe< Events::NetworkPositionUpdateEvent >( [ & ]( const auto& e ) noexcept
+   {
+      auto it = connectedPlayers.find( e.GetClientID() );
+      if( it == connectedPlayers.end() )
+      {
+         std::println( std::cerr, "Client with ID {} not found", e.GetClientID() );
+         return; // Client not found
+      }
+
+      CTransform* pClientTransform = registry.TryGet< CTransform >( it->second );
+      if( !pClientTransform )
+      {
+         std::println( std::cerr, "Transform component not found for client ID {}", e.GetClientID() );
+         return; // Transform component not found
+      }
+
+      glm::vec3 meshOffset( 0.0f, 1.0f, 0.0f ); // Offset for the mesh position
+      if( CMesh* pClientMesh = registry.TryGet< CMesh >( it->second ) )
+         meshOffset.y = pClientMesh->mesh->GetCenterToBottomDistance();
+
+      pClientTransform->position = e.GetPosition() + meshOffset; // position is at feet level, so adjust for height
+   } );
+
    eventSubscriber.Subscribe< Events::WindowResizeEvent >( [ & ]( const auto& e ) noexcept
    {
       if( e.GetHeight() == 0 )
@@ -697,54 +485,68 @@ void Application::Run()
 
       const glm::vec3 rayOrigin   = pCamTran->position;
       constexpr float maxDistance = 64.0f;
-      if( e.GetMouseButton() == Input::ButtonLeft )
-      {
-         constexpr int   NUM_PROJECTILES = 500;
-         constexpr float CONE_ANGLE_DEG  = 8.0f;
-         constexpr float SPEED           = 50.0f;
-
-         glm::vec3 right = glm::normalize( ( glm::abs( direction.y ) < 0.99f ) ? glm::cross( direction, glm::vec3( 0, 1, 0 ) )
-                                                                               : glm::cross( direction, glm::vec3( 1, 0, 0 ) ) );
-         glm::vec3 up    = glm::cross( right, direction );
-
-         float     cosMax   = glm::cos( glm::radians( CONE_ANGLE_DEG ) );
-         glm::vec3 spawnPos = rayOrigin + direction;
-         for( int i = 0; i < NUM_PROJECTILES; ++i )
-         {
-            // Uniform random direction in cone
-            float u        = RandRange( 0.0f, 1.0f );
-            float v        = RandRange( 0.0f, 1.0f );
-            float cosTheta = glm::mix( cosMax, 1.0f, u );
-            float sinTheta = std::sqrt( 1.0f - cosTheta * cosTheta );
-            float phi      = glm::two_pi< float >() * v;
-
-            glm::vec3 spreadDir = direction * cosTheta + right * ( std::cos( phi ) * sinTheta ) + up * ( std::sin( phi ) * sinTheta );
-
-            Entity::Entity projectile = registry.Create();
-            registry.Add< CTransform >( projectile, spawnPos );
-            registry.Add< CMesh >( projectile, std::make_shared< SphereMesh >( 0.1f ) );
-            registry.Add< CVelocity >( projectile, spreadDir * SPEED );
-            registry.Add< CPhysics >( projectile, CPhysics { .bbMin = glm::vec3( -0.05f ), .bbMax = glm::vec3( 0.05f ), .bounciness = 0.8f } );
-            registry.Add< CTick >( projectile, 0, 200 );
-         }
-
-         return;
-      }
+      //if( e.GetMouseButton() == Input::ButtonLeft )
+      //{
+      //   constexpr int   NUM_PROJECTILES = 500;
+      //   constexpr float CONE_ANGLE_DEG  = 8.0f;
+      //   constexpr float SPEED           = 50.0f;
+      //
+      //   glm::vec3 right = glm::normalize( ( glm::abs( direction.y ) < 0.99f ) ? glm::cross( direction, glm::vec3( 0, 1, 0 ) )
+      //                                                                         : glm::cross( direction, glm::vec3( 1, 0, 0 ) ) );
+      //   glm::vec3 up    = glm::cross( right, direction );
+      //
+      //   float     cosMax   = glm::cos( glm::radians( CONE_ANGLE_DEG ) );
+      //   glm::vec3 spawnPos = rayOrigin + direction;
+      //   for( int i = 0; i < NUM_PROJECTILES; ++i )
+      //   {
+      //      // Uniform random direction in cone
+      //      float u        = RandRange( 0.0f, 1.0f );
+      //      float v        = RandRange( 0.0f, 1.0f );
+      //      float cosTheta = glm::mix( cosMax, 1.0f, u );
+      //      float sinTheta = std::sqrt( 1.0f - cosTheta * cosTheta );
+      //      float phi      = glm::two_pi< float >() * v;
+      //
+      //      glm::vec3 spreadDir = direction * cosTheta + right * ( std::cos( phi ) * sinTheta ) + up * ( std::sin( phi ) * sinTheta );
+      //
+      //      Entity::Entity projectile = registry.Create();
+      //      registry.Add< CTransform >( projectile, spawnPos );
+      //      registry.Add< CMesh >( projectile, std::make_shared< SphereMesh >( 0.1f ) );
+      //      registry.Add< CVelocity >( projectile, spreadDir * SPEED );
+      //      registry.Add< CPhysics >( projectile, CPhysics { .bbMin = glm::vec3( -0.05f ), .bbMax = glm::vec3( 0.05f ), .bounciness = 0.8f } );
+      //      registry.Add< CTick >( projectile, 0, 200 );
+      //   }
+      //
+      //   return;
+      //}
 
       if( std::optional< RaycastResult > result = TryRaycast( level, Ray { rayOrigin, direction, maxDistance } ) )
       {
          std::cout << "Raycast hit at position: " << result->point.x << ", " << result->point.y << ", " << result->point.z << "\n";
          switch( e.GetMouseButton() )
          {
-            case Input::ButtonLeft:   level.SetBlock( result->block, BlockId::Air /*id*/ ); break;
-            case Input::ButtonRight:  level.SetBlock( result->block + result->faceNormal, BlockId::Grass /*id*/ ); break;
+            case Input::ButtonLeft:
+            {
+               const glm::ivec3 pos = result->block;
+               level.SetBlock( pos, BlockId::Air /*id*/ );
+               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( BlockId::Air ), 1 /*break*/ );
+               break;
+            }
+            case Input::ButtonRight:
+            {
+               const glm::ivec3 pos = result->block + result->faceNormal;
+               level.SetBlock( pos, BlockId::Stone /*id*/ );
+               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( BlockId::Stone ), 0 /*place*/ );
+               break;
+            }
             case Input::ButtonMiddle: level.Explode( result->block, 36 /*radius*/ ); break;
          }
       }
       else
          std::cout << "Raycast did not hit any block within " << maxDistance << " units.\n";
    } );
-   // -----------------------------------
+
+   eventSubscriber.Subscribe< Events::NetworkBlockUpdateEvent >( [ & ]( const auto& e ) noexcept
+   { level.SetBlock( e.GetBlockPos(), static_cast< BlockId >( e.GetBlockId() ) ); } );
 
    // Initialize things
    TextureAtlasManager::Get().CompileBlockAtlas();
@@ -764,15 +566,16 @@ void Application::Run()
       CCamera*    pCameraComp = registry.TryGet< CCamera >( camera );
 
       {
-         if( pPlayerTran )
-            level.UpdateVisibleRegion( pPlayerTran->position, 8 /*viewRadius*/ );
-
+         // Process queue events at the beginning of each frame
          Events::ProcessQueuedEvents();
 
-         MouseLookSystem( registry, window ); // input -> look intent
-         CameraRigSystem( registry );         // apply look to camera, drive player yaw/pitch, position camera
+         //level.Update( delta );
+         if( pPlayerTran )
+            renderSystem.Update( pPlayerTran->position, 8 /*viewRadius*/ );
 
-         // Player systems - input and physics
+         MouseLookSystem( registry, window );
+         CameraRigSystem( registry );
+
          PlayerInputSystem( registry, delta );
          PlayerPhysicsSystem( registry, level, delta );
 
@@ -787,17 +590,17 @@ void Application::Run()
          if( window.FMinimized() || !( pCameraComp && pCameraTran ) )
             continue;
 
-         CameraViewSystem( registry ); // compute view matrices for render (maybe merge with render system)
+         CameraViewSystem( registry );
 
-         {
-            // Update which block is being looked at
-            auto optResult   = TryRaycast( level, CreateRay( pCameraTran->position, pCameraTran->rotation, 64.0f /*maxDistance*/ ) );
-            g_highlightBlock = optResult ? std::optional< glm::ivec3 >( optResult->block ) : std::nullopt;
-         }
+         auto                               optResult = TryRaycast( level, CreateRay( pCameraTran->position, pCameraTran->rotation, 64.0f /*maxDistance*/ ) );
+         Engine::RenderSystem::FrameContext ctx { .registry          = registry,
+                                                  .view              = pCameraComp->view,
+                                                  .projection        = pCameraComp->projection,
+                                                  .viewProjection    = pCameraComp->viewProjection,
+                                                  .optHighlightBlock = optResult ? std::optional< glm::ivec3 >( optResult->block ) : std::nullopt };
+         renderSystem.Run( ctx );
 
-         // Render
-         RenderSystem( registry, level, *pCameraComp, pCameraTran->position );
-         GUIManager::Draw();
+         GUIManager::Draw(); // probably become part of RenderSystem later
       }
 
       window.OnUpdate();

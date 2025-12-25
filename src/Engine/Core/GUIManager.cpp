@@ -4,7 +4,7 @@
 #include "Window.h"
 
 // Project dependencies
-#include <Engine/Core/Timestep.h>
+#include <Engine/Core/Time.h>
 #include <Engine/ECS/Registry.h>
 #include <Engine/ECS/Components/Transform.h>
 #include <Engine/ECS/Components/Velocity.h>

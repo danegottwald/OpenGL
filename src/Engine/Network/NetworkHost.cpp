@@ -3,7 +3,11 @@
 // Project dependencies
 #include <Engine/Events/NetworkEvent.h>
 
-constexpr size_t RECV_BUFFER_SIZE = 4096;
+namespace
+{
+constexpr size_t   RECV_CHUNK_SIZE  = 4096;
+constexpr uint32_t PROTOCOL_VERSION = 1;
+}
 
 NetworkHost::NetworkHost()
 {
@@ -28,6 +32,20 @@ NetworkHost::NetworkHost()
 
    m_eventSubscriber.Subscribe< Events::NetworkClientDisconnectEvent >( [ & ]( const Events::NetworkClientDisconnectEvent& e ) noexcept
    { DisconnectClient( e.GetClientID() ); } );
+
+   m_eventSubscriber.Subscribe< Events::NetworkRequestBlockUpdateEvent >( [ & ]( const Events::NetworkRequestBlockUpdateEvent& e ) noexcept
+   {
+      NetBlockUpdate upd;
+      upd.pos     = e.GetBlockPos();
+      upd.blockId = e.GetBlockId();
+      upd.action  = e.GetAction();
+
+      // Apply locally via incoming-style event
+      Events::Dispatch< Events::NetworkBlockUpdateEvent >( m_ID, upd.pos, upd.blockId );
+
+      // Broadcast to clients
+      Broadcast_( Packet::Create< NetworkCode::BlockUpdate >( m_ID, 0 /*broadcast*/, upd ) );
+   } );
 }
 
 NetworkHost::~NetworkHost()
@@ -35,12 +53,12 @@ NetworkHost::~NetworkHost()
    Shutdown();
 }
 
-void NetworkHost::InitUDP( uint16_t port )
+void NetworkHost::Listen( uint16_t port )
 {
-   m_udpSocket = socket( AF_INET, SOCK_DGRAM, IPPROTO_UDP );
-   if( m_udpSocket == INVALID_SOCKET )
+   m_hostSocket = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
+   if( m_hostSocket == INVALID_SOCKET )
    {
-      s_logs.push_back( std::format( "Failed to create UDP socket: {}", WSAGetLastError() ) );
+      s_logs.push_back( std::format( "Failed to create TCP socket: {}", WSAGetLastError() ) );
       return;
    }
 
@@ -48,317 +66,276 @@ void NetworkHost::InitUDP( uint16_t port )
    addr.sin_family      = AF_INET;
    addr.sin_addr.s_addr = INADDR_ANY;
    addr.sin_port        = htons( port );
-   if( bind( m_udpSocket, reinterpret_cast< sockaddr* >( &addr ), sizeof( addr ) ) == SOCKET_ERROR )
+   if( bind( m_hostSocket, reinterpret_cast< sockaddr* >( &addr ), sizeof( addr ) ) == SOCKET_ERROR )
    {
-      s_logs.push_back( std::format( "Failed to bind UDP socket: {}", WSAGetLastError() ) );
-      closesocket( m_udpSocket );
-      m_udpSocket = INVALID_SOCKET;
+      s_logs.push_back( std::format( "Failed to bind TCP socket: {}", WSAGetLastError() ) );
+      closesocket( m_hostSocket );
+      m_hostSocket = INVALID_SOCKET;
       return;
    }
 
-   u_long mode = 1;
-   ioctlsocket( m_udpSocket, FIONBIO, &mode );
-   m_udpRecvThread = std::thread( &NetworkHost::UDPRecvThread, this );
-}
-
-void NetworkHost::Listen( uint16_t port )
-{
-   m_hostSocket                      = socket( AF_INET, SOCK_STREAM, 0 );
-   m_socketAddressIn.sin_family      = AF_INET;
-   m_socketAddressIn.sin_addr.s_addr = INADDR_ANY;
-   m_socketAddressIn.sin_port        = htons( port );
-   bind( m_hostSocket, ( struct sockaddr* )&m_socketAddressIn, sizeof( m_socketAddressIn ) );
-   listen( m_hostSocket, SOMAXCONN );
-
-   u_long mode = 1; // Set host socket to non-blocking mode
-   ioctlsocket( m_hostSocket, FIONBIO, &mode );
-
-   InitUDP( port ); // same port for UDP
-
-   m_fRunning     = true;
-   m_acceptThread = std::thread( &NetworkHost::AcceptThread, this );
-}
-
-void NetworkHost::AcceptThread()
-{
-   while( m_fRunning )
+   if( listen( m_hostSocket, SOMAXCONN ) == SOCKET_ERROR )
    {
-      // Check for new connections
-      if( SOCKET clientSocket = accept( m_hostSocket, nullptr, nullptr ); clientSocket != INVALID_SOCKET )
-      {
-         Client newClient;
-         newClient.m_clientID = Client::GenerateClientID();
-         newClient.m_socket   = clientSocket;
-         if( !FResolvePeerAddress( newClient ) )
-         {
-            closesocket( clientSocket );
-            continue;
-         }
-
-         {
-            std::lock_guard< std::mutex > lock( m_clientsMutex );
-            m_clientSockets[ newClient.m_clientID ]  = clientSocket;
-            m_outgoingQueues[ newClient.m_clientID ] = std::queue< Packet >();
-         }
-
-         // Start IO thread for this client
-         m_clientThreads[ newClient.m_clientID ] = std::thread( &NetworkHost::ClientIOThread, this, newClient.m_clientID );
-
-         // Inform new client of the host (reliable over TCP)
-         SendPacket( Packet::Create< NetworkCode::ClientConnect >( m_ID, newClient.m_clientID, 0 /*data*/ ) );
-         Events::Dispatch< Events::NetworkClientConnectEvent >( newClient.m_clientID );
-      }
-
-      // Sleep accept thread to avoid busy waiting
-      std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
-   }
-}
-
-void NetworkHost::UDPRecvThread()
-{
-   std::vector< uint8_t > buffer( RECV_BUFFER_SIZE );
-   while( m_fRunning )
-   {
-      sockaddr_in fromAddr {};
-      int         fromLen = sizeof( fromAddr );
-      int         bytes   = recvfrom(
-         m_udpSocket, reinterpret_cast< char* >( buffer.data() ), ( int )buffer.size(), 0, reinterpret_cast< sockaddr* >( &fromAddr ), &fromLen );
-      if( bytes > 0 )
-      {
-         size_t offset = 0;
-         while( offset < static_cast< size_t >( bytes ) )
-         {
-            auto inPacket = Packet::Deserialize( buffer, offset );
-            if( !inPacket )
-               break;
-            offset += inPacket->Size();
-
-            if( inPacket->m_code == NetworkCode::UDPRegister )
-            {
-               // Register UDP address for this client ID
-               uint64_t                      clientID = Packet::ParseBuffer< NetworkCode::UDPRegister >( *inPacket );
-               std::lock_guard< std::mutex > lock( m_clientsMutex );
-               m_clientUdpAddrs[ clientID ] = fromAddr;
-            }
-            else
-            {
-               // Treat as game-state update (e.g., position)
-               HandleIncomingPacket( *inPacket );
-            }
-         }
-      }
-      std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
-   }
-}
-
-void NetworkHost::ClientIOThread( uint64_t clientID )
-{
-   SOCKET sock;
-   {
-      std::lock_guard< std::mutex > lock( m_clientsMutex );
-      sock = m_clientSockets[ clientID ];
+      s_logs.push_back( std::format( "Failed to listen on TCP socket: {}", WSAGetLastError() ) );
+      closesocket( m_hostSocket );
+      m_hostSocket = INVALID_SOCKET;
+      return;
    }
 
-   // Set this client socket to non-blocking mode
-   u_long mode = 1;
-   ioctlsocket( sock, FIONBIO, &mode );
+   // Non-blocking accept()
+   u_long nonBlocking = 1;
+   ioctlsocket( m_hostSocket, FIONBIO, &nonBlocking );
 
-   std::vector< uint8_t > recvBuffer( RECV_BUFFER_SIZE );
-   while( m_fRunning )
-   {
-      // Receive (TCP reliable channel)
-      int bytesReceived = recv( sock, reinterpret_cast< char* >( recvBuffer.data() ), ( int )recvBuffer.size(), 0 );
-      if( bytesReceived > 0 )
-      {
-         size_t offset = 0;
-         while( offset < static_cast< size_t >( bytesReceived ) )
-         {
-            auto inPacket = Packet::Deserialize( recvBuffer, offset );
-            if( !inPacket.has_value() )
-            {
-               s_logs.push_back( std::format( "Failed to deserialize packet from client {}: {}", clientID, std::to_underlying( inPacket.error() ) ) );
-               break;
-            }
-
-            offset += inPacket->Size();
-            HandleIncomingPacket( inPacket.value() );
-         }
-      }
-      else if( bytesReceived == 0 || ( bytesReceived < 0 && WSAGetLastError() != WSAEWOULDBLOCK ) )
-      {
-         Events::Dispatch< Events::NetworkClientDisconnectEvent >( clientID );
-         break;
-      }
-
-      // Send (TCP channel)
-      Packet outPacket;
-      while( DequeueOutgoing( clientID, outPacket ) )
-      {
-         std::vector< uint8_t > data = Packet::Serialize( outPacket );
-         send( sock, reinterpret_cast< char* >( data.data() ), ( int )data.size(), 0 );
-      }
-
-      std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
-   }
+   m_fRunning = true;
 }
 
-void NetworkHost::SendUDPPacket( const Packet& packet, const sockaddr_in& addr )
+void NetworkHost::Shutdown()
 {
-   if( m_udpSocket == INVALID_SOCKET )
+   m_fRunning = false;
+
+   for( auto& [ id, peer ] : m_peers )
+   {
+      if( peer.socket != INVALID_SOCKET )
+         closesocket( peer.socket );
+   }
+   m_peers.clear();
+}
+
+void NetworkHost::DisconnectClient( uint64_t clientID )
+{
+   auto it = m_peers.find( clientID );
+   if( it == m_peers.end() )
       return;
 
-   auto data = Packet::Serialize( packet );
-   sendto( m_udpSocket, reinterpret_cast< const char* >( data.data() ), ( int )data.size(), 0, reinterpret_cast< const sockaddr* >( &addr ), sizeof( addr ) );
+   if( it->second.socket != INVALID_SOCKET )
+      closesocket( it->second.socket );
+
+   m_peers.erase( it );
+
+   // Broadcast disconnect (best-effort)
+   Broadcast_( Packet::Create< NetworkCode::ClientDisconnect >( m_ID, 0 /*broadcast*/, clientID ) );
+}
+
+void NetworkHost::QueueSendBytes_( Peer& peer, std::span< const uint8_t > bytes )
+{
+   peer.sendBuffer.insert( peer.sendBuffer.end(), bytes.begin(), bytes.end() );
+}
+
+void NetworkHost::QueueSend_( Peer& peer, const Packet& packet )
+{
+   auto bytes = Packet::Serialize( packet );
+   QueueSendBytes_( peer, bytes );
+}
+
+void NetworkHost::FlushSends_( Peer& peer )
+{
+   while( !peer.sendBuffer.empty() )
+   {
+      int sent = send( peer.socket, reinterpret_cast< const char* >( peer.sendBuffer.data() ), static_cast< int >( peer.sendBuffer.size() ), 0 );
+
+      if( sent == SOCKET_ERROR )
+      {
+         int err = WSAGetLastError();
+         if( err == WSAEWOULDBLOCK )
+            return;
+
+         DisconnectClient( peer.clientID );
+         return;
+      }
+
+      if( sent <= 0 )
+         return;
+
+      peer.sendBuffer.erase( peer.sendBuffer.begin(), peer.sendBuffer.begin() + sent );
+   }
+}
+
+void NetworkHost::Broadcast_( const Packet& packet )
+{
+   for( auto& [ id, peer ] : m_peers )
+      QueueSend_( peer, packet );
+}
+
+void NetworkHost::SendPacket( const Packet& packet )
+{
+   Broadcast_( packet );
+}
+
+void NetworkHost::SendPackets( std::span< Packet > packets )
+{
+   for( const auto& p : packets )
+      Broadcast_( p );
 }
 
 void NetworkHost::HandleIncomingPacket( const Packet& packet )
 {
    switch( packet.m_code )
    {
-      case NetworkCode::Heartbeat:        break;
+      case NetworkCode::Heartbeat:
       case NetworkCode::ClientDisconnect: break;
+
       case NetworkCode::Chat:
-         BroadcastPacket( packet, packet.m_sourceID ); // broadcast via TCP
          Events::Dispatch< Events::NetworkChatReceivedEvent >( packet.m_sourceID, Packet::ParseBuffer< NetworkCode::Chat >( packet ) );
          break;
+
       case NetworkCode::PositionUpdate:
-         // Forward unreliable to other clients via UDP if we have their addresses
-         {
-            std::lock_guard< std::mutex > lock( m_clientsMutex );
-            for( const auto& [ id, addr ] : m_clientUdpAddrs )
-            {
-               if( id == packet.m_sourceID )
-                  continue;
-               SendUDPPacket( packet, addr );
-            }
-         }
          Events::Dispatch< Events::NetworkPositionUpdateEvent >( packet.m_sourceID, Packet::ParseBuffer< NetworkCode::PositionUpdate >( packet ) );
          break;
+
+      case NetworkCode::BlockUpdate:
+      {
+         const auto upd = Packet::ParseBuffer< NetworkCode::BlockUpdate >( packet );
+         Events::Dispatch< Events::NetworkBlockUpdateEvent >( packet.m_sourceID, upd.pos, upd.blockId );
+         Broadcast_( Packet::Create< NetworkCode::BlockUpdate >( packet.m_sourceID, 0 /*broadcast*/, upd ) );
+         break;
+      }
+
       default: std::println( "Error: Unhandled packet code {}", static_cast< int >( packet.m_code ) ); break;
    }
 }
 
-void NetworkHost::SendPacket( const Packet& packet )
+void NetworkHost::AcceptNewClients_()
 {
-   if( packet.m_code == NetworkCode::PositionUpdate )
+   for( ;; )
    {
-      // Send over UDP (unreliable)
-      std::lock_guard< std::mutex > lock( m_clientsMutex );
-      for( const auto& [ id, addr ] : m_clientUdpAddrs )
+      SOCKET clientSocket = accept( m_hostSocket, nullptr, nullptr );
+      if( clientSocket == INVALID_SOCKET )
       {
-         if( packet.m_destinationID != 0 && id != packet.m_destinationID )
-            continue;
-         SendUDPPacket( packet, addr );
-      }
-      return;
-   }
+         const int err = WSAGetLastError();
+         if( err == WSAEWOULDBLOCK )
+            break;
 
-   if( packet.m_destinationID == 0 )
-   {
-      BroadcastPacket( packet );
-      return;
-   }
-
-   EnqueueOutgoing( packet.m_destinationID, packet );
-}
-
-void NetworkHost::SendPackets( const std::vector< Packet >& packets )
-{
-   for( const auto& packet : packets )
-      SendPacket( packet );
-}
-
-void NetworkHost::BroadcastPacket( const Packet& packet, uint64_t exceptID )
-{
-   std::lock_guard< std::mutex > lock( m_clientsMutex );
-   for( const auto& [ clientID, _ ] : m_clientSockets )
-   {
-      if( clientID == exceptID )
          continue;
-      EnqueueOutgoing( clientID, packet );
+      }
+
+      u_long nonBlocking = 1;
+      if( ioctlsocket( clientSocket, FIONBIO, &nonBlocking ) == SOCKET_ERROR )
+      {
+         closesocket( clientSocket );
+         continue;
+      }
+
+      const uint64_t clientID = Client::GenerateClientID();
+
+      Peer peer;
+      peer.clientID = clientID;
+      peer.socket   = clientSocket;
+      peer.state    = PeerState::AwaitingHandshakeInit;
+      peer.recvBuffer.reserve( RECV_CHUNK_SIZE );
+
+      auto [ it, inserted ] = m_peers.emplace( clientID, std::move( peer ) );
+      Peer& newPeer         = it->second;
+
+      // Enqueue handshake accept immediately (reliable via sendBuffer + flush)
+      QueueSend_( newPeer, Packet::Create< NetworkCode::HandshakeAccept >( m_ID, clientID, clientID ) );
+      QueueSend_( newPeer, Packet::Create< NetworkCode::ClientConnect >( m_ID, clientID, m_ID ) );
+
+      // Inform existing clients
+      //Broadcast_( Packet::Create< NetworkCode::ClientConnect >( m_ID, 0 /*broadcast*/, clientID ) );
+      Events::Dispatch< Events::NetworkClientConnectEvent >( clientID );
+
+      // Best-effort flush now
+      FlushSends_( newPeer );
    }
 }
 
-void NetworkHost::EnqueueOutgoing( uint64_t clientID, const Packet& packet )
+void NetworkHost::PollClients_()
 {
-   std::lock_guard< std::mutex > lock( m_queueMutexes[ clientID ] );
-   m_outgoingQueues[ clientID ].push( packet );
-   m_queueCV.notify_all();
-}
+   std::vector< uint64_t > toDisconnect;
 
-bool NetworkHost::DequeueOutgoing( uint64_t clientID, Packet& packet )
-{
-   std::lock_guard< std::mutex > lock( m_queueMutexes[ clientID ] );
-   if( m_outgoingQueues[ clientID ].empty() )
-      return false;
-
-   packet = m_outgoingQueues[ clientID ].front();
-   m_outgoingQueues[ clientID ].pop();
-   return true;
-}
-
-void NetworkHost::DisconnectClient( uint64_t clientID )
-{
-   std::lock_guard< std::mutex > lock( m_clientsMutex ); // lock
-   auto                          it = m_clientSockets.find( clientID );
-   if( it == m_clientSockets.end() )
-      return; // Client not found
-
-   closesocket( it->second );
-   m_clientSockets.erase( it );
-   m_clientUdpAddrs.erase( clientID );
-   m_outgoingQueues.erase( clientID );
-   m_queueMutexes.erase( clientID );
-   auto threadIt = m_clientThreads.find( clientID );
-   if( threadIt != m_clientThreads.end() )
+   for( auto& [ clientID, peer ] : m_peers )
    {
-      if( threadIt->second.joinable() )
-         threadIt->second.join();
+      // recv
+      std::array< uint8_t, RECV_CHUNK_SIZE > chunk {};
+      int                                    bytes = recv( peer.socket, reinterpret_cast< char* >( chunk.data() ), static_cast< int >( chunk.size() ), 0 );
 
-      m_clientThreads.erase( threadIt );
+      if( bytes > 0 )
+      {
+         peer.recvBuffer.insert( peer.recvBuffer.end(), chunk.begin(), chunk.begin() + bytes );
+
+         size_t bytesToProcess = peer.recvBuffer.size();
+         size_t offset         = 0;
+         size_t maxPackets     = 64;
+         size_t processed      = 0;
+
+         while( offset < bytesToProcess && processed < maxPackets )
+         {
+            auto pkt = Packet::Deserialize( peer.recvBuffer, offset );
+            if( !pkt )
+               break;
+
+            // Socket-authoritative identity
+            const uint64_t effectiveSource = peer.clientID;
+
+            // Handshake gate / verification
+            if( peer.state == PeerState::AwaitingHandshakeInit )
+            {
+               if( pkt->m_code != NetworkCode::HandshakeInit )
+               {
+                  toDisconnect.push_back( clientID );
+                  break;
+               }
+
+               const uint32_t version = Packet::ParseBuffer< NetworkCode::HandshakeInit >( *pkt );
+               if( version != PROTOCOL_VERSION )
+               {
+                  toDisconnect.push_back( clientID );
+                  break;
+               }
+
+               peer.state = PeerState::Connected;
+               // No event here; connect event already fired on accept.
+            }
+            else
+            {
+               if( pkt->m_sourceID != effectiveSource )
+               {
+                  toDisconnect.push_back( clientID );
+                  break;
+               }
+            }
+
+            pkt->m_sourceID = effectiveSource;
+            HandleIncomingPacket( *pkt );
+
+            offset += pkt->Size();
+            processed++;
+         }
+
+         if( offset > 0 )
+            peer.recvBuffer.erase( peer.recvBuffer.begin(), peer.recvBuffer.begin() + offset );
+      }
+      else if( bytes == 0 )
+      {
+         toDisconnect.push_back( clientID );
+      }
+      else
+      {
+         int err = WSAGetLastError();
+         if( err != WSAEWOULDBLOCK )
+            toDisconnect.push_back( clientID );
+      }
+
+      // send
+      FlushSends_( peer );
    }
-}
 
-void NetworkHost::Shutdown()
-{
-   // Broadcast shutdown packet to all clients (TCP)
-   BroadcastPacket( Packet::Create< NetworkCode::HostShutdown >( m_ID, 0 /*destID*/, 0 /*data*/ ) );
-
-   m_fRunning = false;
-   if( m_acceptThread.joinable() )
-      m_acceptThread.join();
-
-   if( m_udpRecvThread.joinable() )
-      m_udpRecvThread.join();
-
-   std::lock_guard< std::mutex > lock( m_clientsMutex );
-   for( auto& [ clientID, sock ] : m_clientSockets )
-      closesocket( sock );
-
-   if( m_udpSocket != INVALID_SOCKET )
-   {
-      closesocket( m_udpSocket );
-      m_udpSocket = INVALID_SOCKET;
-   }
-
-   for( auto& [ clientID, thread ] : m_clientThreads )
-   {
-      if( thread.joinable() )
-         thread.join();
-   }
-
-   m_clientSockets.clear();
-   m_clientUdpAddrs.clear();
-   m_clientThreads.clear();
-   m_outgoingQueues.clear();
-   m_queueMutexes.clear();
+   for( uint64_t id : toDisconnect )
+      DisconnectClient( id );
 }
 
 void NetworkHost::Poll( const glm::vec3& playerPosition )
 {
-   // Periodically broadcast host position to all clients via UDP
-   SendPacket( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0, playerPosition ) );
-}
+   if( m_hostSocket == INVALID_SOCKET )
+      return;
 
-// TODO: Implement ProcessPacket to handle game logic, relay, etc.
-// void NetworkHost::ProcessPacket(const Packet& packet, uint64_t clientID, World& world, Player& player) { ... }
+   AcceptNewClients_();
+   PollClients_();
+
+   // Keep position updates in Poll (broadcast)
+   Broadcast_( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0 /*broadcast*/, playerPosition ) );
+
+   // Flush any queued broadcasts
+   for( auto& [ id, peer ] : m_peers )
+      FlushSends_( peer );
+}

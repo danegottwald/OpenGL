@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Engine/World/Blocks.h>
-
-// Forward Declarations
-class Shader;
+#include <Engine/Renderer/Shader.h>
 
 
 // ----------------------------------------------------------------
@@ -21,10 +19,10 @@ private:
    void LoadCubemap( std::span< const std::string_view > faces );
    void InitGeometry();
 
-   GLuint                    m_vao {};
-   GLuint                    m_vbo {};
-   GLuint                    m_textureID {};
-   std::unique_ptr< Shader > m_pShader;
+   GLuint m_vao {};
+   GLuint m_vbo {};
+   GLuint m_textureID {};
+   Shader m_shader;
 };
 
 
