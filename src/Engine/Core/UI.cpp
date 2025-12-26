@@ -143,8 +143,13 @@ void DebugUI::Draw()
          // =====================================================================
          if( ImGui::BeginTabItem( "Stats" ) )
          {
-            ImGui::Text( "FPS: %.1f (%.1fms)", ImGui::GetIO().Framerate, 1000.0f / ImGui::GetIO().Framerate );
-            static bool fVSync = Window::Get().GetWindowData().VSync;
+            float        currentFps = ImGui::GetIO().Framerate, frameTime = 1000.0f / currentFps;
+            static float highestFps = 0.0f;
+            if( currentFps > highestFps )
+               highestFps = currentFps;
+
+            ImGui::Text( "FPS: %.1f (%.1fms), High: %.1f FPS", currentFps, frameTime, highestFps );
+            static bool fVSync = Window::Get().GetWindowState().fVSync;
             if( ImGui::Checkbox( "VSync", &fVSync ) )
                Window::Get().SetVSync( fVSync );
 
@@ -306,7 +311,7 @@ void DebugUI::Draw()
    }
 
    { // ImGui Top Right
-      ImGui::SetNextWindowPos( ImVec2( Window::Get().GetWindowData().Width - 10, 10 ), ImGuiCond_Always, ImVec2( 1.0f, 0.0f ) );
+      ImGui::SetNextWindowPos( ImVec2( Window::Get().GetWindowState().size.x - 10, 10 ), ImGuiCond_Always, ImVec2( 1.0f, 0.0f ) );
       ImGui::Begin( "Key Bindings",
                     nullptr,
                     ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |

@@ -6,12 +6,21 @@
 // Forward Declarations
 struct GLFWwindow;
 
-struct WindowData
+struct WindowState
 {
-   std::string Title  = "OpenGL";
-   uint16_t    Width  = 1600;
-   uint16_t    Height = 900;
-   bool        VSync  = true;
+   // Identity & Config
+   std::string title { "Title" };
+   glm::uvec2  size { 1600, 900 };
+   bool        fVSync { true };
+
+   // Input State
+   glm::vec2 mousePos { 0.0f };
+   glm::vec2 mouseDelta { 0.0f };
+   bool      fMouseCaptured { false };
+
+   // Lifecycle
+   bool fShouldClose { false };
+   bool fMinimized { false };
 };
 
 // --------------------------------------------------------------------
@@ -23,35 +32,27 @@ public:
    // Singleton Related
    static Window&     Get();
    static GLFWwindow* GetNativeWindow();
-   Window( const Window& )            = delete;
-   Window& operator=( const Window& ) = delete;
-   Window( Window&& )                 = delete;
-   Window& operator=( Window&& )      = delete;
-
-   ~Window();
 
    void Init();
-   void OnUpdate() const;
+   bool FProcessEvents();
+   void Present();
 
-   glm::vec2 GetMousePosition() const;
+   // WindowState
+   const WindowState& GetWindowState() const { return m_state; }
+   WindowState&       GetWindowState() { return m_state; }
 
-   // Queries
-   bool FMinimized() const noexcept;
-   bool IsOpen() const noexcept;
+   bool FMinimized() const noexcept { return m_state.fMinimized; }
+   void SetVSync( bool fState );
 
-   // WindowData
-   WindowData& GetWindowData();
-   void        SetVSync( bool state );
+   void OnFocusChanged( bool /*fFocused*/ ) noexcept {}
 
 private:
-   // Disallow instantiation outside of class
-   Window( const WindowData& config );
+   Window( std::string_view title ) noexcept; // private ctor for singleton
+   ~Window();
+   NO_COPY_MOVE( Window )
 
-   GLFWwindow* m_Window = nullptr;
-   WindowData  m_WindowData;
-
-   bool m_fMinimized = false;
-   bool m_fRunning   = false;
+   GLFWwindow* m_window { nullptr };
+   WindowState m_state;
 
    // Events
    Events::EventSubscriber m_eventSubscriber;

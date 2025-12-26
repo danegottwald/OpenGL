@@ -9,33 +9,40 @@
 #include <Engine/Events/MouseEvent.h>
 #include <Engine/Input/Input.h>
 
-Window::Window( const WindowData& winData ) :
-   m_WindowData( winData )
-{}
+
+// --------------------------------------------------------------------
+// Window
+// --------------------------------------------------------------------
+Window::Window( std::string_view title ) noexcept
+{
+   m_state.title = title;
+}
+
 
 Window::~Window()
 {
    UI::UIBuffer::Shutdown();
 
-   glfwDestroyWindow( m_Window );
+   glfwDestroyWindow( m_window );
    glfwTerminate();
 }
 
+
 Window& Window::Get()
 {
-   static Window instance = Window( WindowData { "OpenGL" } );
+   static Window instance = Window( "OpenGL" );
    return instance;
 }
 
+
 GLFWwindow* Window::GetNativeWindow()
 {
-   return Window::Get().m_Window;
+   return Window::Get().m_window;
 }
+
 
 void Window::Init()
 {
-   assert( !m_fRunning && L"Window is already running" );
-
    // Initialize GLFW
    if( !glfwInit() )
       throw std::runtime_error( "Failed to initialize GLFW" );
@@ -56,14 +63,14 @@ void Window::Init()
    glfwWindowHint( GLFW_SAMPLES, 4 );     // Enable Multi-Sample Anti-Aliasing (MSAA)
 
    // Create the GLFW window
-   m_Window = glfwCreateWindow( m_WindowData.Width, m_WindowData.Height, m_WindowData.Title.c_str(), nullptr, nullptr );
-   if( !m_Window )
+   m_window = glfwCreateWindow( m_state.size.x, m_state.size.y, m_state.title.c_str(), nullptr, nullptr );
+   if( !m_window )
       throw std::runtime_error( "Failed to create GLFW window" );
 
    // Set the window's context and user pointer
-   glfwMakeContextCurrent( m_Window );         // Make the window's context current
-   glfwSetWindowUserPointer( m_Window, this ); // Set the user pointer to this class instance
-   glfwSwapInterval( m_WindowData.VSync );     // Enable VSync
+   glfwMakeContextCurrent( m_window );         // Make the window's context current
+   glfwSetWindowUserPointer( m_window, this ); // Set the user pointer to this class instance
+   glfwSwapInterval( m_state.fVSync );         // Enable VSync
 
    // Initialize OpenGL functions using GLAD
    if( !gladLoadGL() )
@@ -101,65 +108,54 @@ void Window::Init()
    SetCallbacks();
 
    UI::UIBuffer::Init();
-
-   m_fRunning = true; // Window is now running and fully initialized
 }
 
-void Window::OnUpdate() const
+
+bool Window::FProcessEvents()
 {
-   //Renderer::Get().Draw();
+   if( glfwWindowShouldClose( m_window ) )
+      m_state.fShouldClose = true;
 
-   // Poll for and process events
-   glfwPollEvents();
+   if( m_state.fShouldClose )
+   {
+      glfwSetWindowShouldClose( m_window, GLFW_TRUE );
+      return false; // early out if window is closing
+   }
 
-   // Swap front and back buffers
-   glfwSwapBuffers( m_Window );
+   glfwPollEvents(); // poll glfw events
+
+   double x, y;
+   glfwGetCursorPos( m_window, &x, &y );
+   glm::vec2 currentPos = { ( float )x, ( float )y };
+
+   const bool fCaptured   = ( glfwGetInputMode( m_window, GLFW_CURSOR ) == GLFW_CURSOR_DISABLED );
+   m_state.mouseDelta     = ( fCaptured && !m_state.fMouseCaptured ) ? glm::vec2( 0.0f ) : currentPos - m_state.mousePos;
+   m_state.mousePos       = currentPos;
+   m_state.fMouseCaptured = fCaptured;
+
+   return true;
 }
 
-glm::vec2 Window::GetMousePosition() const
+
+void Window::Present()
 {
-   double xPos, yPos;
-   glfwGetCursorPos( Window::GetNativeWindow(), &xPos, &yPos );
-   return glm::vec2( xPos, yPos );
+   glfwSwapBuffers( m_window ); // swap front and back buffers
 }
 
-// --------------------------------------------------------------------
-//      Window Queries
-// --------------------------------------------------------------------
-bool Window::FMinimized() const noexcept
+
+void Window::SetVSync( bool fState )
 {
-   return m_fMinimized;
+   if( fState != m_state.fVSync )
+   {
+      m_state.fVSync = fState;
+      glfwSwapInterval( fState );
+   }
 }
 
-bool Window::IsOpen() const noexcept
-{
-   return m_fRunning;
-}
-
-// --------------------------------------------------------------------
-//      WindowData
-// --------------------------------------------------------------------
-WindowData& Window::GetWindowData()
-{
-   return m_WindowData;
-}
-
-void Window::SetVSync( bool state )
-{
-   if( state != m_WindowData.VSync )
-      glfwSwapInterval( m_WindowData.VSync = state );
-}
 
 void Window::SetCallbacks()
 {
-   m_eventSubscriber.Subscribe< Events::WindowCloseEvent >( [ & ]( const Events::WindowCloseEvent& /*event*/ ) noexcept { m_fRunning = false; } );
-
-   m_eventSubscriber.Subscribe< Events::WindowResizeEvent >( [ & ]( const Events::WindowResizeEvent& event ) noexcept
-   {
-      m_WindowData.Width  = event.GetWidth();
-      m_WindowData.Height = event.GetHeight();
-      glViewport( 0, 0, m_WindowData.Width, m_WindowData.Height );
-   } );
+   m_eventSubscriber.Subscribe< Events::WindowCloseEvent >( [ & ]( const Events::WindowCloseEvent& /*event*/ ) noexcept { m_state.fShouldClose = true; } );
 
    m_eventSubscriber.Subscribe< Events::KeyPressedEvent >( [ & ]( const Events::KeyPressedEvent& event ) noexcept
    {
@@ -167,7 +163,7 @@ void Window::SetCallbacks()
       {
          case Input::F1:
          {
-            m_fRunning = false;
+            m_state.fShouldClose = true;
             break;
          }
 
@@ -183,11 +179,11 @@ void Window::SetCallbacks()
          {
             static int fFlip = GLFW_CURSOR_NORMAL;
             fFlip            = ( fFlip == GLFW_CURSOR_NORMAL ) ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
-            glfwSetInputMode( m_Window, GLFW_CURSOR, fFlip );
+            glfwSetInputMode( m_window, GLFW_CURSOR, fFlip );
 
             int width, height;
-            glfwGetWindowSize( m_Window, &width, &height );
-            glfwSetCursorPos( m_Window, width * 0.5f, height * 0.5f ); // Center the cursor
+            glfwGetWindowSize( m_window, &width, &height );
+            glfwSetCursorPos( m_window, width * 0.5f, height * 0.5f ); // Center the cursor
             break;
          }
 
@@ -200,8 +196,8 @@ void Window::SetCallbacks()
             const GLFWvidmode* mode    = glfwGetVideoMode( primary );
             if( fFullscreen )
             {
-               glfwSetWindowAttrib( m_Window, GLFW_AUTO_ICONIFY, GLFW_FALSE );
-               glfwSetWindowMonitor( m_Window, primary, 0, 0, mode->width, mode->height, mode->refreshRate );
+               glfwSetWindowAttrib( m_window, GLFW_AUTO_ICONIFY, GLFW_FALSE );
+               glfwSetWindowMonitor( m_window, primary, 0, 0, mode->width, mode->height, mode->refreshRate );
             }
             else
             {
@@ -210,7 +206,7 @@ void Window::SetCallbacks()
                int         padY           = static_cast< int >( mode->height * paddingPercent );
                int         windowedWidth = mode->width - padX, windowedHeight = mode->height - padY;
                int         windowedX = padX / 2, windowedY = padY / 2;
-               glfwSetWindowMonitor( m_Window, nullptr, windowedX, windowedY, windowedWidth, windowedHeight, 0 );
+               glfwSetWindowMonitor( m_window, nullptr, windowedX, windowedY, windowedWidth, windowedHeight, 0 );
             }
             break;
          }
@@ -279,11 +275,37 @@ void Window::SetCallbacks()
 #endif
 
    // GLFW Window Callbacks
-   glfwSetWindowSizeCallback( m_Window, []( GLFWwindow* window, int width, int height ) { Events::Dispatch< Events::WindowResizeEvent >( width, height ); } );
-   glfwSetWindowCloseCallback( m_Window, []( GLFWwindow* window ) { Events::Dispatch< Events::WindowCloseEvent >(); } );
+   glfwSetWindowCloseCallback( m_window, []( GLFWwindow* window ) { Events::Dispatch< Events::WindowCloseEvent >(); } );
+
+   glfwSetWindowIconifyCallback( m_window,
+                                 []( GLFWwindow* window, int iconified )
+   {
+      if( Window* pWindow = static_cast< Window* >( glfwGetWindowUserPointer( window ) ) )
+         pWindow->GetWindowState().fMinimized = ( iconified == GLFW_TRUE );
+   } );
+
+   glfwSetFramebufferSizeCallback( m_window,
+                                   []( GLFWwindow* window, int width, int height )
+   {
+      if( width == 0 || height == 0 )
+         return; // Ignore "fake" resizes during minimization
+
+      if( Window* pWindow = static_cast< Window* >( glfwGetWindowUserPointer( window ) ) )
+         pWindow->GetWindowState().size = { static_cast< uint32_t >( width ), static_cast< uint32_t >( height ) };
+
+      glViewport( 0, 0, width, height ); // EVENTUALLY MOVE TO SOME RENDERER SPECIFIC LOCATION
+      Events::Dispatch< Events::WindowResizeEvent >( width, height );
+   } );
+
+   glfwSetWindowFocusCallback( m_window,
+                               []( GLFWwindow* window, int fFocused )
+   {
+      if( Window* pWindow = static_cast< Window* >( glfwGetWindowUserPointer( window ) ) )
+         pWindow->OnFocusChanged( static_cast< bool >( fFocused ) );
+   } );
 
    // GLFW Key Callbacks
-   glfwSetKeyCallback( m_Window,
+   glfwSetKeyCallback( m_window,
                        []( GLFWwindow* window, int key, int scancode, int action, int mods )
    {
       if( ImGui::GetIO().WantTextInput ) // Block input if ImGui has text input active
@@ -303,11 +325,11 @@ void Window::SetCallbacks()
       }
    } );
 
-   glfwSetCharCallback( m_Window,
+   glfwSetCharCallback( m_window,
                         []( GLFWwindow* window, unsigned int keycode )
    { Events::Dispatch< Events::KeyTypedEvent >( static_cast< Input::KeyCode >( keycode ) ); } );
 
-   glfwSetMouseButtonCallback( m_Window,
+   glfwSetMouseButtonCallback( m_window,
                                []( GLFWwindow* window, int button, int action, int mods )
    {
       if( ImGui::GetIO().WantCaptureMouse ) // Block mouse if ImGui has mouse capture active
@@ -325,7 +347,7 @@ void Window::SetCallbacks()
       }
    } );
 
-   glfwSetScrollCallback( m_Window,
+   glfwSetScrollCallback( m_window,
                           []( GLFWwindow* window, double xOffset, double yOffset )
    {
       if( ImGui::GetIO().WantCaptureMouse ) // Block scroll if ImGui has mouse capture active
@@ -333,12 +355,4 @@ void Window::SetCallbacks()
 
       Events::Dispatch< Events::MouseScrolledEvent >( static_cast< float >( xOffset ), static_cast< float >( yOffset ) );
    } );
-
-   // Use polling instead of callback for cursor position
-   //glfwSetCursorPosCallback( m_Window,
-   //                          []( GLFWwindow* window, double xPos, double yPos )
-   //{
-   //   Input::SetStateChanged( true ); // Set input state changed flag
-   //   Events::Dispatch< Events::MouseMovedEvent >( static_cast< float >( xPos ), static_cast< float >( yPos ) );
-   //} );
 }

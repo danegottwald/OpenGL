@@ -22,10 +22,6 @@
 
 #include <Engine/Events/NetworkEvent.h>
 
-
-//#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
-
 // Component includes
 #include <Engine/ECS/Components.h>
 #include <Engine/ECS/Registry.h>
@@ -41,40 +37,86 @@ constexpr float AIR_MAXSPEED      = 10.0f;
 constexpr float AIR_CONTROL       = 0.3f;
 constexpr float SPRINT_MODIFIER   = 1.3f;
 
+//static void MouseLookSystem( Entity::Registry& registry, Window& window )
+//{
+//   //PROFILE_SCOPE( "MouseLookSystem" );
+//
+//   const WindowState& windowState = window.GetWindowState();
+//   glm::vec2          mouseDelta { 0.0f };
+//   if( windowState.fMouseCaptured )
+//   {
+//      static glm::vec2 lastMousePos = windowState.mousePos;
+//      mouseDelta                    = windowState.mousePos - lastMousePos;
+//
+//      const WindowData& windowData = window.GetWindowData();
+//      lastMousePos                 = { windowData.Width * 0.5f, windowData.Height * 0.5f };
+//      glfwSetCursorPos( window.GetNativeWindow(), lastMousePos.x, lastMousePos.y );
+//   }
+//
+//   // Write intent only (no transform mutation)
+//   for( auto [ look ] : registry.CView< CLookInput >() )
+//   {
+//      look.yawDelta   = 0.0f;
+//      look.pitchDelta = 0.0f;
+//   }
+//
+//   // Only apply mouse delta if captured
+//   if( windowState.fMouseCaptured )
+//   {
+//      for( auto [ cam, look ] : registry.CView< CCamera, CLookInput >() )
+//      {
+//         look.pitchDelta += mouseDelta.y * cam.sensitivity;
+//         look.yawDelta += mouseDelta.x * cam.sensitivity;
+//      }
+//   }
+//}
+
 static void MouseLookSystem( Entity::Registry& registry, Window& window )
 {
-   //PROFILE_SCOPE( "MouseLookSystem" );
-   GLFWwindow* nativeWindow   = window.GetNativeWindow();
-   const bool  fMouseCaptured = glfwGetInputMode( nativeWindow, GLFW_CURSOR ) == GLFW_CURSOR_DISABLED;
-
-   glm::vec2 mouseDelta { 0.0f };
-   if( fMouseCaptured )
-   {
-      static glm::vec2 lastMousePos = window.GetMousePosition();
-      mouseDelta                    = window.GetMousePosition() - lastMousePos;
-
-      const WindowData& windowData = window.GetWindowData();
-      lastMousePos                 = { windowData.Width * 0.5f, windowData.Height * 0.5f };
-      glfwSetCursorPos( nativeWindow, lastMousePos.x, lastMousePos.y );
-   }
-
-   // Write intent only (no transform mutation)
    for( auto [ look ] : registry.CView< CLookInput >() )
    {
       look.yawDelta   = 0.0f;
       look.pitchDelta = 0.0f;
    }
 
-   // Only apply mouse delta if captured
-   if( fMouseCaptured )
+   // Apply mouse deltas only if mouse is captured and delta is non-zero
+   const WindowState& state = window.GetWindowState();
+   if( state.fMouseCaptured && state.mouseDelta != glm::vec2( 1.0f ) )
    {
       for( auto [ cam, look ] : registry.CView< CCamera, CLookInput >() )
       {
-         look.pitchDelta += mouseDelta.y * cam.sensitivity;
-         look.yawDelta += mouseDelta.x * cam.sensitivity;
+         look.pitchDelta = state.mouseDelta.y * cam.sensitivity;
+         look.yawDelta   = state.mouseDelta.x * cam.sensitivity;
       }
    }
 }
+
+//static void MouseLookSystem( Entity::Registry& registry, Window& window )
+//{
+//   //PROFILE_SCOPE( "MouseLookSystem" );
+//
+//   for( auto [ look ] : registry.CView< CLookInput >() )
+//   {
+//      look.yawDelta   = 0.0f;
+//      look.pitchDelta = 0.0f;
+//   }
+//
+//   const WindowState& windowState       = window.GetWindowState();
+//   static glm::vec2   lastFrameMousePos = windowState.mousePos;
+//   if( windowState.fMouseCaptured )
+//   {
+//      if( glm::vec2 mouseDelta = windowState.mousePos - lastFrameMousePos; mouseDelta != glm::vec2( 0.0f ) )
+//      {
+//         for( auto [ cam, look ] : registry.CView< CCamera, CLookInput >() )
+//         {
+//            look.pitchDelta += mouseDelta.y * cam.sensitivity;
+//            look.yawDelta += mouseDelta.x * cam.sensitivity;
+//         }
+//      }
+//   }
+//
+//   lastFrameMousePos = windowState.mousePos;
+//}
 
 static void CameraRigSystem( Entity::Registry& registry )
 {
@@ -362,8 +404,8 @@ static glm::mat4 CreateProjectionMatrix( uint16_t screenWidth, uint16_t screenHe
 
 void Application::Run()
 {
-   Window&     window     = Window::Get();
-   WindowData& windowData = window.GetWindowData();
+   Window&      window      = Window::Get();
+   WindowState& windowState = window.GetWindowState();
    window.Init();
 
    Level                level( "default" );
@@ -384,7 +426,7 @@ void Application::Run()
    registry.Add< CTransform >( camera, 0.0f, 128.0f + PLAYER_EYE_HEIGHT, 0.0f );
    registry.Add< CLookInput >( camera );
    if( CCamera* pCamera = &registry.Add< CCamera >( camera ) )
-      pCamera->projection = CreateProjectionMatrix( windowData.Width, windowData.Height, pCamera->fov, 0.1f, 1000.0f );
+      pCamera->projection = CreateProjectionMatrix( windowState.size.x, windowState.size.y, pCamera->fov, 0.1f, 1000.0f );
    registry.Add< CCameraRig >( camera,
                                CCameraRig {
                                   .targetEntity = player,
@@ -454,7 +496,7 @@ void Application::Run()
       if( CCamera* pCamera = registry.TryGet< CCamera >( camera ) )
       {
          pCamera->fov        = std::clamp( pCamera->fov - ( e.GetYOffset() * 5 ), 10.0f, 90.0f );
-         pCamera->projection = CreateProjectionMatrix( windowData.Width, windowData.Height, pCamera->fov, 0.1f, 1000.0f );
+         pCamera->projection = CreateProjectionMatrix( windowState.size.x, windowState.size.y, pCamera->fov, 0.1f, 1000.0f );
       }
    } );
 
@@ -553,7 +595,7 @@ void Application::Run()
    std::shared_ptr< UI::IDrawable > pDebugUI   = CreateDebugUI( registry, player, camera, timestep );
    std::shared_ptr< UI::IDrawable > pNetworkUI = CreateNetworkUI();
 
-   while( window.IsOpen() )
+   while( window.FProcessEvents() )
    {
       const float delta = std::clamp( timestep.Step(), 0.0f, 0.05f /*50ms*/ ); // time since last frame, max 50ms
 
@@ -602,6 +644,6 @@ void Application::Run()
          UI::UIBuffer::Draw(); // probably become part of RenderSystem later
       }
 
-      window.OnUpdate();
+      window.Present();
    }
 }
