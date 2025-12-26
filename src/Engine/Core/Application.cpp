@@ -551,7 +551,7 @@ void Application::Run()
    GUIManager::Init();
    INetwork::RegisterGUI();
 
-   Timestep timestep( 20 /*tickrate*/ );
+   Time::FixedTimeStep timestep( 20 /*tickrate*/ );
    GUIManager::Attach( std::make_shared< DebugGUI >( registry, player, camera, timestep ) );
 
    while( window.IsOpen() )
@@ -576,7 +576,7 @@ void Application::Run()
          PlayerInputSystem( registry, delta );
          PlayerPhysicsSystem( registry, level, delta );
 
-         if( timestep.FDidTick() )
+         if( timestep.FShouldTick() )
          {
             TickingSystem( registry, delta );
 

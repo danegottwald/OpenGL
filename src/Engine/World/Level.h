@@ -39,9 +39,9 @@ struct ChunkCoordHash
 // ----------------------------------------------------------------
 enum class ChunkDirty : uint32_t
 {
-   None  = 0,
-   Mesh  = 1u << 0, // geometry needs rebuild
-   Save  = 1u << 1, // needs saving
+   None = 0,
+   Mesh = 1u << 0, // geometry needs rebuild
+   Save = 1u << 1, // needs saving
 };
 
 constexpr ChunkDirty operator|( ChunkDirty a, ChunkDirty b ) noexcept
@@ -84,8 +84,8 @@ public:
 
    // Dirty tracking
    ChunkDirty Dirty() const noexcept { return m_dirty; }
-   void       ClearDirty( ChunkDirty bits ) noexcept { m_dirty = static_cast< ChunkDirty >( static_cast< uint32_t >( m_dirty ) & ~static_cast< uint32_t >( bits ) ); }
-   uint64_t   MeshRevision() const noexcept { return m_meshRevision; }
+   void ClearDirty( ChunkDirty bits ) noexcept { m_dirty = static_cast< ChunkDirty >( static_cast< uint32_t >( m_dirty ) & ~static_cast< uint32_t >( bits ) ); }
+   uint64_t MeshRevision() const noexcept { return m_meshRevision; }
 
 private:
    NO_COPY_MOVE( Chunk )
@@ -142,7 +142,7 @@ private:
 
    // World saving/loading
    static constexpr float AUTOSAVE_INTERVAL = 10.0f; // seconds
-   TimeAccumulator        m_autosaveTimer;
+   Time::IntervalTimer    m_autosaveTimer;
    std::filesystem::path  m_worldDir;
    World::WorldMeta       m_meta;
 

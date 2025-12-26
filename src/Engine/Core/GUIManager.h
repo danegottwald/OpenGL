@@ -6,7 +6,10 @@ using Entity = uint64_t;
 class Registry;
 }
 
-class Timestep;
+namespace Time
+{
+class FixedTimeStep;
+}
 
 // ========================================================================
 //      IGUIElement
@@ -49,7 +52,7 @@ private:
 class DebugGUI final : public IGUIElement
 {
 public:
-   DebugGUI( const Entity::Registry& registry, Entity::Entity player, Entity::Entity camera, Timestep& timestep ) :
+   DebugGUI( const Entity::Registry& registry, Entity::Entity player, Entity::Entity camera, Time::FixedTimeStep& timestep ) :
       m_registry( registry ),
       m_player( player ),
       m_camera( camera ),
@@ -63,5 +66,5 @@ private:
    const Entity::Registry& m_registry;
    Entity::Entity          m_player;
    Entity::Entity          m_camera;
-   Timestep&               m_timestep;
+   Time::FixedTimeStep&    m_timestep;
 };

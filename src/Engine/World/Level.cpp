@@ -105,7 +105,7 @@ Level::Level( std::filesystem::path worldName ) :
 
 void Level::Update( float dt )
 {
-   if( m_autosaveTimer.FShouldRun( dt ) )
+   if( m_autosaveTimer.FTick( dt ) )
       Save();
 }
 

@@ -1,25 +1,28 @@
 #pragma once
 
+namespace Time
+{
+
 /**
  * @brief Timestep class for managing time intervals and ticks.
  * This class provides functionality to track the time elapsed between frames as well as manage fixed update ticks.
  *
  * @example
- * Timestep timestep( 20.0f ); // 20 ticks per second
+ * FixedTimeStep timestep( 20.0f ); // 20 ticks per second
  * while ( game.IsRunning() )
  * {
  *     timestep.Step(); // Update delta time
  *
- *     if ( timestep.FTick() )
+ *     if ( timestep.FShouldTick() )
  *         game.Update(); // Called at fixed intervals
  *
  *     game.Update( timestep.GetDelta() ); // Called every frame
  * }
  */
-class Timestep
+class FixedTimeStep
 {
 public:
-   explicit Timestep( uint8_t tickrate ) noexcept :
+   explicit FixedTimeStep( uint8_t tickrate ) noexcept :
       m_interval( 1.0f / tickrate )
    {}
 
@@ -40,14 +43,14 @@ public:
 
       return m_delta;
    }
-   float GetLastDelta() const noexcept { return m_delta; }
+   float GetDelta() const noexcept { return m_delta; }
 
    // Returns true if enough time has passed to advance a tick
-   bool     FDidTick() noexcept { return m_accumulator >= m_interval; }
-   uint64_t GetLastTick() const { return m_tick; }
+   bool     FShouldTick() noexcept { return m_accumulator >= m_interval; }
+   uint64_t GetTickCount() const { return m_tick; }
 
 private:
-   NO_COPY_MOVE( Timestep )
+   NO_COPY_MOVE( FixedTimeStep )
 
    // Delta
    float m_lastTime { 0.0f };
@@ -67,23 +70,23 @@ private:
  * Useful for implementing fixed-timestep updates, periodic events, or throttled operations.
  *
  * Example usage:
- * TimeAccumulator accumulator(0.5f); // Trigger every 0.5 seconds
+ * IntervalTimer timer(0.5f); // Trigger every 0.5 seconds
  * 
  * while (game.IsRunning())
  * {
  *     float dt = GetDeltaTime();
- *     if (accumulator.FShouldRun(dt))
+ *     if (timer.FTick(dt))
  *         game.Update(); // Called every 0.5 seconds
  * }
  */
-class TimeAccumulator
+class IntervalTimer
 {
 public:
-   explicit TimeAccumulator( float interval ) noexcept :
+   explicit IntervalTimer( float interval ) noexcept :
       m_interval( interval )
    {}
 
-   bool FShouldRun( float dt ) noexcept
+   bool FTick( float dt ) noexcept
    {
       m_accumulator += dt;
       if( m_accumulator < m_interval )
@@ -94,8 +97,10 @@ public:
    }
 
 private:
-   NO_COPY_MOVE( TimeAccumulator )
+   NO_COPY_MOVE( IntervalTimer )
 
    float m_interval { 0.0f };
    float m_accumulator { 0.0f };
 };
+
+} // namespace Time

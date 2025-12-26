@@ -110,7 +110,7 @@ void DebugGUI::Draw()
             if( ImGui::Checkbox( "VSync", &fVSync ) )
                Window::Get().SetVSync( fVSync );
 
-            ImGui::Text( "Tick: %d", m_timestep.GetLastTick() );
+            ImGui::Text( "Tick: %d", m_timestep.GetTickCount() );
             ImGui::Text( "Entity Count: %d", ( int )m_registry.GetEntityCount() );
 
             ImGui::NewLine();
