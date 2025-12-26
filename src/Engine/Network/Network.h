@@ -44,6 +44,8 @@ struct Client
    }
 };
 
+static inline std::deque< std::string > s_NetworkLogs;
+
 // ===================================================
 //      INetwork
 // ===================================================
@@ -61,7 +63,6 @@ public:
    static TNetwork& Create();
    static void      Shutdown() noexcept;
 
-   static void        RegisterGUI();
    static const char* GetHostAddress() noexcept;
 
    // As long as 'client' has a valid socket, this will set the address on 'client' and return true otherwise false
@@ -102,8 +103,6 @@ protected:
 
    uint64_t              m_ID { 0 }; // ID of this instance
    std::vector< Client > m_clients;  // clients that are connected
-
-   static inline std::deque< std::string > s_logs;
 };
 
 // INetwork static instance initialization
@@ -117,3 +116,5 @@ TNetwork& INetwork::Create()
    s_pInstance = new TNetwork();
    return static_cast< TNetwork& >( *s_pInstance );
 }
+
+std::shared_ptr< UI::IDrawable > CreateNetworkUI();

@@ -69,7 +69,7 @@ private:
  * This class tracks elapsed time and determines when a certain interval has passed.
  * Useful for implementing fixed-timestep updates, periodic events, or throttled operations.
  *
- * Example usage:
+ * @example
  * IntervalTimer timer(0.5f); // Trigger every 0.5 seconds
  * 
  * while (game.IsRunning())

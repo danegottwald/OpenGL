@@ -367,6 +367,7 @@ void Application::Run()
    window.Init();
 
    Level                level( "default" /*worldName*/ );
+   Time::FixedTimeStep  timestep( 20 /*tickrate*/ );
    Engine::RenderSystem renderSystem( level );
 
    // ECS Registry
@@ -548,11 +549,9 @@ void Application::Run()
    // Initialize things
    TextureAtlasManager::Get().CompileBlockAtlas();
 
-   GUIManager::Init();
-   INetwork::RegisterGUI();
-
-   Time::FixedTimeStep timestep( 20 /*tickrate*/ );
-   GUIManager::Attach( std::make_shared< DebugGUI >( registry, player, camera, timestep ) );
+   // Debug UIs and such
+   std::shared_ptr< UI::IDrawable > pDebugUI   = CreateDebugUI( registry, player, camera, timestep );
+   std::shared_ptr< UI::IDrawable > pNetworkUI = CreateNetworkUI();
 
    while( window.IsOpen() )
    {
@@ -597,11 +596,12 @@ void Application::Run()
                                                   .optHighlightBlock = optResult ? std::optional< glm::ivec3 >( optResult->block ) : std::nullopt };
          renderSystem.Run( ctx );
 
-         GUIManager::Draw(); // probably become part of RenderSystem later
+         // Draw UIs
+         UI::UIBuffer::Register( pDebugUI );
+         UI::UIBuffer::Register( pNetworkUI );
+         UI::UIBuffer::Draw(); // probably become part of RenderSystem later
       }
 
       window.OnUpdate();
    }
-
-   GUIManager::Shutdown();
 }

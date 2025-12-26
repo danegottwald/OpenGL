@@ -60,7 +60,7 @@ void NetworkClient::Connect( const char* ipAddress, uint16_t port )
       const int err = WSAGetLastError();
       if( err != WSAEWOULDBLOCK && err != WSAEINPROGRESS && err != WSAEALREADY )
       {
-         s_logs.push_back( std::format( "Failed to connect to server: {}:{} (err={})", m_serverIpAddress, port, err ) );
+         s_NetworkLogs.push_back( std::format( "Failed to connect to server: {}:{} (err={})", m_serverIpAddress, port, err ) );
          m_state = State::Disconnected;
          return;
       }
@@ -122,7 +122,7 @@ void NetworkClient::HandleIncomingPacket( const Packet& inPacket )
          m_serverID                = inPacket.m_sourceID;
          m_ID                      = assignedID;
          m_state                   = State::Connected;
-         s_logs.push_back( std::format( "Handshake accepted. Assigned client id: {}", assignedID ) );
+         s_NetworkLogs.push_back( std::format( "Handshake accepted. Assigned client id: {}", assignedID ) );
          break;
       }
 

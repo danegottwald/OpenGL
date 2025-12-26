@@ -100,17 +100,16 @@ INetwork::~INetwork()
 void INetwork::Send( SOCKET targetSocket, const std::vector< uint8_t >& serializedData )
 {
    if( send( targetSocket, reinterpret_cast< const char* >( serializedData.data() ), serializedData.size(), 0 ) == SOCKET_ERROR )
-      s_logs.push_back( std::format( "Failed to send packet to socket: {}, WSAError: {}", targetSocket, WSAGetLastError() ) );
+      s_NetworkLogs.push_back( std::format( "Failed to send packet to socket: {}, WSAError: {}", targetSocket, WSAGetLastError() ) );
 }
 
 // ===================================================
-//      NetworkGUI
+// NetworkUI
 // ===================================================
-class NetworkGUI final : public IGUIElement
+class NetworkUI final : public UI::IDrawable
 {
 public:
-   NetworkGUI( std::deque< std::string >& sharedLogs ) :
-      m_logs( sharedLogs )
+   NetworkUI()
    {
       m_eventSubscriber.Subscribe< Events::NetworkHostShutdownEvent >( [ this ]( const Events::NetworkHostShutdownEvent& /*e*/ ) noexcept
       {
@@ -127,8 +126,6 @@ public:
       m_eventSubscriber.Subscribe< Events::NetworkChatReceivedEvent >( [ this ]( const Events::NetworkChatReceivedEvent& e ) noexcept
       { m_messages.push_back( std::format( "{}: {}", e.GetClientID(), e.GetChatMessage() ) ); } );
    }
-
-   ~NetworkGUI() = default;
 
    void CreateChatBox()
    {
@@ -198,13 +195,13 @@ public:
                m_fHosting = !m_fHosting; // Toggle hosting state
                if( m_fHosting )
                {
-                  m_logs.push_back( std::format( "Hosting on: {}:{}", INetwork::GetHostAddress(), m_port ) );
+                  s_NetworkLogs.push_back( std::format( "Hosting on: {}:{}", INetwork::GetHostAddress(), m_port ) );
                   NetworkHost& network = INetwork::Create< NetworkHost >(); // Create a new network host instance
                   network.Listen( m_port );
                }
                else
                {
-                  m_logs.push_back( "Stopping host..." );
+                  s_NetworkLogs.push_back( "Stopping host..." );
                   INetwork::Shutdown();
                }
             }
@@ -235,13 +232,13 @@ public:
                m_fConnected = !m_fConnected; // Toggle connection state
                if( m_fConnected )
                {
-                  m_logs.push_back( std::format( "Connecting to: {}:{}", m_connectAddress, m_port ) );
+                  s_NetworkLogs.push_back( std::format( "Connecting to: {}:{}", m_connectAddress, m_port ) );
                   NetworkClient& network = INetwork::Create< NetworkClient >();
                   network.Connect( m_connectAddress, m_port );
                }
                else
                {
-                  m_logs.push_back( std::format( "Disconnecting from: {}:{}", m_connectAddress, m_port ) );
+                  s_NetworkLogs.push_back( std::format( "Disconnecting from: {}:{}", m_connectAddress, m_port ) );
                   INetwork::Get()->SendPacket( Packet::Create< NetworkCode::ClientDisconnect >( INetwork::Get()->GetID(), 0 /*destID*/, {} ) );
                   INetwork::Shutdown();
                }
@@ -259,7 +256,7 @@ public:
          {
             if( ImGui::BeginChild( "LogArea", ImVec2( 0, -ImGui::GetFrameHeightWithSpacing() ), true ) )
             {
-               for( const std::string& log : m_logs )
+               for( const std::string& log : s_NetworkLogs )
                   ImGui::TextWrapped( "%s", log.c_str() );
 
                static bool m_fLogAutoScrollLastState = m_fLogAutoScroll;
@@ -271,7 +268,7 @@ public:
             }
 
             if( ImGui::Button( "Clear" ) )
-               m_logs.clear();
+               s_NetworkLogs.clear();
 
             ImGui::SameLine();
             ImGui::Checkbox( "Auto-scroll", &m_fLogAutoScroll );
@@ -296,14 +293,14 @@ private:
    bool                      m_fChatAutoScroll { true };
 
    // Logging Related
-   std::deque< std::string >& m_logs;
-   bool                       m_fLogAutoScroll { true };
+   bool m_fLogAutoScroll { true };
 
    // Events
    Events::EventSubscriber m_eventSubscriber;
 };
 
-/*static*/ void INetwork::RegisterGUI()
+
+std::shared_ptr< UI::IDrawable > CreateNetworkUI()
 {
-   GUIManager::Attach( std::make_shared< NetworkGUI >( s_logs ) );
+   return std::make_shared< NetworkUI >();
 }

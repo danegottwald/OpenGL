@@ -9,61 +9,77 @@
 #include <Engine/ECS/Components/Transform.h>
 #include <Engine/ECS/Components/Velocity.h>
 
-// ========================================================================
-//      GUIManager
-// ========================================================================
-void GUIManager::Init()
+
+namespace UI
 {
-   assert( m_fInitialized == false && L"GUIManager is already initialized" );
 
-   GLFWwindow* nativeWindow = Window::GetNativeWindow();
-   assert( nativeWindow && L"Ensure window is initialized before GUIManager" );
+/*static*/ void UIBuffer::Init()
+{
+   if( s_fInitialized )
+      return;
 
-   IMGUI_CHECKVERSION();                               // Ensure correct ImGui version
-   ImGui::CreateContext();                             // Create a new ImGui context
-   ImGui::GetIO().IniFilename = nullptr;               // Disable saving ImGui settings to a file
-   ImGui::StyleColorsDark();                           // Use dark theme for ImGui
-   ImGui_ImplGlfw_InitForOpenGL( nativeWindow, true ); // Initialize ImGui with GLFW support
+   GLFWwindow* pNativeWindow = Window::GetNativeWindow();
+   if( !pNativeWindow )
+      throw std::runtime_error( "Ensure window is initialized before UIBuffer" );
+
+   IMGUI_CHECKVERSION();                 // Ensure correct ImGui version
+   ImGui::CreateContext();               // Create a new ImGui context
+   ImGui::GetIO().IniFilename = nullptr; // Disable saving ImGui settings to a file
+   ImGui::StyleColorsDark();             // Use dark theme for ImGui
+
+   ImGui_ImplGlfw_InitForOpenGL( pNativeWindow, true ); // Initialize ImGui with GLFW support
    if( !ImGui_ImplOpenGL3_Init( "#version 330" ) )
       throw std::runtime_error( "Failed to initialize ImGui OpenGL backend" );
 
-   m_fInitialized = true; // GUIManager is now initialized
+   s_uiElements.reserve( kInitialUIElementCapacity ); // Pre-allocate space for UI elements
+   s_fInitialized = true;
 }
 
-void GUIManager::Shutdown()
+
+/*static*/ void UIBuffer::Shutdown()
 {
-   assert( m_fInitialized == true && L"GUIManager is not initialized" );
-   m_elements.clear(); // Clear all GUI elements
+   if( !s_fInitialized )
+      throw std::runtime_error( "UIBuffer::Shutdown - UIBuffer not initialized" );
+
+   s_uiElements.clear();
    ImGui_ImplOpenGL3_Shutdown();
    ImGui_ImplGlfw_Shutdown();
    ImGui::DestroyContext();
 }
 
-void GUIManager::Attach( std::shared_ptr< IGUIElement > element )
+
+/*static*/ void UIBuffer::Register( std::shared_ptr< IDrawable > element )
 {
-   m_elements.push_back( std::move( element ) );
+   if( !s_fInitialized )
+      throw std::runtime_error( "UIBuffer::Register - UIBuffer not initialized" );
+
+   s_uiElements.push_back( std::move( element ) );
 }
 
-void GUIManager::Detach( const std::shared_ptr< IGUIElement >& element )
-{
-   m_elements.erase( std::remove( m_elements.begin(), m_elements.end(), element ), m_elements.end() );
-}
 
-void GUIManager::Draw()
+/*static*/ void UIBuffer::Draw()
 {
-   if( !m_elements.empty() )
+   if( !s_fInitialized )
+      throw std::runtime_error( "UIBuffer::Draw - UIBuffer not initialized" );
+
+   if( !s_uiElements.empty() )
    {
       ImGui_ImplOpenGL3_NewFrame();
       ImGui_ImplGlfw_NewFrame();
       ImGui::NewFrame();
 
-      for( const std::shared_ptr< IGUIElement >& e : m_elements )
+      for( const std::shared_ptr< IDrawable >& e : s_uiElements )
          e->Draw();
+
+      s_uiElements.clear();
 
       ImGui::Render();
       ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
    }
 }
+
+} // namespace UI
+
 
 #include <windows.h>
 #include <psapi.h>
@@ -75,6 +91,7 @@ struct ProcessMemoryInfo
    size_t peakWorkingSetMB; // peak physical RAM usage
 };
 
+
 static ProcessMemoryInfo GetProcessMemoryInfoMB()
 {
    constexpr size_t           MB = 1024 * 1024;
@@ -85,10 +102,31 @@ static ProcessMemoryInfo GetProcessMemoryInfoMB()
    return {};
 }
 
+
 // ========================================================================
-//      DebugGUI
+// DebugUI
 // ========================================================================
-void DebugGUI::Draw()
+class DebugUI final : public UI::IDrawable
+{
+public:
+   DebugUI( const Entity::Registry& registry, Entity::Entity player, Entity::Entity camera, const Time::FixedTimeStep& timestep ) :
+      m_registry( registry ),
+      m_player( player ),
+      m_camera( camera ),
+      m_timestep( timestep )
+   {}
+
+   void Draw() override;
+
+private:
+   const Entity::Registry&    m_registry;
+   Entity::Entity             m_player;
+   Entity::Entity             m_camera;
+   const Time::FixedTimeStep& m_timestep;
+};
+
+
+void DebugUI::Draw()
 {
    { // ImGui Top Left
       ImGui::SetNextWindowSize( ImVec2( 420, 250 ), ImGuiCond_FirstUseEver );
@@ -294,4 +332,13 @@ void DebugGUI::Draw()
       }
       ImGui::End();
    }
+}
+
+
+std::shared_ptr< UI::IDrawable > CreateDebugUI( const Entity::Registry&    registry,
+                                                Entity::Entity             player,
+                                                Entity::Entity             camera,
+                                                const Time::FixedTimeStep& timestep )
+{
+   return std::make_shared< DebugUI >( registry, player, camera, timestep );
 }

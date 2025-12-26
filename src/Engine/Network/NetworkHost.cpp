@@ -58,7 +58,7 @@ void NetworkHost::Listen( uint16_t port )
    m_hostSocket = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
    if( m_hostSocket == INVALID_SOCKET )
    {
-      s_logs.push_back( std::format( "Failed to create TCP socket: {}", WSAGetLastError() ) );
+      s_NetworkLogs.push_back( std::format( "Failed to create TCP socket: {}", WSAGetLastError() ) );
       return;
    }
 
@@ -68,7 +68,7 @@ void NetworkHost::Listen( uint16_t port )
    addr.sin_port        = htons( port );
    if( bind( m_hostSocket, reinterpret_cast< sockaddr* >( &addr ), sizeof( addr ) ) == SOCKET_ERROR )
    {
-      s_logs.push_back( std::format( "Failed to bind TCP socket: {}", WSAGetLastError() ) );
+      s_NetworkLogs.push_back( std::format( "Failed to bind TCP socket: {}", WSAGetLastError() ) );
       closesocket( m_hostSocket );
       m_hostSocket = INVALID_SOCKET;
       return;
@@ -76,7 +76,7 @@ void NetworkHost::Listen( uint16_t port )
 
    if( listen( m_hostSocket, SOMAXCONN ) == SOCKET_ERROR )
    {
-      s_logs.push_back( std::format( "Failed to listen on TCP socket: {}", WSAGetLastError() ) );
+      s_NetworkLogs.push_back( std::format( "Failed to listen on TCP socket: {}", WSAGetLastError() ) );
       closesocket( m_hostSocket );
       m_hostSocket = INVALID_SOCKET;
       return;

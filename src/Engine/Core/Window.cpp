@@ -15,6 +15,8 @@ Window::Window( const WindowData& winData ) :
 
 Window::~Window()
 {
+   UI::UIBuffer::Shutdown();
+
    glfwDestroyWindow( m_Window );
    glfwTerminate();
 }
@@ -97,6 +99,8 @@ void Window::Init()
 
    // Set up necessary callbacks for input handling and window events
    SetCallbacks();
+
+   UI::UIBuffer::Init();
 
    m_fRunning = true; // Window is now running and fully initialized
 }
