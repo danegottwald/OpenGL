@@ -1,4 +1,4 @@
-#include "GUIManager.h"
+#include "UI.h"
 
 // Local dependencies
 #include "Window.h"
@@ -328,6 +328,7 @@ void DebugUI::Draw()
          AddKeyBinding( "Escape", "Toggle Mouse" );
          AddKeyBinding( "F1", "Quit" );
          AddKeyBinding( "P", "Toggle Wireframe" );
+         AddKeyBinding( "F11", "Toggle Fullscreen" );
          ImGui::EndTable();
       }
       ImGui::End();

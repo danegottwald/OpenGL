@@ -5,7 +5,7 @@
 #include "Packet.h"
 
 // Project dependencies
-#include <Engine/Core/GUIManager.h>
+#include <Engine/Core/UI.h>
 #include <Engine/Core/Window.h>
 #include <Engine/Events/NetworkEvent.h>
 #include <Engine/Input/Input.h>

@@ -12,7 +12,7 @@ namespace World
 struct WorldMeta
 {
    uint32_t version { 1 };
-   uint32_t seed { 0 };
+   uint64_t seed { 0 };
    uint64_t tick { 0 };
 };
 

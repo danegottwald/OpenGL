@@ -6,14 +6,33 @@
 #include <Engine/World/Blocks.h>
 #include <Engine/World/WorldSave.h>
 
-// Forward Declarations
-class TimeAccumulator;
+
+// Chunk Layout
+// ------------------------- Y=255
+// |                       |
+// |   Chunk (16x256x16)   |
+// |                       |
+// |  -------------------  |
+// | |   Chunk Section   | | Y=240
+// | |     (16x16x16)    | |
+// | --------------------- |
+// | --------------------- |
+// | |   Chunk Section   | | Y=224
+// | |     (16x16x16)    | |
+// | --------------------- |
+// | |       ...         | |
+// |  -------------------  |
 
 // Fixed chunk dimensions
-static constexpr int CHUNK_SIZE_X = 16;
-static constexpr int CHUNK_SIZE_Y = 256;
-static constexpr int CHUNK_SIZE_Z = 16;
-static constexpr int CHUNK_VOLUME = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
+static constexpr int CHUNK_SECTION_SIZE   = 16; // 16x16x16
+static constexpr int CHUNK_SECTION_VOLUME = CHUNK_SECTION_SIZE * CHUNK_SECTION_SIZE * CHUNK_SECTION_SIZE;
+static constexpr int CHUNK_SECTION_COUNT  = 16;
+
+static constexpr int CHUNK_SIZE_X       = CHUNK_SECTION_SIZE;
+static constexpr int CHUNK_SIZE_Y       = CHUNK_SECTION_SIZE * CHUNK_SECTION_COUNT;
+static constexpr int CHUNK_SIZE_Z       = CHUNK_SECTION_SIZE;
+static constexpr int CHUNK_VOLUME       = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
+static constexpr int SECTIONS_PER_CHUNK = CHUNK_SIZE_Y / CHUNK_SECTION_SIZE;
 
 struct ChunkCoord
 {
@@ -59,30 +78,44 @@ constexpr bool Any( ChunkDirty bits ) noexcept
    return static_cast< uint32_t >( bits ) != 0u;
 }
 
+class ChunkSection
+{
+public:
+   ChunkSection()  = default;
+   ~ChunkSection() = default;
+
+   BlockId GetBlock( int x, int y, int z ) const noexcept;
+   void    SetBlock( int x, int y, int z, BlockId id );
+
+   bool FDirty() const noexcept { return m_fDirty; }
+   void ClearDirty() noexcept { m_fDirty = false; }
+
+private:
+   NO_COPY_MOVE( ChunkSection )
+
+   static size_t ToIndex( int x, int y, int z ) noexcept;
+   static bool   FInBounds( int x, int y, int z ) noexcept;
+
+   std::array< BlockId, CHUNK_SECTION_VOLUME > m_blocks { BlockId::Air };
+   bool                                        m_fDirty { true };
+};
+
 class Chunk
 {
 public:
    Chunk( class Level& level, int cx, int cy, int cz );
 
-   // Block accessors/mutators
    BlockId GetBlock( int x, int y, int z ) const noexcept;
    void    SetBlock( int x, int y, int z, BlockId id );
 
-   // Coordinate accessors
    int  ChunkX() const { return m_chunkX; }
    int  ChunkY() const { return m_chunkY; }
    int  ChunkZ() const { return m_chunkZ; }
    bool FInBounds( int x, int y, int z ) const noexcept;
 
-   // Save/Load
    bool FLoadFromDisk();
    void SaveToDisk();
 
-   // Owning level access
-   const Level& GetLevel() const noexcept { return m_level; }
-   Level&       GetLevel() noexcept { return m_level; }
-
-   // Dirty tracking
    ChunkDirty Dirty() const noexcept { return m_dirty; }
    void ClearDirty( ChunkDirty bits ) noexcept { m_dirty = static_cast< ChunkDirty >( static_cast< uint32_t >( m_dirty ) & ~static_cast< uint32_t >( bits ) ); }
    uint64_t MeshRevision() const noexcept { return m_meshRevision; }
@@ -92,15 +125,18 @@ private:
 
    void MarkDirty( ChunkDirty bits ) noexcept { m_dirty = m_dirty | bits; }
 
-   static int         ToIndex( int x, int y, int z ) noexcept;
+   static constexpr int ToSectionIndex( int y ) noexcept { return y / CHUNK_SECTION_SIZE; }
+   static constexpr int ToSectionLocalY( int y ) noexcept { return y % CHUNK_SECTION_SIZE; }
+
    World::ChunkCoord3 GetCoord3() const noexcept { return World::ChunkCoord3 { m_chunkX, m_chunkY, m_chunkZ }; }
 
-   class Level&           m_level;
-   int                    m_chunkX, m_chunkY, m_chunkZ;
-   std::vector< BlockId > m_blocks;
+   class Level& m_level;
+   int          m_chunkX, m_chunkY, m_chunkZ;
 
-   ChunkDirty m_dirty { ChunkDirty::Mesh }; // new chunks need a mesh
-   uint64_t   m_meshRevision { 1 };         // increments when blocks affecting mesh change
+   std::array< ChunkSection, SECTIONS_PER_CHUNK > m_sections;
+
+   ChunkDirty m_dirty { ChunkDirty::Mesh };
+   uint64_t   m_meshRevision { 1 };
 
    friend class Level;
 };

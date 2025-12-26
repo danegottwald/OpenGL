@@ -9,6 +9,7 @@ enum class BlockId : uint16_t
    Dirt,
    Stone,
    Grass,
+   Bedrock,
    Count // Keep as last, new entries should be inserted before this
 };
 
@@ -46,10 +47,11 @@ struct BlockInfo
 // BlockData - definition of all block types and their properties
 // ------------------------------------------------------------
 inline constexpr std::array BlockData = {
-   BlockInfo { BlockId::Air,   "",                         BlockFlag::None                      },
-   BlockInfo { BlockId::Dirt,  "assets/models/dirt.json",  BlockFlag::Solid | BlockFlag::Opaque },
-   BlockInfo { BlockId::Stone, "assets/models/stone.json", BlockFlag::Solid | BlockFlag::Opaque },
-   BlockInfo { BlockId::Grass, "assets/models/grass.json", BlockFlag::Solid | BlockFlag::Opaque },
+   BlockInfo { BlockId::Air,     "",                           BlockFlag::None                      },
+   BlockInfo { BlockId::Dirt,    "assets/models/dirt.json",    BlockFlag::Solid | BlockFlag::Opaque },
+   BlockInfo { BlockId::Stone,   "assets/models/stone.json",   BlockFlag::Solid | BlockFlag::Opaque },
+   BlockInfo { BlockId::Grass,   "assets/models/grass.json",   BlockFlag::Solid | BlockFlag::Opaque },
+   BlockInfo { BlockId::Bedrock, "assets/models/bedrock.json", BlockFlag::Solid | BlockFlag::Opaque },
 };
 
 

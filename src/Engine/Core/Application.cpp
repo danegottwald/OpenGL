@@ -1,7 +1,7 @@
 #include "Application.h"
 
 // Local dependencies
-#include "GUIManager.h"
+#include "UI.h"
 #include "Time.h"
 #include "Window.h"
 
@@ -113,22 +113,22 @@ static void PlayerInputSystem( Entity::Registry& registry, float delta )
    {
       // Apply Player Movement Inputs
       glm::vec3 wishdir( 0.0f );
-      if( Input::IsKeyPressed( Input::W ) )
+      if( Input::FKeyPressed( Input::W ) )
       {
          wishdir.x -= glm::cos( glm::radians( tran.rotation.y + 90 ) );
          wishdir.z -= glm::sin( glm::radians( tran.rotation.y + 90 ) );
       }
-      if( Input::IsKeyPressed( Input::S ) )
+      if( Input::FKeyPressed( Input::S ) )
       {
          wishdir.x += glm::cos( glm::radians( tran.rotation.y + 90 ) );
          wishdir.z += glm::sin( glm::radians( tran.rotation.y + 90 ) );
       }
-      if( Input::IsKeyPressed( Input::A ) )
+      if( Input::FKeyPressed( Input::A ) )
       {
          float y = glm::radians( tran.rotation.y );
          wishdir += glm::vec3( -glm::cos( y ), 0, -glm::sin( y ) );
       }
-      if( Input::IsKeyPressed( Input::D ) )
+      if( Input::FKeyPressed( Input::D ) )
       {
          float y = glm::radians( tran.rotation.y );
          wishdir -= glm::vec3( -glm::cos( y ), 0, -glm::sin( y ) );
@@ -137,7 +137,7 @@ static void PlayerInputSystem( Entity::Registry& registry, float delta )
          wishdir = glm::normalize( wishdir );
 
       float maxSpeed = GROUND_MAXSPEED;
-      if( Input::IsKeyPressed( Input::LeftShift ) )
+      if( Input::FKeyPressed( Input::LeftShift ) )
          maxSpeed *= SPRINT_MODIFIER;
 
       vel.velocity.x = wishdir.x * maxSpeed;
@@ -145,7 +145,7 @@ static void PlayerInputSystem( Entity::Registry& registry, float delta )
 
       // this needs to be per-component, not static which affects all
       static bool wasJumping = false;
-      if( Input::IsKeyPressed( Input::Space ) )
+      if( Input::FKeyPressed( Input::Space ) )
       {
          if( !wasJumping )
          {
@@ -366,7 +366,7 @@ void Application::Run()
    WindowData& windowData = window.GetWindowData();
    window.Init();
 
-   Level                level( "default" /*worldName*/ );
+   Level                level( "default" );
    Time::FixedTimeStep  timestep( 20 /*tickrate*/ );
    Engine::RenderSystem renderSystem( level );
 
@@ -462,7 +462,7 @@ void Application::Run()
    {
       switch( e.GetKeyCode() )
       {
-         case Input::KeyCode::R: registry.Get< CTransform >( player ).position.y = 128.0f; break;
+         case Input::KeyCode::R: registry.Get< CTransform >( player ).position.y += 64; break;
       }
    } );
 

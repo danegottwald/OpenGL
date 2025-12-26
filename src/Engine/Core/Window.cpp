@@ -1,7 +1,7 @@
 #include "Window.h"
 
 // Local dependencies
-#include "GUIManager.h"
+#include "UI.h"
 
 // Project dependencies
 #include <Engine/Events/ApplicationEvent.h>
@@ -170,6 +170,7 @@ void Window::SetCallbacks()
             m_fRunning = false;
             break;
          }
+
          case Input::P:
          {
             static int polygonModeFlip = GL_FILL;
@@ -177,6 +178,7 @@ void Window::SetCallbacks()
             glPolygonMode( GL_FRONT_AND_BACK, polygonModeFlip );
             break;
          }
+
          case Input::Escape:
          {
             static int fFlip = GLFW_CURSOR_NORMAL;
@@ -186,6 +188,30 @@ void Window::SetCallbacks()
             int width, height;
             glfwGetWindowSize( m_Window, &width, &height );
             glfwSetCursorPos( m_Window, width * 0.5f, height * 0.5f ); // Center the cursor
+            break;
+         }
+
+         case Input::F11:
+         {
+            static bool fFullscreen = false;
+            fFullscreen             = !fFullscreen;
+
+            GLFWmonitor*       primary = glfwGetPrimaryMonitor();
+            const GLFWvidmode* mode    = glfwGetVideoMode( primary );
+            if( fFullscreen )
+            {
+               glfwSetWindowAttrib( m_Window, GLFW_AUTO_ICONIFY, GLFW_FALSE );
+               glfwSetWindowMonitor( m_Window, primary, 0, 0, mode->width, mode->height, mode->refreshRate );
+            }
+            else
+            {
+               const float paddingPercent = 0.1f; // 10% padding
+               int         padX           = static_cast< int >( mode->width * paddingPercent );
+               int         padY           = static_cast< int >( mode->height * paddingPercent );
+               int         windowedWidth = mode->width - padX, windowedHeight = mode->height - padY;
+               int         windowedX = padX / 2, windowedY = padY / 2;
+               glfwSetWindowMonitor( m_Window, nullptr, windowedX, windowedY, windowedWidth, windowedHeight, 0 );
+            }
             break;
          }
 
