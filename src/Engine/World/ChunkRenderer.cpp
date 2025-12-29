@@ -1,10 +1,6 @@
 #include "ChunkRenderer.h"
 
-#include <Engine/World/Level.h>
-#include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Texture.h>
-
-#include <utility>
 
 namespace
 {
@@ -24,7 +20,55 @@ constexpr std::array< Direction, 6 > directions = {
    Direction { TextureAtlas::BlockFace::North,  0,  0,  -1, glm::vec3( 0.f,  0.f,  -1.f ) },
 };
 
-static std::tuple< ChunkCoord, glm::ivec3 > WorldToChunkCoord( int wx, int wy, int wz )
+// Unit quads in [0,1] block space.
+constexpr glm::vec3 kFaceVerts[ 6 ][ 4 ] = {
+   { { 1.f, 0.f, 0.f }, { 1.f, 1.f, 0.f }, { 1.f, 1.f, 1.f }, { 1.f, 0.f, 1.f } }, // +X
+   { { 0.f, 0.f, 1.f }, { 0.f, 1.f, 1.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f } }, // -X
+   { { 0.f, 1.f, 0.f }, { 0.f, 1.f, 1.f }, { 1.f, 1.f, 1.f }, { 1.f, 1.f, 0.f } }, // +Y
+   { { 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f }, { 1.f, 0.f, 0.f }, { 1.f, 0.f, 1.f } }, // -Y
+   { { 0.f, 0.f, 1.f }, { 1.f, 0.f, 1.f }, { 1.f, 1.f, 1.f }, { 0.f, 1.f, 1.f } }, // +Z
+   { { 1.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 1.f, 1.f, 0.f } }, // -Z
+};
+
+constexpr std::array< int, 4 >                  identity { 0, 1, 2, 3 };
+constexpr std::array< int, 4 >                  rotate90 { 1, 2, 3, 0 };
+constexpr std::array< std::array< int, 4 >, 6 > kFaceUVs = {
+   rotate90, // +X
+   rotate90, // -X
+   identity, // +Y
+   identity, // -Y
+   identity, // +Z
+   identity, // -Z
+};
+}
+
+void ChunkRenderer::DestroySectionGL( SectionEntry& e )
+{
+   if( e.vao )
+      glDeleteVertexArrays( 1, &e.vao );
+   if( e.vbo )
+      glDeleteBuffers( 1, &e.vbo );
+   if( e.ebo )
+      glDeleteBuffers( 1, &e.ebo );
+
+   e.vao           = 0;
+   e.vbo           = 0;
+   e.ebo           = 0;
+   e.indexCount    = 0;
+   e.builtRevision = 0;
+   e.fEmpty        = true;
+}
+
+void ChunkRenderer::Clear()
+{
+   for( auto& [ _, ce ] : m_entries )
+      for( auto& sec : ce.sections )
+         DestroySectionGL( sec );
+
+   m_entries.clear();
+}
+
+std::tuple< ChunkCoord, glm::ivec3 > ChunkRenderer::WorldToChunkCoord( int wx, int wy, int wz )
 {
    auto divFloor = []( int a, int b )
    {
@@ -41,74 +85,26 @@ static std::tuple< ChunkCoord, glm::ivec3 > WorldToChunkCoord( int wx, int wy, i
    };
 }
 
-// Unit quads in [0,1] block space.
-constexpr glm::vec3 kFaceVerts[ 6 ][ 4 ] = {
-   { { 1.f, 0.f, 0.f }, { 1.f, 1.f, 0.f }, { 1.f, 1.f, 1.f }, { 1.f, 0.f, 1.f } }, // +X
-   { { 0.f, 0.f, 1.f }, { 0.f, 1.f, 1.f }, { 0.f, 1.f, 0.f }, { 0.f, 0.f, 0.f } }, // -X
-   { { 0.f, 1.f, 0.f }, { 0.f, 1.f, 1.f }, { 1.f, 1.f, 1.f }, { 1.f, 1.f, 0.f } }, // +Y
-   { { 0.f, 0.f, 1.f }, { 0.f, 0.f, 0.f }, { 1.f, 0.f, 0.f }, { 1.f, 0.f, 1.f } }, // -Y
-   { { 0.f, 0.f, 1.f }, { 1.f, 0.f, 1.f }, { 1.f, 1.f, 1.f }, { 0.f, 1.f, 1.f } }, // +Z
-   { { 1.f, 0.f, 0.f }, { 0.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }, { 1.f, 1.f, 0.f } }, // -Z
-};
-
-constexpr std::array< int, 4 > identity { 0, 1, 2, 3 }; // 0 rotation
-constexpr std::array< int, 4 > rotate90 { 1, 2, 3, 0 }; // 90 clockwise
-
-constexpr std::array< std::array< int, 4 >, 6 > kFaceUVs = {
-   rotate90, // +X
-   rotate90, // -X
-   identity, // +Y
-   identity, // -Y
-   identity, // +Z
-   identity, // -Z
-};
-}
-
-
-void ChunkRenderer::DestroyEntryGL( Entry& e )
-{
-   if( e.vao )
-      glDeleteVertexArrays( 1, &e.vao );
-   if( e.vbo )
-      glDeleteBuffers( 1, &e.vbo );
-   if( e.ebo )
-      glDeleteBuffers( 1, &e.ebo );
-
-   e.vao           = 0;
-   e.vbo           = 0;
-   e.ebo           = 0;
-   e.indexCount    = 0;
-   e.builtRevision = 0;
-}
-
-void ChunkRenderer::Clear()
-{
-   for( auto& [ _, e ] : m_entries )
-      DestroyEntryGL( e );
-
-   m_entries.clear();
-}
-
 bool ChunkRenderer::InView( const ChunkCoord& cc, const ChunkCoord& center, uint8_t viewRadius )
 {
    return std::abs( cc.x - center.x ) <= viewRadius && std::abs( cc.z - center.z ) <= viewRadius;
 }
 
-// Mesh building
-void ChunkRenderer::BuildMesh( const Level& level, const Chunk& chunk, ChunkMeshData& out )
+void ChunkRenderer::BuildSectionMesh( const Level& level, const Chunk& chunk, int sectionIndex, MeshData& out )
 {
    out.Clear();
-   out.vertices.reserve( CHUNK_VOLUME * 4 );
-   out.indices.reserve( CHUNK_VOLUME * 6 );
+   out.vertices.reserve( CHUNK_SECTION_VOLUME * 4 );
+   out.indices.reserve( CHUNK_SECTION_VOLUME * 6 );
 
    const int baseWX = chunk.ChunkX() * CHUNK_SIZE_X;
-   const int baseWY = chunk.ChunkY() * CHUNK_SIZE_Y;
    const int baseWZ = chunk.ChunkZ() * CHUNK_SIZE_Z;
+   const int baseY  = sectionIndex * CHUNK_SECTION_SIZE;
 
    for( int x = 0; x < CHUNK_SIZE_X; ++x )
    {
-      for( int y = 0; y < CHUNK_SIZE_Y; ++y )
+      for( int ly = 0; ly < CHUNK_SECTION_SIZE; ++ly )
       {
+         const int y = baseY + ly;
          for( int z = 0; z < CHUNK_SIZE_Z; ++z )
          {
             const BlockId id = chunk.GetBlock( x, y, z );
@@ -116,26 +112,23 @@ void ChunkRenderer::BuildMesh( const Level& level, const Chunk& chunk, ChunkMesh
                continue;
 
             const int       wx = baseWX + x;
-            const int       wy = baseWY + y;
+            const int       wy = y;
             const int       wz = baseWZ + z;
             const glm::vec3 basePos( static_cast< float >( x ), static_cast< float >( y ), static_cast< float >( z ) );
-
             for( const Direction& dir : directions )
             {
-               const int nx = x + dir.dx;
-               const int ny = y + dir.dy;
-               const int nz = z + dir.dz;
-
-               BlockId neighborId = chunk.FInBounds( nx, ny, nz ) ? chunk.GetBlock( nx, ny, nz ) : level.GetBlock( wx + dir.dx, wy + dir.dy, wz + dir.dz );
+               const int nx         = x + dir.dx;
+               const int ny         = y + dir.dy;
+               const int nz         = z + dir.dz;
+               BlockId   neighborId = chunk.FInBounds( nx, ny, nz ) ? chunk.GetBlock( nx, ny, nz ) : level.GetBlock( wx + dir.dx, wy + dir.dy, wz + dir.dz );
                if( neighborId != BlockId::Air )
                   continue;
 
                const TextureAtlas::Region& region      = TextureAtlasManager::Get().GetRegion( id, dir.face );
                const uint32_t              indexOffset = static_cast< uint32_t >( out.vertices.size() );
-
                for( int i = 0; i < 4; ++i )
                {
-                  ChunkVertex v {};
+                  Vertex v {};
                   v.position = basePos + kFaceVerts[ static_cast< size_t >( dir.face ) ][ i ];
                   v.normal   = dir.normal;
                   v.uv       = region.uvs[ kFaceUVs[ static_cast< size_t >( dir.face ) ][ i ] ];
@@ -156,11 +149,12 @@ void ChunkRenderer::BuildMesh( const Level& level, const Chunk& chunk, ChunkMesh
    }
 }
 
-void ChunkRenderer::Upload( Entry& e, const ChunkMeshData& mesh )
+void ChunkRenderer::Upload( SectionEntry& e, const MeshData& mesh )
 {
    if( mesh.FEmpty() )
    {
       e.indexCount = 0;
+      e.fEmpty     = true;
       return;
    }
 
@@ -174,32 +168,31 @@ void ChunkRenderer::Upload( Entry& e, const ChunkMeshData& mesh )
    glBindVertexArray( e.vao );
 
    glBindBuffer( GL_ARRAY_BUFFER, e.vbo );
-   glBufferData( GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof( ChunkVertex ), mesh.vertices.data(), GL_STATIC_DRAW );
+   glBufferData( GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof( Vertex ), mesh.vertices.data(), GL_STATIC_DRAW );
 
    glBindBuffer( GL_ELEMENT_ARRAY_BUFFER, e.ebo );
    glBufferData( GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * sizeof( uint32_t ), mesh.indices.data(), GL_STATIC_DRAW );
 
    glEnableVertexAttribArray( 0 );
-   glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, position ) );
+   glVertexAttribPointer( 0, 3, GL_FLOAT, GL_FALSE, sizeof( Vertex ), ( void* )offsetof( Vertex, position ) );
 
    glEnableVertexAttribArray( 1 );
-   glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, normal ) );
+   glVertexAttribPointer( 1, 3, GL_FLOAT, GL_FALSE, sizeof( Vertex ), ( void* )offsetof( Vertex, normal ) );
 
    glEnableVertexAttribArray( 2 );
-   glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, uv ) );
+   glVertexAttribPointer( 2, 2, GL_FLOAT, GL_FALSE, sizeof( Vertex ), ( void* )offsetof( Vertex, uv ) );
 
    glEnableVertexAttribArray( 3 );
-   glVertexAttribPointer( 3, 3, GL_FLOAT, GL_FALSE, sizeof( ChunkVertex ), ( void* )offsetof( ChunkVertex, tint ) );
+   glVertexAttribPointer( 3, 3, GL_FLOAT, GL_FALSE, sizeof( Vertex ), ( void* )offsetof( Vertex, tint ) );
 
    glBindVertexArray( 0 );
 
    e.indexCount = static_cast< uint32_t >( mesh.indices.size() );
+   e.fEmpty     = false;
 }
 
-// Main update loop
 void ChunkRenderer::Update( Level& level, const glm::vec3& playerPos, uint8_t viewRadius )
 {
-   // Make sure the world has chunk *data*.
    level.UpdateStreaming( playerPos, viewRadius );
 
    auto [ playerChunk, _ ] = WorldToChunkCoord( static_cast< int >( playerPos.x ), static_cast< int >( playerPos.y ), static_cast< int >( playerPos.z ) );
@@ -207,58 +200,37 @@ void ChunkRenderer::Update( Level& level, const glm::vec3& playerPos, uint8_t vi
    {
       if( !InView( it->first, playerChunk, viewRadius ) )
       {
-         DestroyEntryGL( it->second );
+         for( auto& sec : it->second.sections )
+            DestroySectionGL( sec );
+
          it = m_entries.erase( it );
       }
       else
          ++it;
    }
 
-   ChunkMeshData mesh;
+   MeshData mesh;
    for( const auto& [ cc, chunk ] : level.GetChunks() )
    {
       if( !InView( cc, playerChunk, viewRadius ) )
          continue;
 
-      Entry& e = m_entries[ cc ];
-
+      Entry&         ce  = m_entries[ cc ];
       const uint64_t rev = chunk.MeshRevision();
-      if( e.builtRevision == rev && !Any( chunk.Dirty() & ChunkDirty::Mesh ) )
+      if( ce.lastSeenRevision == rev && !Any( chunk.Dirty() & ChunkDirty::Mesh ) )
          continue;
 
-      BuildMesh( level, chunk, mesh );
-      Upload( e, mesh );
+      for( const auto& [ i, sec ] : ce.sections | std::views::enumerate )
+      {
+         if( sec.builtRevision == rev && !Any( chunk.Dirty() & ChunkDirty::Mesh ) )
+            continue;
 
-      e.builtRevision = rev;
+         BuildSectionMesh( level, chunk, i, mesh );
+         Upload( sec, mesh );
+         sec.builtRevision = rev;
+      }
+
+      ce.lastSeenRevision = rev;
       const_cast< Chunk& >( chunk ).ClearDirty( ChunkDirty::Mesh );
    }
-}
-
-// Render
-void ChunkRenderer::Render( const Level& level, Shader& shader, const glm::mat4& viewProjection ) const
-{
-   TextureAtlasManager::Get().Bind();
-
-   for( const auto& [ cc, e ] : m_entries )
-   {
-      if( e.indexCount == 0 || !e.vao )
-         continue;
-
-      const Chunk&    chunk    = level.GetChunks().at( cc );
-      const glm::vec3 chunkMin = glm::vec3( cc.x * CHUNK_SIZE_X, 0.0f, cc.z * CHUNK_SIZE_Z );
-      const glm::vec3 chunkMax = chunkMin + glm::vec3( CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z );
-      //if( !frustum.FInFrustum( chunkMin, chunkMax ) )
-      //   continue;
-
-      const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), chunkMin );
-      const glm::mat4 mvp   = viewProjection * model;
-      shader.SetUniform( "u_MVP", mvp );
-      shader.SetUniform( "u_Model", model );
-
-      glBindVertexArray( e.vao );
-      glDrawElements( GL_TRIANGLES, static_cast< GLsizei >( e.indexCount ), GL_UNSIGNED_INT, nullptr );
-   }
-
-   glBindVertexArray( 0 );
-   TextureAtlasManager::Get().Unbind();
 }

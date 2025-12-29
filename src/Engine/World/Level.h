@@ -120,6 +120,8 @@ public:
    void ClearDirty( ChunkDirty bits ) noexcept { m_dirty = static_cast< ChunkDirty >( static_cast< uint32_t >( m_dirty ) & ~static_cast< uint32_t >( bits ) ); }
    uint64_t MeshRevision() const noexcept { return m_meshRevision; }
 
+   std::span< const ChunkSection > GetSections() const noexcept { return m_sections; }
+
 private:
    NO_COPY_MOVE( Chunk )
 
@@ -161,6 +163,8 @@ public:
 
    void Explode( int wx, int wy, int wz, uint8_t radius );
    void Explode( glm::ivec3 pos, uint8_t radius ) { Explode( pos.x, pos.y, pos.z, radius ); }
+
+   int GetSurfaceY( int wx, int wz ) noexcept;
 
    // Streaming only: ensures chunk *data* exists around the player.
    // Rendering caches are owned elsewhere.

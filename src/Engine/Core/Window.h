@@ -1,10 +1,12 @@
 #pragma once
 
 // Project dependencies
+#include <Engine/Core/UI.h>
 #include <Engine/Events/Event.h>
 
 // Forward Declarations
 struct GLFWwindow;
+class RenderContext;
 
 struct WindowState
 {
@@ -30,12 +32,15 @@ class Window
 {
 public:
    // Singleton Related
-   static Window&     Get();
-   static GLFWwindow* GetNativeWindow();
+   static Window& Get();
 
    void Init();
-   bool FProcessEvents();
-   void Present();
+   bool FBeginFrame();
+   void EndFrame();
+
+   // UI
+   UI::UIContext&       GetUIC() noexcept { return m_ui; }
+   const UI::UIContext& GetUIC() const noexcept { return m_ui; }
 
    // WindowState
    const WindowState& GetWindowState() const { return m_state; }
@@ -44,15 +49,19 @@ public:
    bool FMinimized() const noexcept { return m_state.fMinimized; }
    void SetVSync( bool fState );
 
-   void OnFocusChanged( bool /*fFocused*/ ) noexcept {}
-
 private:
    Window( std::string_view title ) noexcept; // private ctor for singleton
    ~Window();
    NO_COPY_MOVE( Window )
 
-   GLFWwindow* m_window { nullptr };
+   bool FCheckForShutdown(); // returns true if should close
+   void UpdateMouseState();
+
+   GLFWwindow* m_pWindow { nullptr };
    WindowState m_state;
+
+   UI::UIContext                    m_ui;
+   std::unique_ptr< RenderContext > m_pRenderContext;
 
    // Events
    Events::EventSubscriber m_eventSubscriber;

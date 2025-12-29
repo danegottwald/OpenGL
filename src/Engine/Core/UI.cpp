@@ -9,73 +9,100 @@
 #include <Engine/ECS/Components/Transform.h>
 #include <Engine/ECS/Components/Velocity.h>
 
-
 namespace UI
 {
 
-/*static*/ void UIBuffer::Init()
+UIContext::~UIContext()
 {
-   if( s_fInitialized )
+   if( m_fInitialized )
+      Shutdown();
+}
+
+
+void UIContext::Init( GLFWwindow* pGlfwWindowHandle )
+{
+   if( m_fInitialized )
       return;
 
-   GLFWwindow* pNativeWindow = Window::GetNativeWindow();
-   if( !pNativeWindow )
-      throw std::runtime_error( "Ensure window is initialized before UIBuffer" );
+   if( !pGlfwWindowHandle )
+      throw std::runtime_error( "UIContext::Init - native window handle is null" );
 
-   IMGUI_CHECKVERSION();                 // Ensure correct ImGui version
-   ImGui::CreateContext();               // Create a new ImGui context
-   ImGui::GetIO().IniFilename = nullptr; // Disable saving ImGui settings to a file
-   ImGui::StyleColorsDark();             // Use dark theme for ImGui
+   IMGUI_CHECKVERSION();
+   ImGui::CreateContext();
+   ImGui::GetIO().IniFilename = nullptr;
+   ImGui::StyleColorsDark();
 
-   ImGui_ImplGlfw_InitForOpenGL( pNativeWindow, true ); // Initialize ImGui with GLFW support
+   ImGui_ImplGlfw_InitForOpenGL( pGlfwWindowHandle, true );
    if( !ImGui_ImplOpenGL3_Init( "#version 330" ) )
       throw std::runtime_error( "Failed to initialize ImGui OpenGL backend" );
 
-   s_uiElements.reserve( kInitialUIElementCapacity ); // Pre-allocate space for UI elements
-   s_fInitialized = true;
+   m_uiElements.reserve( kInitialUIElementCapacity );
+   m_fInitialized = true;
 }
 
 
-/*static*/ void UIBuffer::Shutdown()
+void UIContext::Shutdown()
 {
-   if( !s_fInitialized )
-      throw std::runtime_error( "UIBuffer::Shutdown - UIBuffer not initialized" );
+   if( !m_fInitialized )
+      return;
 
-   s_uiElements.clear();
+   m_uiElements.clear();
+   m_fFrameActive = false;
+
    ImGui_ImplOpenGL3_Shutdown();
    ImGui_ImplGlfw_Shutdown();
    ImGui::DestroyContext();
+
+   m_fInitialized = false;
 }
 
 
-/*static*/ void UIBuffer::Register( std::shared_ptr< IDrawable > element )
+void UIContext::BeginFrame()
 {
-   if( !s_fInitialized )
-      throw std::runtime_error( "UIBuffer::Register - UIBuffer not initialized" );
+   if( !m_fInitialized )
+      throw std::runtime_error( "UIContext::BeginFrame - UIContext not initialized" );
 
-   s_uiElements.push_back( std::move( element ) );
+   if( m_fFrameActive )
+      return;
+
+   ImGui_ImplOpenGL3_NewFrame();
+   ImGui_ImplGlfw_NewFrame();
+   ImGui::NewFrame();
+
+   m_fFrameActive = true;
 }
 
 
-/*static*/ void UIBuffer::Draw()
+void UIContext::Register( std::shared_ptr< IDrawable > element )
 {
-   if( !s_fInitialized )
-      throw std::runtime_error( "UIBuffer::Draw - UIBuffer not initialized" );
+   if( !m_fInitialized )
+      throw std::runtime_error( "UIContext::Register - UIContext not initialized" );
 
-   if( !s_uiElements.empty() )
-   {
-      ImGui_ImplOpenGL3_NewFrame();
-      ImGui_ImplGlfw_NewFrame();
-      ImGui::NewFrame();
+   // Allow calling Register without having to manually call BeginFrame.
+   if( !m_fFrameActive )
+      BeginFrame();
 
-      for( const std::shared_ptr< IDrawable >& e : s_uiElements )
-         e->Draw();
+   m_uiElements.push_back( std::move( element ) );
+}
 
-      s_uiElements.clear();
 
-      ImGui::Render();
-      ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
-   }
+void UIContext::EndFrame()
+{
+   if( !m_fInitialized )
+      throw std::runtime_error( "UIContext::EndFrame - UIContext not initialized" );
+
+   if( !m_fFrameActive )
+      return;
+
+   for( const std::shared_ptr< IDrawable >& e : m_uiElements )
+      e->Draw();
+
+   m_uiElements.clear();
+
+   ImGui::Render();
+   ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
+
+   m_fFrameActive = false;
 }
 
 } // namespace UI

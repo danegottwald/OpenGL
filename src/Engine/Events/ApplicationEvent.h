@@ -7,6 +7,30 @@ namespace Events
 {
 
 //=========================================================================
+// WindowFocusEvent
+//=========================================================================
+class WindowFocusEvent final : public IEvent
+{
+public:
+   WindowFocusEvent() = default;
+
+   EVENT_CLASS_TYPE( EventType::WindowFocus )
+   EVENT_CLASS_CATEGORY( EventCategory::Application )
+};
+
+//=========================================================================
+// WindowLostFocusEvent
+//=========================================================================
+class WindowLostFocusEvent final : public IEvent
+{
+public:
+   WindowLostFocusEvent() = default;
+
+   EVENT_CLASS_TYPE( EventType::WindowLostFocus )
+   EVENT_CLASS_CATEGORY( EventCategory::Application )
+};
+
+//=========================================================================
 // WindowResizeEvent
 //=========================================================================
 class WindowResizeEvent : public IEvent

@@ -202,11 +202,10 @@ std::tuple< ChunkCoord, glm::ivec3 > Level::WorldToChunk( int wx, int wy, int wz
    };
 
    const int cx = divFloor( wx, CHUNK_SIZE_X ), lx = wx - cx * CHUNK_SIZE_X;
-   const int cy = divFloor( wy, CHUNK_SIZE_Y ), ly = wy - cy * CHUNK_SIZE_Y;
    const int cz = divFloor( wz, CHUNK_SIZE_Z ), lz = wz - cz * CHUNK_SIZE_Z;
    return std::tuple< ChunkCoord, glm::ivec3 > {
       ChunkCoord { cx, cz },
-       glm::ivec3 { lx, ly, lz }
+       glm::ivec3 { lx, wy, lz }
    };
 }
 
@@ -286,6 +285,20 @@ void Level::Explode( int wx, int wy, int wz, uint8_t radius )
 
    for( const ChunkCoord& cc : touched )
       MarkChunkAndNeighborsMeshDirty( cc );
+}
+
+
+int Level::GetSurfaceY( int wx, int wz ) noexcept
+{
+   const Chunk& chunk = EnsureChunk( ChunkCoord { .x = wx, .z = wz } );
+   for( int wy = CHUNK_SIZE_Y; wy >= 0; --wy )
+   {
+      auto [ _, local ] = WorldToChunk( wx, wy, wz );
+      if( chunk.GetBlock( local.x, local.y, local.z ) != BlockId::Air )
+         return wy;
+   }
+
+   return 0;
 }
 
 

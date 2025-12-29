@@ -46,8 +46,8 @@ public:
    float GetDelta() const noexcept { return m_delta; }
 
    // Returns true if enough time has passed to advance a tick
-   bool     FShouldTick() noexcept { return m_accumulator >= m_interval; }
-   uint64_t GetTickCount() const { return m_tick; }
+   bool     FShouldTick() const noexcept { return m_accumulator >= m_interval; }
+   uint64_t GetTickCount() const noexcept { return m_tick; }
 
 private:
    NO_COPY_MOVE( FixedTimeStep )
@@ -99,8 +99,8 @@ public:
 private:
    NO_COPY_MOVE( IntervalTimer )
 
-   float m_interval { 0.0f };
-   float m_accumulator { 0.0f };
+   const float m_interval { 0.0f };
+   float       m_accumulator { 0.0f };
 };
 
 } // namespace Time

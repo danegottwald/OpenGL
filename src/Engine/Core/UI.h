@@ -1,43 +1,50 @@
 #pragma once
 
+// Forward Declarations
+struct GLFWwindow;
+
 namespace UI
 {
 
-
-/**
- * @brief Interface for drawable UI elements.
- * This interface defines a contract for UI elements that can be drawn.
- */
 struct IDrawable
 {
    virtual ~IDrawable() = default;
    virtual void Draw()  = 0;
 };
 
+// Immediate-mode style UI context.
+// - Submit UI commands (as IDrawable objects) throughout the frame.
+// - Call `BeginFrame()` once, then `EndFrame()` once, per frame.
+// - Submissions are cleared automatically each frame.
+//
+// The UI backend is initialized against a specific native window.
 
-/**
- * @brief UI Buffer for managing drawable UI elements.
- * This class is responsible for storing and rendering UI elements once per frame.
- * 
- * Register UI elements using `Register()` and call `Draw()` each frame to render them.
- */
-class UIBuffer
+class UIContext
 {
 public:
-   static void Init();
-   static void Shutdown();
+   UIContext() = default;
+   ~UIContext();
 
-   static void Register( std::shared_ptr< IDrawable > element );
-   static void Draw();
+   void Init( GLFWwindow* pGlfwWindowHandle );
+   void Shutdown();
+
+   void BeginFrame();
+   void Register( std::shared_ptr< IDrawable > element );
+   void EndFrame();
+
+   bool FInitialized() const noexcept { return m_fInitialized; }
 
 private:
-   static inline bool                                        s_fInitialized            = false;
-   static inline constexpr size_t                            kInitialUIElementCapacity = 100;
-   static inline std::vector< std::shared_ptr< IDrawable > > s_uiElements;
+   NO_COPY_MOVE( UIContext )
+
+   bool m_fInitialized { false };
+   bool m_fFrameActive { false };
+
+   static inline constexpr size_t              kInitialUIElementCapacity = 128;
+   std::vector< std::shared_ptr< IDrawable > > m_uiElements;
 };
 
 } // namespace UI
-
 
 namespace Entity
 {

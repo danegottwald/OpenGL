@@ -7,13 +7,11 @@
 namespace Engine
 {
 
-namespace
-{
 struct WireCubeGL
 {
-   GLuint vao = 0;
-   GLuint vbo = 0;
-   GLuint ebo = 0;
+   GLuint vao { 0 };
+   GLuint vbo { 0 };
+   GLuint ebo { 0 };
 
    void Ensure()
    {
@@ -109,7 +107,6 @@ struct ReticleGL
 
 static WireCubeGL s_wireCube;
 static ReticleGL  s_reticle;
-}
 
 
 RenderSystem::RenderSystem( Level& level ) noexcept :
@@ -187,10 +184,54 @@ void RenderSystem::Run( const FrameContext& ctx )
          s_terrainShader.SetUniform( "u_mvp", mvp );
          s_terrainShader.SetUniform( "u_model", model );
 
-         mesh.mesh->Render();
+         //mesh.mesh->Render();
+         g_renderBuffer.Submit( { .key           = RenderKey { 0 },
+                                  .vertexArrayId = mesh.mesh->GetMeshBuffer().GetVertexArrayID(),
+                                  .textureId     = 0,
+                                  .indexCount    = mesh.mesh->GetMeshBuffer().GetIndexCount(),
+                                  .model         = model } );
       }
       s_terrainShader.Unbind();
    }
+
+   uint32_t currentShader  = 0;
+   uint32_t currentTexture = 0;
+   uint32_t currentVao     = 0;
+   for( const auto& item : g_renderBuffer.GetItems() )
+   {
+      static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
+      s_terrainShader.Bind();
+
+      glm::mat4 mvp = ctx.viewProjection * item.model;
+      s_terrainShader.SetUniform( "u_mvp", mvp );
+      s_terrainShader.SetUniform( "u_model", item.model );
+
+      // 1. Only switch shader if it changes
+      //if( item.shaderId != currentShader )
+      //{
+      //   UseShader( item.shaderId );
+      //   currentShader = item.shaderId;
+      //}
+
+      // 2. Only bind texture if it changes
+      //if( item.textureId != currentTexture )
+      //{
+      //   BindTexture( item.textureId );
+      //   currentTexture = item.textureId;
+      //}
+
+      // 3. Only bind geometry if it changes
+      if( item.vertexArrayId != currentVao )
+      {
+         glBindVertexArray( item.vertexArrayId );
+         currentVao = item.vertexArrayId;
+      }
+
+      glDrawElements( GL_TRIANGLES, static_cast< GLsizei >( item.indexCount ), GL_UNSIGNED_INT, nullptr );
+      s_terrainShader.Unbind();
+   }
+   glBindVertexArray( 0 );
+   g_renderBuffer.Clear();
 
    if( m_fHighlightEnabled )
       DrawBlockHighlight( ctx );
@@ -222,19 +263,32 @@ void RenderSystem::DrawTerrain( const FrameContext& ctx )
    s_terrainShader.SetUniform( "u_blockTextures", 0 );
    s_terrainShader.SetUniform( "u_viewPos", ctx.viewPos );
 
-   for( const auto& [ cc, entry ] : m_chunkRenderer.GetEntries() )
+   ViewFrustum frustum( ctx.viewProjection );
+   for( const auto& [ cc, chunkEntry ] : m_chunkRenderer.GetEntries() )
    {
-      if( entry.indexCount == 0 || entry.vao == 0 )
-         continue;
+      const float worldX0 = static_cast< float >( cc.x * CHUNK_SIZE_X );
+      const float worldZ0 = static_cast< float >( cc.z * CHUNK_SIZE_Z );
+      for( const auto& [ i, sec ] : chunkEntry.sections | std::views::enumerate )
+      {
+         if( sec.fEmpty || sec.indexCount == 0 || sec.vao == 0 )
+            continue;
 
-      const glm::vec3 chunkMin = glm::vec3( cc.x * CHUNK_SIZE_X, 0.0f, cc.z * CHUNK_SIZE_Z );
-      const glm::mat4 model    = glm::translate( glm::mat4( 1.0f ), chunkMin );
-      const glm::mat4 mvp      = ctx.viewProjection * model;
-      s_terrainShader.SetUniform( "u_mvp", mvp );
-      s_terrainShader.SetUniform( "u_model", model );
+         const float     y0 = static_cast< float >( i * CHUNK_SECTION_SIZE );
+         const glm::vec3 secMin( worldX0, y0, worldZ0 );
+         const glm::vec3 secMax( worldX0 + CHUNK_SIZE_X, y0 + CHUNK_SECTION_SIZE, worldZ0 + CHUNK_SIZE_Z );
+         if( !frustum.FInFrustum( secMin, secMax ) )
+            continue;
 
-      glBindVertexArray( entry.vao );
-      glDrawElements( GL_TRIANGLES, static_cast< GLsizei >( entry.indexCount ), GL_UNSIGNED_INT, nullptr );
+         // Section mesh has world-space Y baked in already. Only translate by chunk XZ.
+         const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), glm::vec3( worldX0, 0.0f, worldZ0 ) );
+         const glm::mat4 mvp   = ctx.viewProjection * model;
+
+         s_terrainShader.SetUniform( "u_mvp", mvp );
+         s_terrainShader.SetUniform( "u_model", model );
+
+         glBindVertexArray( sec.vao );
+         glDrawElements( GL_TRIANGLES, static_cast< GLsizei >( sec.indexCount ), GL_UNSIGNED_INT, nullptr );
+      }
    }
 
    glBindVertexArray( 0 );
@@ -272,8 +326,8 @@ void RenderSystem::DrawBlockHighlight( const FrameContext& ctx )
 void RenderSystem::DrawSkybox( const FrameContext& ctx )
 {
    constexpr std::array< std::string_view, 6 > faceFiles = {
-      "assets/textures/skybox/px.png", "assets/textures/skybox/nx.png", "assets/textures/skybox/py.png",
-      "assets/textures/skybox/ny.png", "assets/textures/skybox/pz.png", "assets/textures/skybox/nz.png",
+      "assets/textures/skybox/sky2/px.png", "assets/textures/skybox/sky2/nx.png", "assets/textures/skybox/sky2/py.png",
+      "assets/textures/skybox/sky2/ny.png", "assets/textures/skybox/sky2/pz.png", "assets/textures/skybox/sky2/nz.png",
    };
 
    static SkyboxTexture s_skyboxTexture( faceFiles );

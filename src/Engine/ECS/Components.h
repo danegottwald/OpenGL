@@ -9,3 +9,5 @@
 #include "Components/Tags.h"
 #include "Components/Transform.h"
 #include "Components/Velocity.h"
+#include "Components/Health.h"
+#include "Components/Projectile.h"

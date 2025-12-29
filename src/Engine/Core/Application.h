@@ -1,5 +1,19 @@
 #pragma once
 
+#include <Game/Game.h>
+
+// Forward Declarations
+namespace Entity
+{
+class Registry;
+}
+
+namespace Time
+{
+class FixedTimeStep;
+}
+
+
 enum ApplicationState
 {
    APP_STATE_NONE = 0,
@@ -7,6 +21,7 @@ enum ApplicationState
    APP_STATE_LOADING,
    APP_STATE_INGAME,
 };
+
 
 class Application
 {
@@ -20,8 +35,12 @@ public:
    void Run();
 
 private:
-   Application() = default;
+   Application()  = default;
+   ~Application() = default;
    NO_COPY_MOVE( Application )
 
    ApplicationState m_state { APP_STATE_NONE };
+
+   std::unique_ptr< Entity::Registry > m_pRegistry;
+   std::unique_ptr< Game::Game >       m_pGame;
 };

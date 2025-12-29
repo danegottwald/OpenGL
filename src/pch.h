@@ -30,6 +30,7 @@
 #include <print>
 #include <queue>
 #include <random>
+#include <ranges>
 #include <regex>
 #include <set>
 #include <shared_mutex>

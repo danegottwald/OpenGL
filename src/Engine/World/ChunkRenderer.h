@@ -2,34 +2,24 @@
 
 #include <Engine/World/Level.h>
 
-// Render-side cache for voxel chunks.
-// Owns all OpenGL objects and any CPU-side mesh buffers used for upload.
-//
-// Design notes:
-// - `Chunk` remains world-data only.
-// - This cache can be created/destroyed depending on visibility.
-// - Uses a revision counter to avoid boolean "needs remesh" threading issues.
-
-class Shader;
-
 class ChunkRenderer
 {
 public:
    ChunkRenderer() noexcept = default;
    ~ChunkRenderer() { Clear(); }
 
-   struct ChunkVertex
+   struct Vertex
    {
-      glm::vec3 position;
-      glm::vec3 normal;
-      glm::vec2 uv;
-      glm::vec3 tint;
+      glm::vec3 position {};
+      glm::vec3 normal {};
+      glm::vec2 uv {};
+      glm::vec3 tint {};
    };
 
-   struct ChunkMeshData
+   struct MeshData
    {
-      std::vector< ChunkVertex > vertices;
-      std::vector< uint32_t >    indices;
+      std::vector< Vertex >   vertices {};
+      std::vector< uint32_t > indices {};
 
       void Clear()
       {
@@ -40,32 +30,37 @@ public:
       bool FEmpty() const noexcept { return vertices.empty() || indices.empty(); }
    };
 
-   struct Entry
+   struct SectionEntry
    {
-      GLuint   vao        = 0;
-      GLuint   vbo        = 0;
-      GLuint   ebo        = 0;
-      uint32_t indexCount = 0;
+      GLuint   vao { 0 };
+      GLuint   vbo { 0 };
+      GLuint   ebo { 0 };
+      uint32_t indexCount { 0 };
 
-      uint64_t builtRevision = 0; // last `Chunk::MeshRevision()` that was uploaded
+      uint64_t builtRevision { 0 };
+      bool     fEmpty { true };
    };
 
-   // Updates the set of visible chunk renders and rebuilds meshes as needed.
-   void Update( Level& level, const glm::vec3& playerPos, uint8_t viewRadius );
+   struct Entry
+   {
+      std::array< SectionEntry, SECTIONS_PER_CHUNK > sections {};
+      uint64_t                                       lastSeenRevision { 0 };
+   };
 
-   void Render( const Level& level, Shader& shader, const glm::mat4& viewProjection ) const;
-
+   void        Update( Level& level, const glm::vec3& playerPos, uint8_t viewRadius );
    const auto& GetEntries() const noexcept { return m_entries; }
-
 
 private:
    NO_COPY_MOVE( ChunkRenderer )
 
    void        Clear();
-   static void DestroyEntryGL( Entry& e );
-   static void BuildMesh( const Level& level, const Chunk& chunk, ChunkMeshData& out );
-   static void Upload( Entry& e, const ChunkMeshData& mesh );
-   static bool InView( const ChunkCoord& cc, const ChunkCoord& center, uint8_t viewRadius );
+   static void DestroySectionGL( SectionEntry& e );
+
+   static bool                                 InView( const ChunkCoord& cc, const ChunkCoord& center, uint8_t viewRadius );
+   static std::tuple< ChunkCoord, glm::ivec3 > WorldToChunkCoord( int wx, int wy, int wz );
+
+   static void BuildSectionMesh( const Level& level, const Chunk& chunk, int sectionIndex, MeshData& out );
+   static void Upload( SectionEntry& e, const MeshData& mesh );
 
    std::unordered_map< ChunkCoord, Entry, ChunkCoordHash > m_entries;
-};
+}; // class ChunkRenderer
