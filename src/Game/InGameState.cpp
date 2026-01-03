@@ -102,12 +102,26 @@ static void PlayerMovementSystem( Entity::Registry& registry )
       if( input.fSprintRequest )
          maxSpeed *= SPRINT_MODIFIER;
 
-      vel.velocity.x = wishdir.x * maxSpeed;
-      vel.velocity.z = wishdir.z * maxSpeed;
-
       bool fOnGround = true;
       if( const CPhysics* pPhys = registry.TryGet< CPhysics >( e ) )
          fOnGround = pPhys->fOnGround;
+
+      if( fOnGround )
+      {
+         vel.velocity.x = wishdir.x * maxSpeed;
+         vel.velocity.z = wishdir.z * maxSpeed;
+      }
+      else
+      {
+         // Apply air control (acceleration + drag)
+         constexpr float AIR_ACCEL = 0.5f;
+         constexpr float AIR_DRAG  = 0.91f;
+
+         vel.velocity.x += wishdir.x * AIR_ACCEL;
+         vel.velocity.z += wishdir.z * AIR_ACCEL;
+         vel.velocity.x *= AIR_DRAG;
+         vel.velocity.z *= AIR_DRAG;
+      }
 
       // Cooldown management
       if( input.jumpCooldown > 0 )
