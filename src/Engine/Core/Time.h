@@ -8,13 +8,13 @@ namespace Time
  * This class provides functionality to track the time elapsed between frames as well as manage fixed update ticks.
  *
  * @example
- * FixedTimeStep timestep( 20.0f ); // 20 ticks per second
- * while ( game.IsRunning() )
+ * FixedTimeStep timestep( 20 ); // tickrate
+ * while ( game.FIsRunning() )
  * {
  *     timestep.Step(); // Update delta time
  *
- *     if ( timestep.FShouldTick() )
- *         game.Update(); // Called at fixed intervals
+ *     while ( timestep.FTryTick() )
+ *         game.FixedUpdate(); // Called at fixed intervals
  *
  *     game.Update( timestep.GetDelta() ); // Called every frame
  * }
@@ -26,27 +26,32 @@ public:
       m_interval( 1.0f / tickrate )
    {}
 
-   // Step the Timestep to update delta time and tick state
-   float Step() noexcept
+   // Step the Timestep to update delta time
+   float Step( float clamp ) noexcept
    {
-      const double currentTime = glfwGetTime();
-      m_delta                  = currentTime - m_lastTime;
-      m_lastTime               = currentTime;
+      const float currentTime = static_cast< float >( glfwGetTime() );
+      if( m_lastTime == 0.0f )
+         m_lastTime = currentTime;
 
-      if( m_accumulator >= m_interval )
-      {
-         m_accumulator -= m_interval;
-         m_tick++;
-      }
-      else
-         m_accumulator += m_delta;
-
+      m_delta    = std::min( currentTime - m_lastTime, clamp ); // clamp to avoid spiral of death
+      m_lastTime = currentTime;
+      m_accumulator += m_delta;
       return m_delta;
    }
    float GetDelta() const noexcept { return m_delta; }
+   float GetInterval() const noexcept { return m_interval; }
 
    // Returns true if enough time has passed to advance a tick
-   bool     FShouldTick() const noexcept { return m_accumulator >= m_interval; }
+   bool FTryTick() noexcept
+   {
+      if( m_accumulator < m_interval )
+         return false; // not enough time accumulated
+
+      m_accumulator -= m_interval;
+      m_tick++;
+      return true;
+   }
+
    uint64_t GetTickCount() const noexcept { return m_tick; }
 
 private:

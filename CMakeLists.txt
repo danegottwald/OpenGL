@@ -10,7 +10,7 @@ find_package(OpenGL REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
-find_package(imgui CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED) 
 find_package(jsoncpp CONFIG REQUIRED)
 
 # Collect source files
@@ -43,7 +43,7 @@ add_custom_command(TARGET ${PROJECT_NAME} PRE_BUILD
     ${CMAKE_SOURCE_DIR}/assets
     $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
 )
-
+  
 # For Release
 target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>) # Set entry point for release builds
 set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>) # Prevent console

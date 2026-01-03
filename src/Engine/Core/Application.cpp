@@ -32,7 +32,7 @@ void Application::Run()
 
    while( window.FBeginFrame() )
    {
-      const float dt = std::clamp( timestep.Step(), 0.0f, 0.05f /*50ms*/ );
+      const float dt = timestep.Step( 0.25f /*clamp*/ );
 
       Events::ProcessQueuedEvents();
 
@@ -40,8 +40,9 @@ void Application::Run()
       {
          m_pGame->Update( ctx, dt );
 
-         if( timestep.FShouldTick() )
-            m_pGame->FixedUpdate( ctx, dt );
+         // Ensure game simulation catches up with real time if FPS drops below tickrate
+         while( timestep.FTryTick() )
+            m_pGame->FixedUpdate( ctx, timestep.GetInterval() );
 
          m_pGame->Render( ctx );
          m_pGame->DrawUI( ctx );
@@ -70,6 +71,8 @@ void Application::Run()
             m_pGame->OnEnter( ctx );
             break;
          }
+
+         case APP_STATE_INGAME: break;
 
          default: break;
       }
