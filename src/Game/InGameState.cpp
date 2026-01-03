@@ -42,7 +42,7 @@ static void MouseLookSystem( Entity::Registry& registry, Window& window )
    }
 }
 
-static void CameraRigSystem( Entity::Registry& registry )
+static void CameraRigSystem( Entity::Registry& registry, float alpha )
 {
    for( auto [ camEntity, camTran, rig ] : registry.ECView< CTransform, CCameraRig >() )
    {
@@ -61,7 +61,11 @@ static void CameraRigSystem( Entity::Registry& registry )
       if( rig.followPitch )
          pTargetTran->rotation.x = camTran.rotation.x;
 
-      camTran.position = pTargetTran->position + rig.offset;
+      // Interpolate target position for smooth camera follow
+      const glm::vec3 interpolatedTargetPos = glm::mix( pTargetTran->prevPosition, pTargetTran->position, alpha );
+      camTran.position                      = interpolatedTargetPos + rig.offset;
+
+      camTran.RecordPrev(); // Record prev after updating position/rotation
    }
 }
 
@@ -105,9 +109,15 @@ static void PlayerMovementSystem( Entity::Registry& registry )
       if( const CPhysics* pPhys = registry.TryGet< CPhysics >( e ) )
          fOnGround = pPhys->fOnGround;
 
-      // TODO: 10 tick cooldown between jumps, fix instant re-jump when jumping up blocks with cooldown
-      if( input.fJumpRequest && fOnGround )
-         vel.velocity.y = JUMP_VELOCITY;
+      // Cooldown management
+      if( input.jumpCooldown > 0 )
+         input.jumpCooldown--;
+
+      if( input.fJumpRequest && fOnGround && input.jumpCooldown == 0 )
+      {
+         vel.velocity.y     = JUMP_VELOCITY;
+         input.jumpCooldown = 10; // 10 tick cooldown
+      }
 
       input.fWasJumpDown = input.fJumpRequest;
    }
@@ -456,27 +466,34 @@ void InGameState::Update( Engine::GameContext& ctx, float dt )
       return;
 
    Entity::Registry& registry = ctx.RegistryRef();
+   const float       alpha    = ctx.TimeRef().GetAlpha();
 
-   CTransform* pPlayerTran = registry.TryGet< CTransform >( m_player );
-   if( pPlayerTran )
-      m_pRenderSystem->Update( pPlayerTran->position, 8 );
+   if( CTransform* pPlayerTran = registry.TryGet< CTransform >( m_player ) )
+   {
+      const glm::vec3 interpolatedPos = glm::mix( pPlayerTran->prevPosition, pPlayerTran->position, alpha );
+      m_pRenderSystem->Update( interpolatedPos, 8 );
+   }
 
    LocalInputPollSystem( registry );
    MouseLookSystem( registry, ctx.WindowRef() );
-   CameraRigSystem( registry );
+   CameraRigSystem( registry, alpha );
+}
 
+void InGameState::FixedUpdate( Engine::GameContext& ctx, float fixedDt )
+{
+   Entity::Registry& registry = ctx.RegistryRef();
+
+   // Store previous state for interpolation
+   for( auto [ tran ] : registry.CView< CTransform >() )
+      tran.RecordPrev();
+
+   TickingSystem( registry );
    PlayerMovementSystem( registry );
-   PhysicsSystem( registry, *m_pLevel, dt );
+   PhysicsSystem( registry, *m_pLevel, fixedDt );
 
    // Collect generic collisions and let gameplay consume them.
    Engine::Physics::CollectEntityAABBCollisions( registry, g_collisionEvents );
    ProjectileDamageSystem( registry, g_collisionEvents );
-}
-
-void InGameState::FixedUpdate( Engine::GameContext& ctx, float )
-{
-   Entity::Registry& registry = ctx.RegistryRef();
-   TickingSystem( registry );
 
    if( INetwork* pNetwork = INetwork::Get() )
    {
@@ -507,7 +524,9 @@ void InGameState::Render( Engine::GameContext& ctx )
                                              .view              = pCameraComp->view,
                                              .projection        = pCameraComp->projection,
                                              .viewProjection    = pCameraComp->viewProjection,
-                                             .optHighlightBlock = optResult ? std::optional< glm::ivec3 >( optResult->block ) : std::nullopt };
+                                             .viewPos           = pCameraTran->position,
+                                             .optHighlightBlock = optResult ? std::optional< glm::ivec3 >( optResult->block ) : std::nullopt,
+                                             .alpha             = ctx.TimeRef().GetAlpha() /*interpolation factor*/ };
    m_pRenderSystem->Run( rctx );
 }
 

@@ -66,6 +66,7 @@ public:
       glm::vec3         viewPos { 0.0f };
 
       std::optional< glm::ivec3 > optHighlightBlock; // currently aiming at block
+      float                       alpha { 0.0f };    // interpolation factor
    };
 
    // Extensible entrypoint.

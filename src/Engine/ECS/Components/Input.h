@@ -10,7 +10,8 @@ struct CInput
    bool fSprintRequest { false };
 
    // State tracking
-   bool fWasJumpDown { false };
+   bool     fWasJumpDown { false };
+   uint32_t jumpCooldown { 0 };
 };
 
 struct CLookInput
