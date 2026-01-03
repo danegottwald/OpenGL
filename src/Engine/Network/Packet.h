@@ -38,11 +38,10 @@ struct Packet
 {
    // Packet Header (fixed fields)
    uint64_t    m_sourceID { 0 };
-   uint64_t    m_destinationID { 0 }; // a destination id of 0 means broadcast to all clients
    NetworkCode m_code { NetworkCode::Invalid };
    uint16_t    m_bufferLength { 0 };
 
-   static inline constexpr auto FixedFields = std::make_tuple( &Packet::m_sourceID, &Packet::m_destinationID, &Packet::m_code, &Packet::m_bufferLength );
+   static inline constexpr auto FixedFields = std::make_tuple( &Packet::m_sourceID, &Packet::m_code, &Packet::m_bufferLength );
 
    // Buffer Data (variable fields)
    PacketBuffer m_buffer {};
@@ -52,7 +51,7 @@ struct Packet
    size_t                  Size() const noexcept { return HeaderSize() + m_bufferLength; }
 
    template< NetworkCode TCode > // Creates a packet with the specified code and data
-   [[nodiscard]] static Packet Create( uint64_t srcID, uint64_t destID, const typename NetworkCodeType< TCode >::Type& data );
+   [[nodiscard]] static Packet Create( uint64_t srcID, const typename NetworkCodeType< TCode >::Type& data );
 
    template< NetworkCode TCode > // Parses the buffer and returns the parsed data
    [[nodiscard]] static typename NetworkCodeType< TCode >::Type ParseBuffer( const Packet& packet );
@@ -108,10 +107,9 @@ DEFINE_NETWORK_CODE_TYPE( NetworkCode::PositionUpdate, glm::vec3, sizeof( glm::v
 DEFINE_NETWORK_CODE_TYPE( NetworkCode::BlockUpdate, NetBlockUpdate, sizeof( NetBlockUpdate ) )
 
 template< NetworkCode TCode >
-inline Packet Packet::Create( uint64_t srcID, uint64_t destID, const typename NetworkCodeType< TCode >::Type& data )
+inline Packet Packet::Create( uint64_t srcID, const typename NetworkCodeType< TCode >::Type& data )
 {
    Packet packet;
-   packet.m_destinationID = destID;
    packet.m_sourceID      = srcID; // maybe get rid of this, src should "always" be from the creator
    packet.m_code          = TCode;
 

@@ -36,7 +36,7 @@ NetworkClient::NetworkClient()
       upd.blockId = e.GetBlockId();
       upd.action  = e.GetAction();
 
-      QueueSend_( Packet::Create< NetworkCode::BlockUpdate >( m_ID, 0 /*to host*/, upd ) );
+      QueueSend_( Packet::Create< NetworkCode::BlockUpdate >( m_ID, upd ) );
    } );
 }
 
@@ -69,7 +69,7 @@ void NetworkClient::Connect( const char* ipAddress, uint16_t port )
    // Immediately start handshake attempts
    m_state         = State::AwaitingHandshakeAccept;
    m_handshakeTick = 0;
-   QueueSend_( Packet::Create< NetworkCode::HandshakeInit >( 0, 0, PROTOCOL_VERSION ) );
+   QueueSend_( Packet::Create< NetworkCode::HandshakeInit >( 0, PROTOCOL_VERSION ) );
 }
 
 void NetworkClient::QueueSend_( const Packet& packet )
@@ -231,12 +231,14 @@ void NetworkClient::Poll( const glm::vec3& playerPosition )
    if( m_state == State::AwaitingHandshakeAccept )
    {
       if( ( ++m_handshakeTick % 60u ) == 0u )
-         QueueSend_( Packet::Create< NetworkCode::HandshakeInit >( 0, 0, PROTOCOL_VERSION ) );
+         QueueSend_( Packet::Create< NetworkCode::HandshakeInit >( 0, PROTOCOL_VERSION ) );
    }
 
    // gameplay update
    if( m_state == State::Connected && m_ID != 0 )
-      QueueSend_( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0 /*to host*/, playerPosition ) );
+   {
+      QueueSend_( Packet::Create< NetworkCode::PositionUpdate >( m_ID, playerPosition ) );
+   }
 
    // send
    FlushSend_();

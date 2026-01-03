@@ -44,7 +44,7 @@ NetworkHost::NetworkHost()
       Events::Dispatch< Events::NetworkBlockUpdateEvent >( m_ID, upd.pos, upd.blockId );
 
       // Broadcast to clients
-      Broadcast_( Packet::Create< NetworkCode::BlockUpdate >( m_ID, 0 /*broadcast*/, upd ) );
+      Broadcast_( Packet::Create< NetworkCode::BlockUpdate >( m_ID, upd ) );
    } );
 }
 
@@ -113,7 +113,7 @@ void NetworkHost::DisconnectClient( uint64_t clientID )
    m_peers.erase( it );
 
    // Broadcast disconnect (best-effort)
-   Broadcast_( Packet::Create< NetworkCode::ClientDisconnect >( m_ID, 0 /*broadcast*/, clientID ) );
+   Broadcast_( Packet::Create< NetworkCode::ClientDisconnect >( m_ID, clientID ) );
 }
 
 void NetworkHost::QueueSendBytes_( Peer& peer, std::span< const uint8_t > bytes )
@@ -186,7 +186,7 @@ void NetworkHost::HandleIncomingPacket( const Packet& packet )
       {
          const auto upd = Packet::ParseBuffer< NetworkCode::BlockUpdate >( packet );
          Events::Dispatch< Events::NetworkBlockUpdateEvent >( packet.m_sourceID, upd.pos, upd.blockId );
-         Broadcast_( Packet::Create< NetworkCode::BlockUpdate >( packet.m_sourceID, 0 /*broadcast*/, upd ) );
+         Broadcast_( Packet::Create< NetworkCode::BlockUpdate >( packet.m_sourceID, upd ) );
          break;
       }
 
@@ -227,11 +227,11 @@ void NetworkHost::AcceptNewClients_()
       Peer& newPeer         = it->second;
 
       // Enqueue handshake accept immediately (reliable via sendBuffer + flush)
-      QueueSend_( newPeer, Packet::Create< NetworkCode::HandshakeAccept >( m_ID, clientID, clientID ) );
-      QueueSend_( newPeer, Packet::Create< NetworkCode::ClientConnect >( m_ID, clientID, m_ID ) );
+      QueueSend_( newPeer, Packet::Create< NetworkCode::HandshakeAccept >( m_ID, clientID ) );
+      QueueSend_( newPeer, Packet::Create< NetworkCode::ClientConnect >( m_ID, m_ID ) );
 
       // Inform existing clients
-      //Broadcast_( Packet::Create< NetworkCode::ClientConnect >( m_ID, 0 /*broadcast*/, clientID ) );
+      //Broadcast_( Packet::Create< NetworkCode::ClientConnect >( m_ID, clientID ) );
       Events::Dispatch< Events::NetworkClientConnectEvent >( clientID );
 
       // Best-effort flush now
@@ -333,7 +333,7 @@ void NetworkHost::Poll( const glm::vec3& playerPosition )
    PollClients_();
 
    // Keep position updates in Poll (broadcast)
-   Broadcast_( Packet::Create< NetworkCode::PositionUpdate >( m_ID, 0 /*broadcast*/, playerPosition ) );
+   Broadcast_( Packet::Create< NetworkCode::PositionUpdate >( m_ID, playerPosition ) );
 
    // Flush any queued broadcasts
    for( auto& [ id, peer ] : m_peers )

@@ -155,7 +155,7 @@ public:
             m_messages.push_back( std::format( "You: {}", m_inputBuffer ) );
 
             if( INetwork* pNetwork = INetwork::Get() )
-               pNetwork->SendPacket( Packet::Create< NetworkCode::Chat >( pNetwork->GetID(), 0 /*destID*/, m_inputBuffer ) );
+               pNetwork->SendPacket( Packet::Create< NetworkCode::Chat >( pNetwork->GetID(), m_inputBuffer ) );
 
             memset( m_inputBuffer, 0, sizeof( m_inputBuffer ) );
             ImGui::SetKeyboardFocusHere( -1 ); // keep focus on the input box
@@ -239,7 +239,7 @@ public:
                else
                {
                   s_NetworkLogs.push_back( std::format( "Disconnecting from: {}:{}", m_connectAddress, m_port ) );
-                  INetwork::Get()->SendPacket( Packet::Create< NetworkCode::ClientDisconnect >( INetwork::Get()->GetID(), 0 /*destID*/, {} ) );
+                  INetwork::Get()->SendPacket( Packet::Create< NetworkCode::ClientDisconnect >( INetwork::Get()->GetID(), {} ) );
                   INetwork::Shutdown();
                }
             }
