@@ -2,6 +2,7 @@
 
 // Project dependencies
 #include <Engine/Renderer/VertexBufferLayout.h>
+#include <Engine/Renderer/Texture.h>
 
 class MeshBuffer
 {
@@ -467,4 +468,97 @@ private:
    };
    // clang-format on
    float m_size;
+};
+
+class BlockItemMesh : public IMesh
+{
+public:
+   BlockItemMesh( BlockId blockId, float size = 0.25f ) :
+      m_blockId( blockId ),
+      m_size( size )
+   {
+      m_meshBuffer.Initialize();
+      Compile();
+   }
+
+   void Compile() override
+   {
+      m_meshBuffer.Bind();
+
+      VertexBufferLayout layout;
+      layout.Push< float >( 3 ); // Position
+      layout.Push< float >( 3 ); // Normal
+      layout.Push< float >( 2 ); // UV
+      layout.Push< float >( 3 ); // Tint
+
+      std::vector< float > vertices;
+      vertices.reserve( 24 * ( 3 + 3 + 2 + 3 ) ); // 24 verts * 11 floats
+
+      // Helper to add a face
+      auto addFace =
+         [ & ]( TextureAtlas::BlockFace face, const glm::vec3& normal, const glm::vec3& p0, const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& p3 )
+      {
+         const TextureAtlas::Region& region = TextureAtlasManager::Get().GetRegion( m_blockId, face );
+
+         auto addVert = [ & ]( const glm::vec3& p, const glm::vec2& uv )
+         {
+            vertices.push_back( p.x * m_size );
+            vertices.push_back( p.y * m_size );
+            vertices.push_back( p.z * m_size );
+            vertices.push_back( normal.x );
+            vertices.push_back( normal.y );
+            vertices.push_back( normal.z );
+            vertices.push_back( uv.x );
+            vertices.push_back( uv.y );
+            vertices.push_back( 1.0f ); // Tint R
+            vertices.push_back( 1.0f ); // Tint G
+            vertices.push_back( 1.0f ); // Tint B
+         };
+
+         // Vertices order for quad: 0, 1, 2, 3
+         addVert( p0, region.uvs[ 0 ] );
+         addVert( p1, region.uvs[ 1 ] );
+         addVert( p2, region.uvs[ 2 ] );
+         addVert( p3, region.uvs[ 3 ] );
+      };
+
+      // Cube corners
+      glm::vec3 p0( -0.5f, -0.5f, 0.5f );  // Front BL
+      glm::vec3 p1( 0.5f, -0.5f, 0.5f );   // Front BR
+      glm::vec3 p2( 0.5f, 0.5f, 0.5f );    // Front TR
+      glm::vec3 p3( -0.5f, 0.5f, 0.5f );   // Front TL
+      glm::vec3 p4( -0.5f, -0.5f, -0.5f ); // Back BL
+      glm::vec3 p5( 0.5f, -0.5f, -0.5f );  // Back BR
+      glm::vec3 p6( 0.5f, 0.5f, -0.5f );   // Back TR
+      glm::vec3 p7( -0.5f, 0.5f, -0.5f );  // Back TL
+
+      addFace( TextureAtlas::BlockFace::South, { 0, 0, 1 }, p0, p1, p2, p3 );   // Front face (Z+)
+      addFace( TextureAtlas::BlockFace::North, { 0, 0, -1 }, p5, p4, p7, p6 );  // Back face (Z-)
+      addFace( TextureAtlas::BlockFace::East, { 1, 0, 0 }, p1, p5, p6, p2 );    // Right face (X+)
+      addFace( TextureAtlas::BlockFace::West, { -1, 0, 0 }, p4, p0, p3, p7 );   // Left face (X-)
+      addFace( TextureAtlas::BlockFace::Top, { 0, 1, 0 }, p3, p2, p6, p7 );     // Top face (Y+)
+      addFace( TextureAtlas::BlockFace::Bottom, { 0, -1, 0 }, p4, p5, p1, p0 ); // Bottom face (Y-)
+
+      m_meshBuffer.SetVertexData( vertices, std::move( layout ) );
+
+      // Indices (standard quad indices for 6 faces)
+      std::vector< unsigned int > indices;
+      for( int i = 0; i < 6; ++i )
+      {
+         unsigned int base = i * 4;
+         indices.push_back( base + 0 );
+         indices.push_back( base + 1 );
+         indices.push_back( base + 2 );
+         indices.push_back( base + 0 );
+         indices.push_back( base + 2 );
+         indices.push_back( base + 3 );
+      }
+      m_meshBuffer.SetIndexData( indices );
+
+      m_meshBuffer.Unbind();
+   }
+
+private:
+   BlockId m_blockId;
+   float   m_size;
 };

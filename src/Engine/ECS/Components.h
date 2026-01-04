@@ -4,6 +4,7 @@
 #include "Components/Physics.h"
 #include "Components/Camera.h"
 #include "Components/Input.h"
+#include "Components/ItemDrop.h"
 #include "Components/Mesh.h"
 #include "Components/Parent.h"
 #include "Components/Tags.h"

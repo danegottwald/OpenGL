@@ -55,6 +55,9 @@ public:
    // Get interpolation alpha (0.0 - 1.0) for rendering between ticks
    float GetAlpha() const noexcept { return m_accumulator / m_interval; }
 
+   // Returns the interpolation delta in seconds (already multiplied by tick interval)
+   float GetInterpolationDelta() const noexcept { return m_accumulator; }
+
    uint64_t GetTickCount() const noexcept { return m_tick; }
 
 private:

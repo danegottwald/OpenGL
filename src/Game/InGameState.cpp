@@ -137,7 +137,7 @@ static void PlayerMovementSystem( Entity::Registry& registry )
    }
 }
 
-static void PhysicsSystem( Entity::Registry& registry, Level& level, float delta )
+static void PhysicsSystem( Entity::Registry& registry, Level& level, float tickInterval )
 {
    auto getVoxelBounds = [ & ]( const glm::vec3& pos, const glm::vec3& bbMin, const glm::vec3& bbMax ) -> std::tuple< glm::ivec3, glm::ivec3 >
    {
@@ -228,9 +228,9 @@ static void PhysicsSystem( Entity::Registry& registry, Level& level, float delta
    {
       phys.fOnGround = computeGrounded( tran.position, phys.bbMin, phys.bbMax );
       if( !phys.fOnGround )
-         vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * delta ), TERMINAL_VELOCITY );
+         vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * tickInterval ), TERMINAL_VELOCITY );
 
-      const glm::vec3 step = vel.velocity * delta;
+      const glm::vec3 step = vel.velocity * tickInterval;
       moveAndCollideAxis( tran.position, vel.velocity, phys, step.y, Axis::Y );
       moveAndCollideAxis( tran.position, vel.velocity, phys, step.x, Axis::X );
       moveAndCollideAxis( tran.position, vel.velocity, phys, step.z, Axis::Z );
@@ -301,6 +301,24 @@ static void ProjectileDamageSystem( Entity::Registry& registry, Engine::Physics:
       tryApply( ev.a, ev.b );
       tryApply( ev.b, ev.a );
    }
+}
+
+static void ItemDropSystem( Entity::Registry& registry, float tickInterval )
+{
+   constexpr float DROP_LIFETIME_SECONDS = 300.0f;
+   const uint64_t  DROP_LIFETIME_TICKS   = static_cast< uint64_t >( DROP_LIFETIME_SECONDS / tickInterval );
+
+   std::unordered_set< Entity::Entity > entitiesToDestroy;
+   for( auto [ e, drop ] : registry.ECView< CItemDrop >() )
+   {
+      if( drop.tickLifetime++ < DROP_LIFETIME_TICKS )
+         continue;
+
+      entitiesToDestroy.insert( e );
+   }
+
+   for( Entity::Entity e : entitiesToDestroy )
+      registry.Destroy( e );
 }
 
 // Per-world collision queue (keeps previous frame pair state)
@@ -422,7 +440,22 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
          {
             case Input::ButtonLeft:
             {
-               const glm::ivec3 pos = result->block;
+               const glm::ivec3 pos      = result->block;
+               BlockState       oldState = m_pLevel->GetBlock( pos.x, pos.y, pos.z );
+
+               if( oldState.GetId() != BlockId::Air )
+               {
+                  // Spawn dropped item
+                  Entity::Entity item = registry.Create();
+                  registry.Add< CTransform >( item, glm::vec3( pos ) + 0.5f ); // Center of block
+                  registry.Add< CItemDrop >( item, CItemDrop { .blockId = oldState.GetId() } );
+                  registry.Add< CVelocity >( item, glm::vec3( 0.0f ) );
+                  registry.Add< CPhysics >( item, CPhysics { .bbMin = glm::vec3( -0.125f ), .bbMax = glm::vec3( 0.125f ) } );
+
+                  // Note: We should cache these meshes instead of creating a new one each time.
+                  registry.Add< CMesh >( item, std::make_shared< BlockItemMesh >( oldState.GetId() ) );
+               }
+
                m_pLevel->SetBlock( pos, BlockState( BlockId::Air ) );
                Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( BlockId::Air ), 1 );
                break;
@@ -514,7 +547,7 @@ void InGameState::Update( Engine::GameContext& ctx, float dt )
    CameraRigSystem( registry, alpha );
 }
 
-void InGameState::FixedUpdate( Engine::GameContext& ctx, float fixedDt )
+void InGameState::FixedUpdate( Engine::GameContext& ctx, float tickInterval )
 {
    Entity::Registry& registry = ctx.RegistryRef();
 
@@ -524,7 +557,8 @@ void InGameState::FixedUpdate( Engine::GameContext& ctx, float fixedDt )
 
    TickingSystem( registry );
    PlayerMovementSystem( registry );
-   PhysicsSystem( registry, *m_pLevel, fixedDt );
+   ItemDropSystem( registry, tickInterval );
+   PhysicsSystem( registry, *m_pLevel, tickInterval );
 
    // Collect generic collisions and let gameplay consume them.
    Engine::Physics::CollectEntityAABBCollisions( registry, g_collisionEvents );
@@ -556,12 +590,12 @@ void InGameState::Render( Engine::GameContext& ctx )
 
    auto                               optResult = TryRaycast( *m_pLevel, CreateRay( pCameraTran->position, pCameraTran->rotation, 64.0f ) );
    Engine::RenderSystem::FrameContext rctx { .registry          = registry,
+                                             .time              = ctx.TimeRef(),
                                              .view              = pCameraComp->view,
                                              .projection        = pCameraComp->projection,
                                              .viewProjection    = pCameraComp->viewProjection,
                                              .viewPos           = pCameraTran->position,
-                                             .optHighlightBlock = optResult ? std::optional< glm::ivec3 >( optResult->block ) : std::nullopt,
-                                             .alpha             = ctx.TimeRef().GetAlpha() /*interpolation factor*/ };
+                                             .optHighlightBlock = optResult ? std::optional< glm::ivec3 > { optResult->block } : std::nullopt };
    m_pRenderSystem->Run( rctx );
 }
 

@@ -3,6 +3,7 @@
 #include <Engine/World/Level.h>
 #include <Engine/Renderer/Shader.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/ECS/Components.h>
 
 namespace Engine
 {
@@ -165,34 +166,9 @@ void RenderSystem::Run( const FrameContext& ctx )
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
    DrawTerrain( ctx );
+   DrawItemDrops( ctx );
 
-   { // render entities
-      static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
-      s_terrainShader.Bind();
-
-      ViewFrustum frustum( ctx.viewProjection );
-      for( auto [ e, tran, mesh ] : ctx.registry.ECView< CTransform, CMesh >() )
-      {
-         if( CPhysics* pPhys = ctx.registry.TryGet< CPhysics >( e ) )
-         {
-            if( !frustum.FInFrustum( tran.position + pPhys->bbMin, tran.position + pPhys->bbMax ) )
-               continue;
-         }
-
-         const glm::mat4 model = glm::translate( glm::mat4( 1.0f ), tran.position );
-         const glm::mat4 mvp   = ctx.viewProjection * model;
-         s_terrainShader.SetUniform( "u_mvp", mvp );
-         s_terrainShader.SetUniform( "u_model", model );
-
-         //mesh.mesh->Render();
-         g_renderBuffer.Submit( { .key           = RenderKey { 0 },
-                                  .vertexArrayId = mesh.mesh->GetMeshBuffer().GetVertexArrayID(),
-                                  .textureId     = 0,
-                                  .indexCount    = mesh.mesh->GetMeshBuffer().GetIndexCount(),
-                                  .model         = model } );
-      }
-      s_terrainShader.Unbind();
-   }
+   TextureAtlasManager::Get().Bind();
 
    uint32_t currentShader  = 0;
    uint32_t currentTexture = 0;
@@ -205,6 +181,19 @@ void RenderSystem::Run( const FrameContext& ctx )
       glm::mat4 mvp = ctx.viewProjection * item.model;
       s_terrainShader.SetUniform( "u_mvp", mvp );
       s_terrainShader.SetUniform( "u_model", item.model );
+
+      // Ensure lighting and texture uniforms (this is bad here)
+      {
+         glm::vec3 sunDir       = glm::normalize( glm::vec3( -0.35f, 0.85f, -0.25f ) );
+         glm::vec3 sunColor     = glm::vec3( 1.0f, 0.98f, 0.92f ) * 3.0f;
+         glm::vec3 ambientColor = glm::vec3( 0.12f, 0.16f, 0.22f );
+
+         s_terrainShader.SetUniform( "u_sunDirection", sunDir );
+         s_terrainShader.SetUniform( "u_sunColor", sunColor );
+         s_terrainShader.SetUniform( "u_ambientColor", ambientColor );
+         s_terrainShader.SetUniform( "u_blockTextures", 0 );
+         s_terrainShader.SetUniform( "u_viewPos", ctx.viewPos );
+      }
 
       // 1. Only switch shader if it changes
       //if( item.shaderId != currentShader )
@@ -246,6 +235,8 @@ void RenderSystem::Run( const FrameContext& ctx )
 
 void RenderSystem::DrawTerrain( const FrameContext& ctx )
 {
+   TextureAtlasManager::Get().Bind();
+
    static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
    s_terrainShader.Bind();
 
@@ -259,7 +250,6 @@ void RenderSystem::DrawTerrain( const FrameContext& ctx )
       s_terrainShader.SetUniform( "u_ambientColor", ambientColor );
    }
 
-   TextureAtlasManager::Get().Bind();
    s_terrainShader.SetUniform( "u_blockTextures", 0 );
    s_terrainShader.SetUniform( "u_viewPos", ctx.viewPos );
 
@@ -293,6 +283,53 @@ void RenderSystem::DrawTerrain( const FrameContext& ctx )
 
    glBindVertexArray( 0 );
    TextureAtlasManager::Get().Unbind();
+
+   s_terrainShader.Unbind();
+}
+
+
+void RenderSystem::DrawItemDrops( const FrameContext& ctx )
+{
+   static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
+   s_terrainShader.Bind();
+
+   // Animation constants
+   constexpr float ROTATION_SPEED = 45.0f; // degrees/sec
+   constexpr float BOB_SPEED      = 4.0f;  // frequency
+   constexpr float BOB_HEIGHT     = 0.1f;  // amplitude
+
+   ViewFrustum frustum( ctx.viewProjection );
+   for( auto [ tran, mesh, phys, drop ] : ctx.registry.CView< CTransform, CMesh, CPhysics, CItemDrop >() )
+   {
+      // Frustum culling
+      if( !frustum.FInFrustum( tran.position + phys.bbMin, tran.position + phys.bbMax ) )
+         continue;
+
+      // Smooth animation: lifetime + dtSinceLastTick
+      const float lifetimeSmooth = drop.tickLifetime * ctx.time.GetInterval() + ctx.time.GetInterpolationDelta();
+
+      // Bobbing (above ground)
+      glm::vec3 renderPos = tran.position;
+      renderPos.y += std::sin( lifetimeSmooth * BOB_SPEED ) * BOB_HEIGHT + BOB_HEIGHT;
+
+      // Rotation
+      float rotationY = lifetimeSmooth * ROTATION_SPEED;
+
+      glm::mat4 model = glm::translate( glm::mat4( 1.0f ), renderPos );
+      model           = glm::rotate( model, glm::radians( tran.rotation.x ), glm::vec3( 1, 0, 0 ) );
+      model           = glm::rotate( model, glm::radians( rotationY ), glm::vec3( 0, 1, 0 ) );
+      model           = glm::rotate( model, glm::radians( tran.rotation.z ), glm::vec3( 0, 0, 1 ) );
+
+      const glm::mat4 mvp = ctx.viewProjection * model;
+      s_terrainShader.SetUniform( "u_mvp", mvp );
+      s_terrainShader.SetUniform( "u_model", model );
+
+      g_renderBuffer.Submit( { .key           = RenderKey { 0 },
+                               .vertexArrayId = mesh.mesh->GetMeshBuffer().GetVertexArrayID(),
+                               .textureId     = 0,
+                               .indexCount    = mesh.mesh->GetMeshBuffer().GetIndexCount(),
+                               .model         = model } );
+   }
 
    s_terrainShader.Unbind();
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Engine/World/ChunkRenderer.h>
+#include <Engine/Core/Time.h>
 
 #include <Engine/ECS/Registry.h>
 #include <Engine/ECS/Components.h>
@@ -59,14 +60,15 @@ public:
 
    struct FrameContext
    {
-      Entity::Registry& registry;
-      glm::mat4         view { 1.0f };
-      glm::mat4         projection { 1.0f };
-      glm::mat4         viewProjection { 1.0f };
-      glm::vec3         viewPos { 0.0f };
+      Entity::Registry&          registry;
+      const Time::FixedTimeStep& time;
+
+      glm::mat4 view { 1.0f };
+      glm::mat4 projection { 1.0f };
+      glm::mat4 viewProjection { 1.0f };
+      glm::vec3 viewPos { 0.0f };
 
       std::optional< glm::ivec3 > optHighlightBlock; // currently aiming at block
-      float                       alpha { 0.0f };    // interpolation factor
    };
 
    // Extensible entrypoint.
@@ -81,6 +83,7 @@ private:
    NO_COPY_MOVE( RenderSystem )
 
    void DrawTerrain( const FrameContext& ctx );
+   void DrawItemDrops( const FrameContext& ctx );
    void DrawBlockHighlight( const FrameContext& ctx );
    void DrawSkybox( const FrameContext& ctx );
    void DrawReticle( const FrameContext& ctx );
