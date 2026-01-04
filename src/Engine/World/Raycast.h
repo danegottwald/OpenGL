@@ -21,5 +21,5 @@ struct RaycastResult
 };
 
 
-Ray                            CreateRay( const glm::vec3& origin, const glm::quat& rotation, float maxDistance );
+Ray                            CreateRay( const glm::vec3& origin, const glm::vec3& rotation, float maxDistance );
 std::optional< RaycastResult > TryRaycast( const Level& level, const Ray& ray );

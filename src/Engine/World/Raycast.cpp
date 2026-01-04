@@ -7,7 +7,7 @@
 #include <Engine/ECS/Components/Camera.h>
 
 
-Ray CreateRay( const glm::vec3& origin, const glm::quat& rotation, float maxDistance )
+Ray CreateRay( const glm::vec3& origin, const glm::vec3& rotation, float maxDistance )
 {
    const float pitch = glm::radians( rotation.x );
    const float yaw   = glm::radians( rotation.y );
