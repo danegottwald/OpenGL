@@ -51,18 +51,16 @@ public:
 
    enum class BlockFace : uint8_t
    {
-      East,
-      West,
-      Top,
-      Bottom,
-      South,
-      North,
+      North  = 0,
+      East   = 1,
+      South  = 2,
+      West   = 3,
+      Top    = 4,
+      Bottom = 5,
       Count
    };
-   const Region& GetRegion( BlockId blockId, BlockFace face ) const
-   {
-      return m_regions.at( m_blockFaceKeys[ static_cast< size_t >( blockId ) ].faceKeys[ static_cast< size_t >( face ) ] );
-   }
+   const Region& GetRegion( BlockId blockId, BlockFace face ) const;
+   const Region& GetRegion( BlockState state, BlockFace face ) const;
 
 private:
    struct PendingTexture
@@ -100,6 +98,7 @@ public:
    void                        Unbind() const { m_blockAtlas.Unbind(); }
 
    const TextureAtlas::Region& GetRegion( BlockId blockId, TextureAtlas::BlockFace face ) const { return m_blockAtlas.GetRegion( blockId, face ); }
+   const TextureAtlas::Region& GetRegion( BlockState state, TextureAtlas::BlockFace face ) const { return m_blockAtlas.GetRegion( state, face ); }
 
 private:
    TextureAtlasManager() noexcept = default;

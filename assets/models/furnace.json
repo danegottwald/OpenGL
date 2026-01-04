@@ -1,0 +1,10 @@
+{
+  "textures": {
+    "top": "assets/textures/blocks/furnace_top.png",
+    "bottom": "assets/textures/blocks/furnace_top.png",
+    "north": "assets/textures/blocks/furnace_side.png",
+    "east": "assets/textures/blocks/furnace_side.png",
+    "south": "assets/textures/blocks/furnace_front.png",
+    "west": "assets/textures/blocks/furnace_side.png"
+  }
+}

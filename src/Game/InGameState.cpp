@@ -416,16 +416,6 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
       direction = glm::normalize( direction );
 
       const glm::vec3 rayOrigin = pCamTran->position;
-
-      Entity::Entity projectile = registry.Create();
-      registry.Add< CTransform >( projectile, rayOrigin + direction );
-      registry.Add< CMesh >( projectile, std::make_shared< SphereMesh >( 0.1f ) );
-      registry.Add< CVelocity >( projectile, direction * 120.0f );
-      registry.Add< CPhysics >( projectile, CPhysics { .bbMin = glm::vec3( -0.05f ), .bbMax = glm::vec3( 0.05f ), .bounciness = 0.01f } );
-      registry.Add< CProjectile >( projectile, CProjectile { .damage = 10, .owner = m_player, .fDestroyOnHit = true } );
-      registry.Add< CTick >( projectile, 0, 200 );
-      return;
-
       if( std::optional< RaycastResult > result = TryRaycast( *m_pLevel, Ray { rayOrigin, direction, 64.0f } ) )
       {
          switch( e.GetMouseButton() )
@@ -433,15 +423,35 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
             case Input::ButtonLeft:
             {
                const glm::ivec3 pos = result->block;
-               m_pLevel->SetBlock( pos, BlockId::Air );
+               m_pLevel->SetBlock( pos, BlockState( BlockId::Air ) );
                Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( BlockId::Air ), 1 );
                break;
             }
             case Input::ButtonRight:
             {
-               const glm::ivec3 pos = result->block + result->faceNormal;
-               m_pLevel->SetBlock( pos, BlockId::Stone );
-               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( BlockId::Stone ), 0 );
+               const glm::ivec3 pos          = result->block + result->faceNormal;
+               BlockId          blockToPlace = BlockId::Furnace;
+               BlockOrientation orientation  = BlockOrientation::North;
+               if( CTransform* pCamTran = registry.TryGet< CTransform >( m_camera ) )
+               {
+                  float yaw = glm::mod( pCamTran->rotation.y, 360.0f );
+                  if( yaw < 0 )
+                     yaw += 360.0f;
+
+                  const glm::ivec3& face = result->faceNormal;
+                  orientation            = ( face.y != 0 ) ? static_cast< BlockOrientation >( static_cast< int >( ( yaw + 45.0f ) / 90.0f ) % 4 ) // top/bottom
+                                           : ( face.x == 1 )  ? BlockOrientation::West
+                                           : ( face.x == -1 ) ? BlockOrientation::East
+                                           : ( face.z == 1 )  ? BlockOrientation::North
+                                           : ( face.z == -1 ) ? BlockOrientation::South
+                                                              : BlockOrientation::North; // fallback
+               }
+
+               BlockState state( blockToPlace, orientation );
+               m_pLevel->SetBlock( pos, state );
+
+               // Network should send state, not just blockId. Otherwise orientation info is lost.
+               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( state.GetId() ), 0 );
                break;
             }
             case Input::ButtonMiddle: m_pLevel->Explode( result->block, 36 ); break;
@@ -452,7 +462,7 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
    m_events.Subscribe< Events::NetworkBlockUpdateEvent >( [ this ]( const Events::NetworkBlockUpdateEvent& e ) noexcept
    {
       if( m_pLevel )
-         m_pLevel->SetBlock( e.GetBlockPos(), static_cast< BlockId >( e.GetBlockId() ) );
+         m_pLevel->SetBlock( e.GetBlockPos(), BlockState( static_cast< BlockId >( e.GetBlockId() ) ) );
    } );
 
    TextureAtlasManager::Get().CompileBlockAtlas();

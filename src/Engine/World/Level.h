@@ -84,8 +84,8 @@ public:
    ChunkSection()  = default;
    ~ChunkSection() = default;
 
-   BlockId GetBlock( int x, int y, int z ) const noexcept;
-   void    SetBlock( int x, int y, int z, BlockId id );
+   BlockState GetBlock( int x, int y, int z ) const noexcept;
+   void       SetBlock( int x, int y, int z, BlockState state );
 
    bool FDirty() const noexcept { return m_fDirty; }
    void ClearDirty() noexcept { m_fDirty = false; }
@@ -96,8 +96,8 @@ private:
    static size_t ToIndex( int x, int y, int z ) noexcept;
    static bool   FInBounds( int x, int y, int z ) noexcept;
 
-   std::array< BlockId, CHUNK_SECTION_VOLUME > m_blocks { BlockId::Air };
-   bool                                        m_fDirty { true };
+   std::array< BlockState, CHUNK_SECTION_VOLUME > m_blocks { BlockState( BlockId::Air ) };
+   bool                                           m_fDirty { true };
 };
 
 class Chunk
@@ -105,8 +105,8 @@ class Chunk
 public:
    Chunk( class Level& level, int cx, int cy, int cz );
 
-   BlockId GetBlock( int x, int y, int z ) const noexcept;
-   void    SetBlock( int x, int y, int z, BlockId id );
+   BlockState GetBlock( int x, int y, int z ) const noexcept;
+   void       SetBlock( int x, int y, int z, BlockState state );
 
    int  ChunkX() const { return m_chunkX; }
    int  ChunkY() const { return m_chunkY; }
@@ -157,9 +157,9 @@ public:
    void SaveMeta() const;
    void SavePlayer( const glm::vec3& playerPos ) const;
 
-   BlockId GetBlock( int wx, int wy, int wz ) const noexcept;
-   void    SetBlock( int wx, int wy, int wz, BlockId id );
-   void    SetBlock( glm::ivec3 pos, BlockId id ) { SetBlock( pos.x, pos.y, pos.z, id ); }
+   BlockState GetBlock( int wx, int wy, int wz ) const noexcept;
+   void       SetBlock( int wx, int wy, int wz, BlockState state );
+   void       SetBlock( glm::ivec3 pos, BlockState state ) { SetBlock( pos.x, pos.y, pos.z, state ); }
 
    void Explode( int wx, int wy, int wz, uint8_t radius );
    void Explode( glm::ivec3 pos, uint8_t radius ) { Explode( pos.x, pos.y, pos.z, radius ); }

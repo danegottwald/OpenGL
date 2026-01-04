@@ -237,14 +237,14 @@ void TextureAtlas::PrepareTexture( BlockId blockId )
       auto getString = []( const Json::Value& v, const char* k ) -> std::string { return v.isMember( k ) ? v[ k ].asString() : ""; };
       top            = getString( attrTexture, "top" );
       bottom         = getString( attrTexture, "bottom" );
-      if( std::string side = getString( attrTexture, "side" ); !side.empty() )
-         north = south = west = east = side;
+      if( const std::string side = getString( attrTexture, "side" ); !side.empty() )
+         north = east = south = west = side;
       else
       {
          north = getString( attrTexture, "north" );
+         east  = getString( attrTexture, "east" );
          south = getString( attrTexture, "south" );
          west  = getString( attrTexture, "west" );
-         east  = getString( attrTexture, "east" );
       }
    }
    else
@@ -257,12 +257,12 @@ void TextureAtlas::PrepareTexture( BlockId blockId )
 
    // Prepare all face textures
    auto& keys                                                  = m_blockFaceKeys[ static_cast< size_t >( blockId ) ];
-   keys.faceKeys[ static_cast< size_t >( BlockFace::Top ) ]    = addPath( top );
-   keys.faceKeys[ static_cast< size_t >( BlockFace::Bottom ) ] = addPath( bottom );
    keys.faceKeys[ static_cast< size_t >( BlockFace::North ) ]  = addPath( north );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::East ) ]   = addPath( east );
    keys.faceKeys[ static_cast< size_t >( BlockFace::South ) ]  = addPath( south );
    keys.faceKeys[ static_cast< size_t >( BlockFace::West ) ]   = addPath( west );
-   keys.faceKeys[ static_cast< size_t >( BlockFace::East ) ]   = addPath( east );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::Top ) ]    = addPath( top );
+   keys.faceKeys[ static_cast< size_t >( BlockFace::Bottom ) ] = addPath( bottom );
 }
 
 void TextureAtlas::Compile()
@@ -364,6 +364,34 @@ void TextureAtlas::Unbind() const
    glBindTexture( GL_TEXTURE_2D, 0 );
 }
 
+
+const TextureAtlas::Region& TextureAtlas::GetRegion( BlockId blockId, BlockFace face ) const
+{
+   return m_regions.at( m_blockFaceKeys[ static_cast< size_t >( blockId ) ].faceKeys[ static_cast< size_t >( face ) ] );
+}
+
+
+const TextureAtlas::Region& TextureAtlas::GetRegion( BlockState state, BlockFace face ) const
+{
+   BlockFace rotatedFace = face;
+   if( face <= BlockFace::West )
+   {
+      // Table: [Orientation][Face] -> RotatedFace
+      // North = 0°, East = 90°, South = 180°, West = 270°
+      static constexpr BlockFace rotationTable[ 4 ][ 4 ] = {
+         { BlockFace::North, BlockFace::East,  BlockFace::South, BlockFace::West  }, // North (0°)
+         { BlockFace::West,  BlockFace::North, BlockFace::East,  BlockFace::South }, // East (90° clockwise)
+         { BlockFace::South, BlockFace::West,  BlockFace::North, BlockFace::East  }, // South (180°)
+         { BlockFace::East,  BlockFace::South, BlockFace::West,  BlockFace::North }  // West (270° clockwise)
+      };
+
+      const BlockOrientation ori = state.GetOrientation();
+      if( ori <= BlockOrientation::West )
+         rotatedFace = rotationTable[ static_cast< uint8_t >( ori ) ][ static_cast< uint8_t >( face ) ];
+   }
+
+   return GetRegion( state.GetId(), rotatedFace );
+}
 
 // ----------------------------------------------------------------
 // TextureAtlasManager

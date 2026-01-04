@@ -6,22 +6,22 @@
 // ----------------------------------------------------------------
 // ChunkSection
 // ----------------------------------------------------------------
-BlockId ChunkSection::GetBlock( int x, int y, int z ) const noexcept
+BlockState ChunkSection::GetBlock( int x, int y, int z ) const noexcept
 {
-   return FInBounds( x, y, z ) ? m_blocks[ ToIndex( x, y, z ) ] : BlockId::Air;
+   return FInBounds( x, y, z ) ? m_blocks[ ToIndex( x, y, z ) ] : BlockState( BlockId::Air );
 }
 
 
-void ChunkSection::SetBlock( int x, int y, int z, BlockId id )
+void ChunkSection::SetBlock( int x, int y, int z, BlockState state )
 {
    if( !FInBounds( x, y, z ) )
       return;
 
    const size_t idx = ToIndex( x, y, z );
-   if( m_blocks[ idx ] == id )
+   if( m_blocks[ idx ] == state )
       return;
 
-   m_blocks[ idx ] = id;
+   m_blocks[ idx ] = state;
    m_fDirty        = true;
 }
 
@@ -55,12 +55,12 @@ bool Chunk::FLoadFromDisk()
    if( !World::WorldSave::FLoadChunkBytes( m_level.m_worldDir, GetCoord3(), bytes ) )
       return false;
 
-   const size_t needed = static_cast< size_t >( CHUNK_VOLUME ) * sizeof( BlockId );
+   const size_t needed = static_cast< size_t >( CHUNK_VOLUME ) * sizeof( BlockState );
    if( bytes.size() != needed )
       return false;
 
-   size_t         p   = 0;
-   const BlockId* src = reinterpret_cast< const BlockId* >( bytes.data() );
+   size_t            p   = 0;
+   const BlockState* src = reinterpret_cast< const BlockState* >( bytes.data() );
    for( int y = 0; y < CHUNK_SIZE_Y; ++y )
    {
       for( int z = 0; z < CHUNK_SIZE_Z; ++z )
@@ -82,8 +82,8 @@ void Chunk::SaveToDisk()
       return;
 
    // Persist in the original flat format for compatibility.
-   std::vector< BlockId > flat;
-   flat.resize( static_cast< size_t >( CHUNK_VOLUME ), BlockId::Air );
+   std::vector< BlockState > flat;
+   flat.resize( static_cast< size_t >( CHUNK_VOLUME ), BlockState( BlockId::Air ) );
 
    size_t p = 0;
    for( int y = 0; y < CHUNK_SIZE_Y; ++y )
@@ -95,17 +95,17 @@ void Chunk::SaveToDisk()
       }
    }
 
-   const auto byteSpan = std::span< const std::byte >( reinterpret_cast< const std::byte* >( flat.data() ), flat.size() * sizeof( BlockId ) );
+   const auto byteSpan = std::span< const std::byte >( reinterpret_cast< const std::byte* >( flat.data() ), flat.size() * sizeof( BlockState ) );
    World::WorldSave::FSaveChunkBytes( m_level.m_worldDir, GetCoord3(), byteSpan );
 
    ClearDirty( ChunkDirty::Save );
 }
 
 
-BlockId Chunk::GetBlock( int x, int y, int z ) const noexcept
+BlockState Chunk::GetBlock( int x, int y, int z ) const noexcept
 {
    if( !FInBounds( x, y, z ) )
-      return BlockId::Air;
+      return BlockState( BlockId::Air );
 
    const int sIndex = ToSectionIndex( y );
    const int ly     = ToSectionLocalY( y );
@@ -113,17 +113,17 @@ BlockId Chunk::GetBlock( int x, int y, int z ) const noexcept
 }
 
 
-void Chunk::SetBlock( int x, int y, int z, BlockId id )
+void Chunk::SetBlock( int x, int y, int z, BlockState state )
 {
    if( !FInBounds( x, y, z ) )
       return;
 
    const int sIndex = ToSectionIndex( y );
    const int ly     = ToSectionLocalY( y );
-   if( m_sections[ sIndex ].GetBlock( x, ly, z ) == id )
+   if( m_sections[ sIndex ].GetBlock( x, ly, z ) == state )
       return;
 
-   m_sections[ sIndex ].SetBlock( x, ly, z, id );
+   m_sections[ sIndex ].SetBlock( x, ly, z, state );
 
    MarkDirty( ChunkDirty::Save | ChunkDirty::Mesh );
    ++m_meshRevision;
@@ -210,11 +210,11 @@ std::tuple< ChunkCoord, glm::ivec3 > Level::WorldToChunk( int wx, int wy, int wz
 }
 
 
-BlockId Level::GetBlock( int wx, int wy, int wz ) const noexcept
+BlockState Level::GetBlock( int wx, int wy, int wz ) const noexcept
 {
    auto [ cc, local ] = WorldToChunk( wx, wy, wz );
    auto it            = m_chunks.find( cc );
-   return it != m_chunks.end() ? it->second.GetBlock( local.x, local.y, local.z ) : BlockId::Air;
+   return it != m_chunks.end() ? it->second.GetBlock( local.x, local.y, local.z ) : BlockState( BlockId::Air );
 }
 
 
@@ -236,12 +236,12 @@ void Level::MarkChunkAndNeighborsMeshDirty( const ChunkCoord& cc )
 }
 
 
-void Level::SetBlock( int wx, int wy, int wz, BlockId id )
+void Level::SetBlock( int wx, int wy, int wz, BlockState state )
 {
    auto [ cc, local ] = WorldToChunk( wx, wy, wz );
-   Chunk& chunk       = EnsureChunk( cc );
 
-   chunk.SetBlock( local.x, local.y, local.z, id );
+   Chunk& chunk = EnsureChunk( cc );
+   chunk.SetBlock( local.x, local.y, local.z, state );
 
    // Changing a boundary block can affect neighbor faces.
    if( local.x == 0 || local.x == CHUNK_SIZE_X - 1 || local.z == 0 || local.z == CHUNK_SIZE_Z - 1 )
@@ -262,7 +262,6 @@ void Level::Explode( int wx, int wy, int wz, uint8_t radius )
    int   maxZ     = static_cast< int >( std::ceil( wz + radius ) );
 
    std::unordered_set< ChunkCoord, ChunkCoordHash > touched;
-
    for( int x = minX; x <= maxX; ++x )
    {
       for( int y = minY; y <= maxY; ++y )
@@ -277,7 +276,7 @@ void Level::Explode( int wx, int wy, int wz, uint8_t radius )
 
             auto [ cc, local ] = WorldToChunk( x, y, z );
             Chunk& chunk       = EnsureChunk( cc );
-            chunk.SetBlock( local.x, local.y, local.z, BlockId::Air );
+            chunk.SetBlock( local.x, local.y, local.z, BlockState( BlockId::Air ) );
             touched.insert( cc );
          }
       }
@@ -294,7 +293,7 @@ int Level::GetSurfaceY( int wx, int wz ) noexcept
    for( int wy = CHUNK_SIZE_Y; wy >= 0; --wy )
    {
       auto [ _, local ] = WorldToChunk( wx, wy, wz );
-      if( chunk.GetBlock( local.x, local.y, local.z ) != BlockId::Air )
+      if( chunk.GetBlock( local.x, local.y, local.z ).GetId() != BlockId::Air )
          return wy;
    }
 
@@ -374,7 +373,7 @@ void Level::GenerateChunkData( Chunk& chunk )
             else
                id = BlockId::Dirt;
 
-            chunk.SetBlock( x, y, z, id );
+            chunk.SetBlock( x, y, z, BlockState( id ) );
          }
       }
    }
