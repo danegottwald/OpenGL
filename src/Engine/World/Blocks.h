@@ -5,13 +5,13 @@
 // ------------------------------------------------------------
 enum class BlockId : uint16_t
 {
-   Air,
-   Dirt,
-   Stone,
-   Grass,
-   Bedrock,
-   Furnace, // Added for testing orientation
-   Count    // Keep as last, new entries should be inserted before this
+   Air     = 0,
+   Dirt    = 1,
+   Stone   = 2,
+   Grass   = 3,
+   Bedrock = 4,
+   Furnace = 5,
+   Count // Keep as last, new entries should be inserted before this
 };
 
 
@@ -25,27 +25,60 @@ enum class BlockOrientation : uint8_t
    South = 2,
    West  = 3,
    Up    = 4,
-   Down  = 5,
-   None  = 6
+   Down  = 5
 };
 
-// ------------------------------------------------------------
-// Block State - Compact 16-bit storage for ID + Metadata
-// ------------------------------------------------------------
-struct BlockState
-{
-   uint16_t                  data        = 0;
-   static constexpr uint16_t ID_MASK     = 0x0FFF;
-   static constexpr uint16_t ORIENT_MASK = 0xF000;
 
+// ------------------------------------------------------------
+// Block Properties - default metadata per block type
+// ------------------------------------------------------------
+struct BlockProperties
+{
+   BlockId          id { BlockId::Air };
+   BlockOrientation orientation { BlockOrientation::North };
+   // add more fields as needed
+};
+
+
+// ------------------------------------------------------------
+// Block State - packed per-block instance data
+// ------------------------------------------------------------
+class BlockState
+{
+public:
    constexpr BlockState() = default;
-   constexpr BlockState( BlockId id, BlockOrientation o = BlockOrientation::North ) :
-      data( ( static_cast< uint16_t >( id ) & ID_MASK ) | ( static_cast< uint16_t >( o ) << 12 ) )
+   constexpr explicit BlockState( BlockId id ) :
+      BlockState( BlockProperties { .id = id } )
    {}
+   constexpr explicit BlockState( const BlockProperties& props )
+   {
+      uint16_t bits = 0;
+      bits          = IdField::Insert( bits, static_cast< uint16_t >( props.id ) );
+      bits          = OrientationField::Insert( bits, static_cast< uint16_t >( props.orientation ) );
+      data          = bits;
+   }
 
    constexpr bool             operator==( const BlockState& other ) const = default;
-   constexpr BlockId          GetId() const { return static_cast< BlockId >( data & ID_MASK ); }
-   constexpr BlockOrientation GetOrientation() const { return static_cast< BlockOrientation >( ( data >> 12 ) & 0xF ); }
+   constexpr BlockProperties  GetProperties() const { return BlockProperties { .id = GetId(), .orientation = GetOrientation() }; }
+   constexpr BlockId          GetId() const { return static_cast< BlockId >( IdField::Extract( data ) ); }
+   constexpr BlockOrientation GetOrientation() const { return static_cast< BlockOrientation >( OrientationField::Extract( data ) ); }
+
+private:
+   // Bit helper
+   template< uint16_t StartBit, uint16_t BitCount >
+   struct Field
+   {
+      static constexpr uint16_t mask = ( ( 1u << BitCount ) - 1 ) << StartBit;
+      static constexpr uint16_t Extract( uint16_t v ) { return ( v & mask ) >> StartBit; }
+      static constexpr uint16_t Insert( uint16_t v, uint16_t f ) { return ( v & ~mask ) | ( ( f << StartBit ) & mask ); }
+   };
+
+   // Layout of BlockState
+   using IdField          = Field< 0, 12 >; // 12 bits for BlockId
+   using OrientationField = Field< 12, 3 >; // 3 bits for orientation
+
+   // Stored data
+   uint32_t data { 0 };
 };
 
 
@@ -89,21 +122,7 @@ inline constexpr std::array BlockData = {
    BlockInfo { BlockId::Bedrock, "assets/models/bedrock.json", BlockFlag::Solid | BlockFlag::Opaque },
    BlockInfo { BlockId::Furnace, "assets/models/furnace.json", BlockFlag::Solid | BlockFlag::Opaque },
 };
-
-
-constexpr const BlockInfo& GetBlockInfo( BlockId id ) noexcept
-{
-   return BlockData[ static_cast< size_t >( id ) ];
-}
-
-constexpr const BlockInfo& GetBlockInfo( BlockState state ) noexcept
-{
-   return GetBlockInfo( state.GetId() );
-}
-
-
-// compile-time eval
-constexpr auto _blockDataValidation = []()
+constexpr auto _blockDataValidation = []() // compile-time validation of BlockData
 {
    static_assert( std::size( BlockData ) == static_cast< size_t >( BlockId::Count ), "BlockData size mismatch" );
    if constexpr( std::any_of( BlockData.begin(),
@@ -113,6 +132,18 @@ constexpr auto _blockDataValidation = []()
 
    return 0;
 }();
+
+
+constexpr const BlockInfo& GetBlockInfo( BlockId id ) noexcept
+{
+   return BlockData[ static_cast< size_t >( id ) ];
+}
+
+
+constexpr const BlockInfo& GetBlockInfo( BlockState state ) noexcept
+{
+   return GetBlockInfo( state.GetId() );
+}
 
 
 // ------------------------------------------------------------
@@ -129,6 +160,7 @@ constexpr bool FSolid( BlockId id ) noexcept
 {
    return FHasFlag( GetBlockInfo( id ).flags, BlockFlag::Solid );
 }
+
 
 constexpr bool FSolid( BlockState state ) noexcept
 {

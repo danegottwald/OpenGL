@@ -385,8 +385,7 @@ const TextureAtlas::Region& TextureAtlas::GetRegion( BlockState state, BlockFace
          { BlockFace::East,  BlockFace::South, BlockFace::West,  BlockFace::North }  // West (270° clockwise)
       };
 
-      const BlockOrientation ori = state.GetOrientation();
-      if( ori <= BlockOrientation::West )
+      if( const BlockOrientation ori = state.GetOrientation(); ori <= BlockOrientation::West )
          rotatedFace = rotationTable[ static_cast< uint8_t >( ori ) ][ static_cast< uint8_t >( face ) ];
    }
 

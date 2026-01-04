@@ -434,20 +434,31 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
                BlockOrientation orientation  = BlockOrientation::North;
                if( CTransform* pCamTran = registry.TryGet< CTransform >( m_camera ) )
                {
-                  float yaw = glm::mod( pCamTran->rotation.y, 360.0f );
-                  if( yaw < 0 )
-                     yaw += 360.0f;
+                  orientation = [ & ]() -> BlockOrientation
+                  {
+                     const glm::ivec3& face = result->faceNormal;
+                     float             yaw  = glm::mod( pCamTran->rotation.y, 360.0f ); // normalize to [0, 360)
+                     if( yaw < 0.0f )
+                        yaw += 360.0f;
 
-                  const glm::ivec3& face = result->faceNormal;
-                  orientation            = ( face.y != 0 ) ? static_cast< BlockOrientation >( static_cast< int >( ( yaw + 45.0f ) / 90.0f ) % 4 ) // top/bottom
-                                           : ( face.x == 1 )  ? BlockOrientation::West
-                                           : ( face.x == -1 ) ? BlockOrientation::East
-                                           : ( face.z == 1 )  ? BlockOrientation::North
-                                           : ( face.z == -1 ) ? BlockOrientation::South
-                                                              : BlockOrientation::North; // fallback
+                     if( face.y != 0 ) // Top or bottom face
+                        return static_cast< BlockOrientation >( static_cast< int >( ( yaw + 45.0f ) / 90.0f ) % 4 );
+
+                     // Side faces
+                     if( face.z == 1 )
+                        return BlockOrientation::North;
+                     if( face.x == -1 )
+                        return BlockOrientation::East;
+                     if( face.z == -1 )
+                        return BlockOrientation::South;
+                     if( face.x == 1 )
+                        return BlockOrientation::West;
+
+                     return BlockOrientation::North; // fallback
+                  }();
                }
 
-               BlockState state( blockToPlace, orientation );
+               BlockState state( { .id = blockToPlace, .orientation = orientation } );
                m_pLevel->SetBlock( pos, state );
 
                // Network should send state, not just blockId. Otherwise orientation info is lost.
