@@ -226,7 +226,7 @@ static void PhysicsSystem( Entity::Registry& registry, Level& level, float tickI
 
    for( auto [ entity, tran, vel, phys ] : registry.ECView< CTransform, CVelocity, CPhysics >() )
    {
-      tran.prevPosition = tran.position; // Save previous position for interpolation
+      tran.RecordPrev(); // Record previous transform state for interpolation
 
       phys.fOnGround = computeGrounded( tran.position, phys.bbMin, phys.bbMax );
       if( !phys.fOnGround )

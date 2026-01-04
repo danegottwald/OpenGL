@@ -58,6 +58,9 @@ public:
    // Returns the interpolation delta in seconds (already multiplied by tick interval)
    float GetInterpolationDelta() const noexcept { return m_accumulator; }
 
+   // Get total elapsed time since start in seconds
+   float GetTotalTime() const noexcept { return m_tick * m_interval + m_accumulator; }
+
    uint64_t GetTickCount() const noexcept { return m_tick; }
 
 private:

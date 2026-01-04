@@ -340,23 +340,44 @@ void RenderSystem::DrawBlockHighlight( const FrameContext& ctx )
    if( !ctx.optHighlightBlock.has_value() )
       return;
 
-   static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
+   static Shader s_highlightShader( Shader::SOURCE,
+                                    R"(
+      #version 330 core
+      layout(location = 0) in vec3 a_position;
+      uniform mat4 u_mvp;
+      void main(){ gl_Position = u_mvp * vec4(a_position,1.0); }
+      )",
+                                    R"(
+      #version 330 core
+      uniform vec3 u_color;
+      out vec4 FragColor;
+      void main(){ FragColor = vec4(u_color,1.0); }
+      )" );
 
    s_wireCube.Ensure();
 
    const glm::vec3 blockPos = glm::vec3( ctx.optHighlightBlock.value() );
-   const glm::mat4 model    = glm::scale( glm::translate( glm::mat4( 1.0f ), blockPos + glm::vec3( 0.5f ) ), glm::vec3( 1.02f ) );
+   const glm::mat4 model    = glm::scale( glm::translate( glm::mat4( 1.0f ), blockPos + glm::vec3( 0.5f ) ), glm::vec3( 1.01f ) );
    const glm::mat4 mvp      = ctx.viewProjection * model;
 
-   s_terrainShader.Bind();
-   s_terrainShader.SetUniform( "u_mvp", mvp );
-   s_terrainShader.SetUniform( "u_model", model );
+   // Pulsating color
+   float     pulsePeriod    = 2.0f; // seconds for a full pulse (0 -> 1 -> 0)
+   float     pulse          = 0.5f + 0.5f * std::sin( ctx.time.GetTotalTime() * ( 2.0f * glm::pi< float >() / pulsePeriod ) );
+   glm::vec3 highlightColor = glm::vec3( 1.0f, 0.5f, 0.0f ) * pulse; // orange color
+
+   s_highlightShader.Bind();
+   s_highlightShader.SetUniform( "u_mvp", mvp );
+   s_highlightShader.SetUniform( "u_color", highlightColor );
+
+   glDisable( GL_DEPTH_TEST ); // disable depth testing, render over everything
 
    glBindVertexArray( s_wireCube.vao );
    glDrawElements( GL_LINES, 24, GL_UNSIGNED_INT, 0 );
    glBindVertexArray( 0 );
 
-   s_terrainShader.Unbind();
+   glEnable( GL_DEPTH_TEST ); // restore depth testing
+
+   s_highlightShader.Unbind();
 }
 
 
@@ -372,24 +393,40 @@ void RenderSystem::DrawSkybox( const FrameContext& ctx )
 }
 
 
-void RenderSystem::DrawReticle( const FrameContext& /*ctx*/ )
+void RenderSystem::DrawReticle( const FrameContext& ctx )
 {
-   static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
+   static Shader s_reticleShader( Shader::SOURCE,
+                                  R"(
+       #version 330 core
+       layout(location = 0) in vec3 a_position;
+       uniform float u_aspect;
+       void main() { gl_Position = vec4(a_position.x / u_aspect, a_position.y, a_position.z, 1.0); }
+       )",
+                                  R"(
+       #version 330 core
+       uniform vec3 u_color;
+       out vec4 FragColor;
+       void main() { FragColor = vec4(u_color, 1.0); }
+       )" );
 
    s_reticle.Ensure();
 
-   glDisable( GL_DEPTH_TEST );
+   s_reticleShader.Bind();
+   s_reticleShader.SetUniform( "u_color", glm::vec3( 1.0f ) ); // white reticle
 
-   s_terrainShader.Bind();
-   s_terrainShader.SetUniform( "u_mvp", glm::mat4( 1.0f ) );
+   GLint vp[ 4 ];
+   glGetIntegerv( GL_VIEWPORT, vp );
+   s_reticleShader.SetUniform( "u_aspect", float( vp[ 2 ] ) / float( vp[ 3 ] ) );
+
+   glDisable( GL_DEPTH_TEST ); // disable depth testing, render over everything
 
    glBindVertexArray( s_reticle.vao );
    glDrawArrays( GL_LINES, 0, 4 );
    glBindVertexArray( 0 );
 
-   s_terrainShader.Unbind();
+   glEnable( GL_DEPTH_TEST ); // restore depth testing
 
-   glEnable( GL_DEPTH_TEST );
+   s_reticleShader.Unbind();
 }
 
 } // namespace Engine
