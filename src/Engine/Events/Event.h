@@ -6,10 +6,15 @@ namespace Events
 //=========================================================================
 // Thread Utilities
 //=========================================================================
-static const std::thread::id g_mainThreadID = std::this_thread::get_id();
-inline bool                  FIsMainThread() noexcept
+inline const std::thread::id& GetMainThreadID()
 {
-   return std::this_thread::get_id() == g_mainThreadID;
+   static const std::thread::id id = std::this_thread::get_id();
+   return id;
+}
+
+inline bool FIsMainThread() noexcept
+{
+   return std::this_thread::get_id() == GetMainThreadID();
 }
 
 //=========================================================================
@@ -109,7 +114,7 @@ public:
    {
       RegisterSubscriber( TEvent::GetStaticType(), this );
       m_events[ TEvent::GetStaticType() ] = { true,
-                                              [ cb = std::forward< F >( callback ) ]( const IEvent& event ) noexcept
+                                              [ cb = std::decay_t< F >( std::forward< F >( callback ) ) ]( const IEvent& event ) noexcept
       { cb( static_cast< const TEvent& >( event ) ); } };
    }
 
@@ -128,7 +133,7 @@ public:
    }
 
 private:
-   void DispatchToCallbacks( const IEvent& event )
+   void DispatchToCallbacks( const IEvent& event ) noexcept
    {
       if( auto it = m_events.find( event.GetEventType() ); it != m_events.end() && it->second.m_fEnabled )
          it->second.m_callback( event );
@@ -184,7 +189,7 @@ private:
 
    // Friend functions for dispatching events
    template< typename TEvent, typename... Args >
-   friend void Dispatch( Args&&... args );
+   friend void Dispatch( Args... args );
    friend void Dispatch( std::shared_ptr< IEvent > psEvent );
    friend void ProcessQueuedEvents();
 };
@@ -193,9 +198,10 @@ private:
 // Global Dispatch Functions
 //=========================================================================
 template< typename TEvent, typename... Args >
-inline void Dispatch( Args&&... args )
+inline void Dispatch( Args... args )
 {
-   EventSubscriber::DispatchToSubscribers( std::make_shared< TEvent >( std::forward< Args >( args )... ) );
+   static_assert( std::is_base_of_v< IEvent, TEvent > );
+   EventSubscriber::DispatchToSubscribers( std::make_shared< TEvent >( std::move( args )... ) );
 }
 
 inline void Dispatch( std::shared_ptr< IEvent > psEvent )
