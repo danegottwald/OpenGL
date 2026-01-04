@@ -305,15 +305,15 @@ void RenderSystem::DrawItemDrops( const FrameContext& ctx )
       if( !frustum.FInFrustum( tran.position + phys.bbMin, tran.position + phys.bbMax ) )
          continue;
 
-      // Smooth animation: lifetime + dtSinceLastTick
-      const float lifetimeSmooth = drop.tickLifetime * ctx.time.GetInterval() + ctx.time.GetInterpolationDelta();
+      // Interpolate position
+      glm::vec3 renderPos = tran.prevPosition + ( tran.position - tran.prevPosition ) * ctx.time.GetAlpha();
 
-      // Bobbing (above ground)
-      glm::vec3 renderPos = tran.position;
-      renderPos.y += std::sin( lifetimeSmooth * BOB_SPEED ) * BOB_HEIGHT + BOB_HEIGHT;
+      // Bobbing effect
+      const float t = ( drop.maxTicks - drop.ticksRemaining ) * ctx.time.GetInterval() + ctx.time.GetInterpolationDelta();
+      renderPos.y += std::sin( t * BOB_SPEED ) * BOB_HEIGHT + BOB_HEIGHT;
 
-      // Rotation
-      float rotationY = lifetimeSmooth * ROTATION_SPEED;
+      // Rotation around Y axis
+      float rotationY = t * ROTATION_SPEED;
 
       glm::mat4 model = glm::translate( glm::mat4( 1.0f ), renderPos );
       model           = glm::rotate( model, glm::radians( tran.rotation.x ), glm::vec3( 1, 0, 0 ) );

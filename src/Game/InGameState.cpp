@@ -224,11 +224,22 @@ static void PhysicsSystem( Entity::Registry& registry, Level& level, float tickI
          phys.fOnGround = true;
    };
 
-   for( auto [ tran, vel, phys ] : registry.CView< CTransform, CVelocity, CPhysics >() )
+   for( auto [ entity, tran, vel, phys ] : registry.ECView< CTransform, CVelocity, CPhysics >() )
    {
+      tran.prevPosition = tran.position; // Save previous position for interpolation
+
       phys.fOnGround = computeGrounded( tran.position, phys.bbMin, phys.bbMax );
       if( !phys.fOnGround )
          vel.velocity.y = ( std::max )( vel.velocity.y + ( GRAVITY * tickInterval ), TERMINAL_VELOCITY );
+
+      // Apply ground friction if we are on ground and aren't player-controlled
+      if( phys.fOnGround && !registry.TryGet< CInput >( entity ) )
+      {
+         constexpr float GROUND_FRICTION = 10.0f;
+         const float     friction        = std::pow( 0.5f, tickInterval * GROUND_FRICTION );
+         vel.velocity.x *= friction;
+         vel.velocity.z *= friction;
+      }
 
       const glm::vec3 step = vel.velocity * tickInterval;
       moveAndCollideAxis( tran.position, vel.velocity, phys, step.y, Axis::Y );
@@ -308,16 +319,21 @@ static void ItemDropSystem( Entity::Registry& registry, float tickInterval )
    constexpr float DROP_LIFETIME_SECONDS = 300.0f;
    const uint64_t  DROP_LIFETIME_TICKS   = static_cast< uint64_t >( DROP_LIFETIME_SECONDS / tickInterval );
 
-   std::unordered_set< Entity::Entity > entitiesToDestroy;
+   std::vector< Entity::Entity > toDestroy;
    for( auto [ e, drop ] : registry.ECView< CItemDrop >() )
    {
-      if( drop.tickLifetime++ < DROP_LIFETIME_TICKS )
-         continue;
+      // Initialize drop lifetime on first update
+      if( drop.ticksRemaining == 0 )
+      {
+         drop.maxTicks       = DROP_LIFETIME_TICKS;
+         drop.ticksRemaining = drop.maxTicks;
+      }
 
-      entitiesToDestroy.insert( e );
+      if( --drop.ticksRemaining == 0 )
+         toDestroy.push_back( e );
    }
 
-   for( Entity::Entity e : entitiesToDestroy )
+   for( Entity::Entity e : toDestroy )
       registry.Destroy( e );
 }
 
@@ -449,8 +465,16 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
                   Entity::Entity item = registry.Create();
                   registry.Add< CTransform >( item, glm::vec3( pos ) + 0.5f ); // Center of block
                   registry.Add< CItemDrop >( item, CItemDrop { .blockId = oldState.GetId() } );
-                  registry.Add< CVelocity >( item, glm::vec3( 0.0f ) );
                   registry.Add< CPhysics >( item, CPhysics { .bbMin = glm::vec3( -0.125f ), .bbMax = glm::vec3( 0.125f ) } );
+
+                  auto itemVelocity = [ & ]()
+                  {
+                     static std::mt19937                            rng( std::random_device {}() );
+                     static std::uniform_real_distribution< float > distXY( -1.5f, 1.5f );
+                     static std::uniform_real_distribution< float > distZ( 2.0f, 4.0f );
+                     return glm::vec3( distXY( rng ), distZ( rng ), distXY( rng ) );
+                  };
+                  registry.Add< CVelocity >( item, itemVelocity() );
 
                   // Note: We should cache these meshes instead of creating a new one each time.
                   registry.Add< CMesh >( item, std::make_shared< BlockItemMesh >( oldState.GetId() ) );

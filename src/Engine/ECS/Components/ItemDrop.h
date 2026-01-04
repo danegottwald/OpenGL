@@ -5,6 +5,9 @@
 
 struct CItemDrop
 {
-   BlockId  blockId;
-   uint64_t tickLifetime { 0 };
+   BlockId blockId;
+
+   // System use only
+   uint64_t maxTicks { 0 };
+   uint64_t ticksRemaining { 0 };
 };
