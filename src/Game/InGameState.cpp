@@ -314,6 +314,27 @@ static void ProjectileDamageSystem( Entity::Registry& registry, Engine::Physics:
    }
 }
 
+static void ItemPickupSystem( Entity::Registry& registry, Engine::Physics::CollisionEventQueue& collisions )
+{
+   for( const Engine::Physics::CollisionEvent& ev : collisions.Events() )
+   {
+      if( ev.phase != Engine::Physics::CollisionPhase::Enter )
+         continue;
+
+      auto tryPickup = [ & ]( Entity::Entity collector, Entity::Entity item )
+      {
+         if( !registry.FHas< CLocalPlayerTag >( collector ) || !registry.FHas< CItemDrop >( item ) )
+            return;
+
+         // TODO: Add to inventory
+         registry.Destroy( item );
+      };
+
+      tryPickup( ev.a, ev.b );
+      tryPickup( ev.b, ev.a );
+   }
+}
+
 static void ItemDropSystem( Entity::Registry& registry, float tickInterval )
 {
    constexpr float DROP_LIFETIME_SECONDS = 300.0f;
@@ -587,6 +608,7 @@ void InGameState::FixedUpdate( Engine::GameContext& ctx, float tickInterval )
    // Collect generic collisions and let gameplay consume them.
    Engine::Physics::CollectEntityAABBCollisions( registry, g_collisionEvents );
    ProjectileDamageSystem( registry, g_collisionEvents );
+   ItemPickupSystem( registry, g_collisionEvents );
 
    if( INetwork* pNetwork = INetwork::Get() )
    {
