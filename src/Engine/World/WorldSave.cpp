@@ -169,16 +169,16 @@ static T Deserialize( std::span< const std::byte > bytes )
 
 
 // Chunk
-/*static*/ bool WorldSave::FSaveChunkBytes( const std::filesystem::path& worldDir, const ChunkCoord3& cc, std::span< const std::byte > bytes )
+/*static*/ bool WorldSave::FSaveChunkBytes( const std::filesystem::path& worldDir, const ChunkPos3& cpos, std::span< const std::byte > bytes )
 {
    EnsureDirectories( worldDir );
-   return FWriteAllBytes( Path( worldDir, SaveKind::Chunk, cc.x, cc.y, cc.z ), bytes );
+   return FWriteAllBytes( Path( worldDir, SaveKind::Chunk, cpos.x, cpos.y, cpos.z ), bytes );
 }
 
 
-/*static*/ bool WorldSave::FLoadChunkBytes( const std::filesystem::path& worldDir, const ChunkCoord3& cc, std::vector< std::byte >& outBytes )
+/*static*/ bool WorldSave::FLoadChunkBytes( const std::filesystem::path& worldDir, const ChunkPos3& cpos, std::vector< std::byte >& outBytes )
 {
-   return FReadAllBytes( Path( worldDir, SaveKind::Chunk, cc.x, cc.y, cc.z ), outBytes );
+   return FReadAllBytes( Path( worldDir, SaveKind::Chunk, cpos.x, cpos.y, cpos.z ), outBytes );
 }
 
 

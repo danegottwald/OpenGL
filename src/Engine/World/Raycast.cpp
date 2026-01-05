@@ -32,7 +32,7 @@ std::optional< RaycastResult > TryRaycast( const Level& level, const Ray& ray )
    glm::ivec3 blockPos = glm::floor( ray.origin );
 
    // If we start inside a solid block, hit it immediately
-   if( FSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
+   if( FSolid( level.GetBlock( WorldBlockPos { blockPos } ) ) )
       return RaycastResult { blockPos,
                              ray.origin, // exact start position
                              glm::ivec3( dir.x < 0.0f ? 1 : -1, dir.y < 0.0f ? 1 : -1, dir.z < 0.0f ? 1 : -1 ),
@@ -54,7 +54,7 @@ std::optional< RaycastResult > TryRaycast( const Level& level, const Ray& ray )
    glm::ivec3 hitNormal { 0 };
    while( dist <= ray.maxDistance )
    {
-      if( FSolid( level.GetBlock( blockPos.x, blockPos.y, blockPos.z ) ) )
+      if( FSolid( level.GetBlock( WorldBlockPos { blockPos } ) ) )
          return RaycastResult { blockPos, ray.origin + dir * dist, hitNormal, dist };
 
       // Step to next voxel

@@ -28,7 +28,7 @@ struct EntitySave
    // TODO: serialized components
 };
 
-struct ChunkCoord3
+struct ChunkPos3
 {
    int x { 0 };
    int y { 0 };
@@ -51,8 +51,8 @@ public:
    static bool FSaveEntity( const std::filesystem::path& worldDir, const EntitySave& entity );
    static bool FDeleteEntityFile( const std::filesystem::path& worldDir, uint64_t entityId );
 
-   static bool FSaveChunkBytes( const std::filesystem::path& worldDir, const ChunkCoord3& cc, std::span< const std::byte > bytes );
-   static bool FLoadChunkBytes( const std::filesystem::path& worldDir, const ChunkCoord3& cc, std::vector< std::byte >& outBytes );
+   static bool FSaveChunkBytes( const std::filesystem::path& worldDir, const ChunkPos3& cpos, std::span< const std::byte > bytes );
+   static bool FLoadChunkBytes( const std::filesystem::path& worldDir, const ChunkPos3& cpos, std::vector< std::byte >& outBytes );
 };
 
 } // namespace World

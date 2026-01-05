@@ -158,7 +158,7 @@ static void PhysicsSystem( Entity::Registry& registry, Level& level, float tickI
       for( int y = min.y; y <= max.y; ++y )
          for( int x = min.x; x <= max.x; ++x )
             for( int z = min.z; z <= max.z; ++z )
-               if( FSolid( level.GetBlock( x, y, z ) ) )
+               if( FSolid( level.GetBlock( WorldBlockPos { x, y, z } ) ) )
                   return true;
 
       return false;
@@ -187,7 +187,7 @@ static void PhysicsSystem( Entity::Registry& registry, Level& level, float tickI
          {
             for( int z = min.z; z <= max.z; ++z )
             {
-               if( !FSolid( level.GetBlock( x, y, z ) ) )
+               if( !FSolid( level.GetBlock( WorldBlockPos { x, y, z } ) ) )
                   continue;
 
                switch( axis )
@@ -477,14 +477,14 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
          {
             case Input::ButtonLeft:
             {
-               const glm::ivec3 pos      = result->block;
-               BlockState       oldState = m_pLevel->GetBlock( pos.x, pos.y, pos.z );
+               const WorldBlockPos pos( result->block );
+               BlockState          oldState = m_pLevel->GetBlock( pos );
 
                if( oldState.GetId() != BlockId::Air )
                {
                   // Spawn dropped item
                   Entity::Entity item = registry.Create();
-                  registry.Add< CTransform >( item, glm::vec3( pos ) + 0.5f ); // Center of block
+                  registry.Add< CTransform >( item, glm::vec3( pos.ToIVec3() ) + 0.5f ); // Center of block
                   registry.Add< CItemDrop >( item, CItemDrop { .blockId = oldState.GetId() } );
                   registry.Add< CPhysics >( item, CPhysics { .bbMin = glm::vec3( -0.125f ), .bbMax = glm::vec3( 0.125f ) } );
 
@@ -502,14 +502,14 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
                }
 
                m_pLevel->SetBlock( pos, BlockState( BlockId::Air ) );
-               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( BlockId::Air ), 1 );
+               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos.ToIVec3(), static_cast< uint16_t >( BlockId::Air ), 1 );
                break;
             }
             case Input::ButtonRight:
             {
-               const glm::ivec3 pos          = result->block + result->faceNormal;
-               BlockId          blockToPlace = BlockId::Furnace;
-               BlockOrientation orientation  = BlockOrientation::North;
+               const WorldBlockPos pos( result->block + result->faceNormal );
+               BlockId             blockToPlace = BlockId::Furnace;
+               BlockOrientation     orientation  = BlockOrientation::North;
                if( CTransform* pCamTran = registry.TryGet< CTransform >( m_camera ) )
                {
                   orientation = [ & ]() -> BlockOrientation
@@ -540,10 +540,10 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
                m_pLevel->SetBlock( pos, state );
 
                // Network should send state, not just blockId. Otherwise orientation info is lost.
-               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos, static_cast< uint16_t >( state.GetId() ), 0 );
+               Events::Dispatch< Events::NetworkRequestBlockUpdateEvent >( pos.ToIVec3(), static_cast< uint16_t >( state.GetId() ), 0 );
                break;
             }
-            case Input::ButtonMiddle: m_pLevel->Explode( result->block, 36 ); break;
+            case Input::ButtonMiddle: m_pLevel->Explode( WorldBlockPos { result->block }, 36 ); break;
          }
       }
    } );
@@ -551,7 +551,7 @@ void InGameState::OnEnter( Engine::GameContext& ctx )
    m_events.Subscribe< Events::NetworkBlockUpdateEvent >( [ this ]( const Events::NetworkBlockUpdateEvent& e ) noexcept
    {
       if( m_pLevel )
-         m_pLevel->SetBlock( e.GetBlockPos(), BlockState( static_cast< BlockId >( e.GetBlockId() ) ) );
+         m_pLevel->SetBlock( WorldBlockPos { e.GetBlockPos() }, BlockState( static_cast< BlockId >( e.GetBlockId() ) ) );
    } );
 
    TextureAtlasManager::Get().CompileBlockAtlas();
@@ -655,3 +655,21 @@ void InGameState::DrawUI( Engine::GameContext& ctx )
 }
 
 } // namespace Game
+
+struct BlockHitEvent
+{
+   Entity::Entity player;
+   BlockPos       pos;
+};
+
+struct BlockBreakEvent
+{
+   Entity::Entity player;
+   BlockPos       pos;
+};
+
+struct BlockUseEvent
+{
+   Entity::Entity player;
+   BlockPos       pos;
+};

@@ -69,7 +69,7 @@ void ChunkRenderer::Clear()
    m_entries.clear();
 }
 
-std::tuple< ChunkCoord, glm::ivec3 > ChunkRenderer::WorldToChunkCoord( int wx, int wy, int wz )
+std::tuple< ChunkPos, LocalBlockPos > ChunkRenderer::WorldToChunkPos( WorldBlockPos wpos )
 {
    auto divFloor = []( int a, int b )
    {
@@ -77,16 +77,16 @@ std::tuple< ChunkCoord, glm::ivec3 > ChunkRenderer::WorldToChunkCoord( int wx, i
       return ( r != 0 ) && ( ( r > 0 ) != ( b > 0 ) ) ? q - 1 : q;
    };
 
-   const int cx = divFloor( wx, CHUNK_SIZE_X ), lx = wx - cx * CHUNK_SIZE_X;
-   const int cy = divFloor( wy, CHUNK_SIZE_Y ), ly = wy - cy * CHUNK_SIZE_Y;
-   const int cz = divFloor( wz, CHUNK_SIZE_Z ), lz = wz - cz * CHUNK_SIZE_Z;
+   const int cx = divFloor( wpos.x, CHUNK_SIZE_X ), lx = wpos.x - cx * CHUNK_SIZE_X;
+   const int cy = divFloor( wpos.y, CHUNK_SIZE_Y ), ly = wpos.y - cy * CHUNK_SIZE_Y;
+   const int cz = divFloor( wpos.z, CHUNK_SIZE_Z ), lz = wpos.z - cz * CHUNK_SIZE_Z;
    return {
-      ChunkCoord { cx, cz },
-       glm::ivec3 { lx, ly, lz }
+      ChunkPos { cx, cz },
+       LocalBlockPos { lx, ly, lz }
    };
 }
 
-bool ChunkRenderer::InView( const ChunkCoord& cc, const ChunkCoord& center, uint8_t viewRadius )
+bool ChunkRenderer::InView( const ChunkPos& cc, const ChunkPos& center, uint8_t viewRadius )
 {
    return std::abs( cc.x - center.x ) <= viewRadius && std::abs( cc.z - center.z ) <= viewRadius;
 }
@@ -97,8 +97,8 @@ void ChunkRenderer::BuildSectionMesh( const Level& level, const Chunk& chunk, in
    out.vertices.reserve( CHUNK_SECTION_VOLUME * 4 );
    out.indices.reserve( CHUNK_SECTION_VOLUME * 6 );
 
-   const int baseWX = chunk.ChunkX() * CHUNK_SIZE_X;
-   const int baseWZ = chunk.ChunkZ() * CHUNK_SIZE_Z;
+   const int baseWX = chunk.GetChunkPos().x * CHUNK_SIZE_X;
+   const int baseWZ = chunk.GetChunkPos().z * CHUNK_SIZE_Z;
    const int baseY  = sectionIndex * CHUNK_SECTION_SIZE;
 
    for( int x = 0; x < CHUNK_SIZE_X; ++x )
@@ -108,22 +108,18 @@ void ChunkRenderer::BuildSectionMesh( const Level& level, const Chunk& chunk, in
          const int y = baseY + ly;
          for( int z = 0; z < CHUNK_SIZE_Z; ++z )
          {
-            const BlockState state = chunk.GetBlock( x, y, z );
+            const BlockState state = chunk.GetBlock( LocalBlockPos { x, y, z } );
             const BlockId    id    = state.GetId();
             if( id == BlockId::Air )
                continue;
 
-            const int       wx = baseWX + x;
-            const int       wy = y;
-            const int       wz = baseWZ + z;
-            const glm::vec3 basePos( static_cast< float >( x ), static_cast< float >( y ), static_cast< float >( z ) );
+            const WorldBlockPos wpos { baseWX + x, y, baseWZ + z };
+            const glm::vec3     basePos( static_cast< float >( x ), static_cast< float >( y ), static_cast< float >( z ) );
             for( const Direction& dir : directions )
             {
-               const int  nx            = x + dir.dx;
-               const int  ny            = y + dir.dy;
-               const int  nz            = z + dir.dz;
-               BlockState neighborState = chunk.FInBounds( nx, ny, nz ) ? chunk.GetBlock( nx, ny, nz )
-                                                                        : level.GetBlock( wx + dir.dx, wy + dir.dy, wz + dir.dz );
+               const LocalBlockPos nlocal { x + dir.dx, y + dir.dy, z + dir.dz };
+               const WorldBlockPos nworld { wpos.x + dir.dx, wpos.y + dir.dy, wpos.z + dir.dz };
+               BlockState          neighborState = chunk.FInBounds( nlocal ) ? chunk.GetBlock( nlocal ) : level.GetBlock( nworld );
                if( neighborState.GetId() != BlockId::Air )
                   continue;
 
@@ -149,6 +145,50 @@ void ChunkRenderer::BuildSectionMesh( const Level& level, const Chunk& chunk, in
             }
          }
       }
+   }
+}
+
+void ChunkRenderer::Update( Level& level, const glm::vec3& playerPos, uint8_t viewRadius )
+{
+   level.UpdateStreaming( playerPos, viewRadius );
+
+   auto [ playerChunk, _ ] = WorldToChunkPos( WorldBlockPos { playerPos } );
+   for( auto it = m_entries.begin(); it != m_entries.end(); )
+   {
+      if( !InView( it->first, playerChunk, viewRadius ) )
+      {
+         for( auto& sec : it->second.sections )
+            DestroySectionGL( sec );
+
+         it = m_entries.erase( it );
+      }
+      else
+         ++it;
+   }
+
+   MeshData mesh;
+   for( const auto& [ cc, chunk ] : level.GetChunks() )
+   {
+      if( !InView( cc, playerChunk, viewRadius ) )
+         continue;
+
+      Entry&         ce  = m_entries[ cc ];
+      const uint64_t rev = chunk.MeshRevision();
+      if( ce.lastSeenRevision == rev && !Any( chunk.Dirty() & ChunkDirty::Mesh ) )
+         continue;
+
+      for( const auto& [ i, sec ] : ce.sections | std::views::enumerate )
+      {
+         if( sec.builtRevision == rev && !Any( chunk.Dirty() & ChunkDirty::Mesh ) )
+            continue;
+
+         BuildSectionMesh( level, chunk, i, mesh );
+         Upload( sec, mesh );
+         sec.builtRevision = rev;
+      }
+
+      ce.lastSeenRevision = rev;
+      const_cast< Chunk& >( chunk ).ClearDirty( ChunkDirty::Mesh );
    }
 }
 
@@ -192,48 +232,4 @@ void ChunkRenderer::Upload( SectionEntry& e, const MeshData& mesh )
 
    e.indexCount = static_cast< uint32_t >( mesh.indices.size() );
    e.fEmpty     = false;
-}
-
-void ChunkRenderer::Update( Level& level, const glm::vec3& playerPos, uint8_t viewRadius )
-{
-   level.UpdateStreaming( playerPos, viewRadius );
-
-   auto [ playerChunk, _ ] = WorldToChunkCoord( static_cast< int >( playerPos.x ), static_cast< int >( playerPos.y ), static_cast< int >( playerPos.z ) );
-   for( auto it = m_entries.begin(); it != m_entries.end(); )
-   {
-      if( !InView( it->first, playerChunk, viewRadius ) )
-      {
-         for( auto& sec : it->second.sections )
-            DestroySectionGL( sec );
-
-         it = m_entries.erase( it );
-      }
-      else
-         ++it;
-   }
-
-   MeshData mesh;
-   for( const auto& [ cc, chunk ] : level.GetChunks() )
-   {
-      if( !InView( cc, playerChunk, viewRadius ) )
-         continue;
-
-      Entry&         ce  = m_entries[ cc ];
-      const uint64_t rev = chunk.MeshRevision();
-      if( ce.lastSeenRevision == rev && !Any( chunk.Dirty() & ChunkDirty::Mesh ) )
-         continue;
-
-      for( const auto& [ i, sec ] : ce.sections | std::views::enumerate )
-      {
-         if( sec.builtRevision == rev && !Any( chunk.Dirty() & ChunkDirty::Mesh ) )
-            continue;
-
-         BuildSectionMesh( level, chunk, i, mesh );
-         Upload( sec, mesh );
-         sec.builtRevision = rev;
-      }
-
-      ce.lastSeenRevision = rev;
-      const_cast< Chunk& >( chunk ).ClearDirty( ChunkDirty::Mesh );
-   }
 }

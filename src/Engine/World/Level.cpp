@@ -6,18 +6,18 @@
 // ----------------------------------------------------------------
 // ChunkSection
 // ----------------------------------------------------------------
-BlockState ChunkSection::GetBlock( int x, int y, int z ) const noexcept
+BlockState ChunkSection::GetBlock( LocalBlockPos pos ) const noexcept
 {
-   return FInBounds( x, y, z ) ? m_blocks[ ToIndex( x, y, z ) ] : BlockState( BlockId::Air );
+   return FInBounds( pos ) ? m_blocks[ ToIndex( pos ) ] : BlockState( BlockId::Air );
 }
 
 
-void ChunkSection::SetBlock( int x, int y, int z, BlockState state )
+void ChunkSection::SetBlock( LocalBlockPos pos, BlockState state )
 {
-   if( !FInBounds( x, y, z ) )
+   if( !FInBounds( pos ) )
       return;
 
-   const size_t idx = ToIndex( x, y, z );
+   const size_t idx = ToIndex( pos );
    if( m_blocks[ idx ] == state )
       return;
 
@@ -26,26 +26,24 @@ void ChunkSection::SetBlock( int x, int y, int z, BlockState state )
 }
 
 
-/*static*/ size_t ChunkSection::ToIndex( int x, int y, int z ) noexcept
+/*static*/ size_t ChunkSection::ToIndex( LocalBlockPos pos ) noexcept
 {
-   return static_cast< size_t >( x + ( z * CHUNK_SIZE_X ) + ( y * CHUNK_SIZE_X * CHUNK_SIZE_Z ) );
+   return static_cast< size_t >( pos.x + ( pos.z * CHUNK_SIZE_X ) + ( pos.y * CHUNK_SIZE_X * CHUNK_SIZE_Z ) );
 }
 
 
-/*static*/ bool ChunkSection::FInBounds( int x, int y, int z ) noexcept
+/*static*/ bool ChunkSection::FInBounds( LocalBlockPos pos ) noexcept
 {
-   return x >= 0 && x < CHUNK_SIZE_X && y >= 0 && y < CHUNK_SECTION_SIZE && z >= 0 && z < CHUNK_SIZE_Z;
+   return pos.x >= 0 && pos.x < CHUNK_SIZE_X && pos.y >= 0 && pos.y < CHUNK_SECTION_SIZE && pos.z >= 0 && pos.z < CHUNK_SIZE_Z;
 }
 
 
 // ----------------------------------------------------------------
 // Chunk
 // ----------------------------------------------------------------
-Chunk::Chunk( Level& level, int cx, int cy, int cz ) :
+Chunk::Chunk( Level& level, const ChunkPos& cpos ) :
    m_level( level ),
-   m_chunkX( cx ),
-   m_chunkY( cy ),
-   m_chunkZ( cz )
+   m_cpos( cpos )
 {}
 
 
@@ -66,7 +64,7 @@ bool Chunk::FLoadFromDisk()
       for( int z = 0; z < CHUNK_SIZE_Z; ++z )
       {
          for( int x = 0; x < CHUNK_SIZE_X; ++x )
-            m_sections[ ToSectionIndex( y ) ].SetBlock( x, ToSectionLocalY( y ), z, src[ p++ ] );
+            m_sections[ ToSectionIndex( y ) ].SetBlock( LocalBlockPos { x, ToSectionLocalY( y ), z }, src[ p++ ] );
       }
    }
 
@@ -91,7 +89,7 @@ void Chunk::SaveToDisk()
       for( int z = 0; z < CHUNK_SIZE_Z; ++z )
       {
          for( int x = 0; x < CHUNK_SIZE_X; ++x )
-            flat[ p++ ] = m_sections[ ToSectionIndex( y ) ].GetBlock( x, ToSectionLocalY( y ), z );
+            flat[ p++ ] = m_sections[ ToSectionIndex( y ) ].GetBlock( LocalBlockPos { x, ToSectionLocalY( y ), z } );
       }
    }
 
@@ -102,37 +100,37 @@ void Chunk::SaveToDisk()
 }
 
 
-BlockState Chunk::GetBlock( int x, int y, int z ) const noexcept
+BlockState Chunk::GetBlock( LocalBlockPos pos ) const noexcept
 {
-   if( !FInBounds( x, y, z ) )
+   if( !FInBounds( pos ) )
       return BlockState( BlockId::Air );
 
-   const int sIndex = ToSectionIndex( y );
-   const int ly     = ToSectionLocalY( y );
-   return m_sections[ sIndex ].GetBlock( x, ly, z );
+   const int sIndex = ToSectionIndex( pos.y );
+   const int ly     = ToSectionLocalY( pos.y );
+   return m_sections[ sIndex ].GetBlock( LocalBlockPos { pos.x, ly, pos.z } );
 }
 
 
-void Chunk::SetBlock( int x, int y, int z, BlockState state )
+void Chunk::SetBlock( LocalBlockPos pos, BlockState state )
 {
-   if( !FInBounds( x, y, z ) )
+   if( !FInBounds( pos ) )
       return;
 
-   const int sIndex = ToSectionIndex( y );
-   const int ly     = ToSectionLocalY( y );
-   if( m_sections[ sIndex ].GetBlock( x, ly, z ) == state )
+   const int sIndex = ToSectionIndex( pos.y );
+   const int ly     = ToSectionLocalY( pos.y );
+   if( m_sections[ sIndex ].GetBlock( LocalBlockPos { pos.x, ly, pos.z } ) == state )
       return;
 
-   m_sections[ sIndex ].SetBlock( x, ly, z, state );
+   m_sections[ sIndex ].SetBlock( LocalBlockPos { pos.x, ly, pos.z }, state );
 
    MarkDirty( ChunkDirty::Save | ChunkDirty::Mesh );
    ++m_meshRevision;
 }
 
 
-bool Chunk::FInBounds( int x, int y, int z ) const noexcept
+bool Chunk::FInBounds( LocalBlockPos pos ) const noexcept
 {
-   return x >= 0 && x < CHUNK_SIZE_X && y >= 0 && y < CHUNK_SIZE_Y && z >= 0 && z < CHUNK_SIZE_Z;
+   return pos.x >= 0 && pos.x < CHUNK_SIZE_X && pos.y >= 0 && pos.y < CHUNK_SIZE_Y && pos.z >= 0 && pos.z < CHUNK_SIZE_Z;
 }
 
 
@@ -192,7 +190,7 @@ void Level::Save() const
 }
 
 
-std::tuple< ChunkCoord, glm::ivec3 > Level::WorldToChunk( int wx, int wy, int wz ) const noexcept
+std::tuple< ChunkPos, LocalBlockPos > Level::WorldToChunk( WorldBlockPos wpos ) const noexcept
 {
    // floor division for negative values
    auto divFloor = []( int a, int b )
@@ -201,99 +199,81 @@ std::tuple< ChunkCoord, glm::ivec3 > Level::WorldToChunk( int wx, int wy, int wz
       return ( r != 0 ) && ( ( r > 0 ) != ( b > 0 ) ) ? q - 1 : q;
    };
 
-   const int cx = divFloor( wx, CHUNK_SIZE_X ), lx = wx - cx * CHUNK_SIZE_X;
-   const int cz = divFloor( wz, CHUNK_SIZE_Z ), lz = wz - cz * CHUNK_SIZE_Z;
-   return std::tuple< ChunkCoord, glm::ivec3 > {
-      ChunkCoord { cx, cz },
-       glm::ivec3 { lx, wy, lz }
+   const int cx = divFloor( wpos.x, CHUNK_SIZE_X ), lx = wpos.x - cx * CHUNK_SIZE_X;
+   const int cz = divFloor( wpos.z, CHUNK_SIZE_Z ), lz = wpos.z - cz * CHUNK_SIZE_Z;
+   return {
+      ChunkPos { cx, cz },
+       LocalBlockPos { lx, wpos.y, lz }
    };
 }
 
 
-BlockState Level::GetBlock( int wx, int wy, int wz ) const noexcept
+BlockState Level::GetBlock( WorldBlockPos pos ) const noexcept
 {
-   auto [ cc, local ] = WorldToChunk( wx, wy, wz );
-   auto it            = m_chunks.find( cc );
-   return it != m_chunks.end() ? it->second.GetBlock( local.x, local.y, local.z ) : BlockState( BlockId::Air );
+   auto [ cpos, local ] = WorldToChunk( pos );
+   auto it              = m_chunks.find( cpos );
+   return it != m_chunks.end() ? it->second.GetBlock( local ) : BlockState( BlockId::Air );
 }
 
 
-void Level::MarkChunkAndNeighborsMeshDirty( const ChunkCoord& cc )
+void Level::SetBlock( WorldBlockPos pos, BlockState state )
 {
-   auto mark = [ & ]( const ChunkCoord& c )
-   {
-      auto it = m_chunks.find( c );
-      if( it == m_chunks.end() )
-         return;
-      it->second.MarkDirty( ChunkDirty::Mesh );
-   };
+   auto [ cpos, local ] = WorldToChunk( pos );
 
-   mark( cc );
-   mark( { cc.x - 1, cc.z } );
-   mark( { cc.x + 1, cc.z } );
-   mark( { cc.x, cc.z - 1 } );
-   mark( { cc.x, cc.z + 1 } );
-}
-
-
-void Level::SetBlock( int wx, int wy, int wz, BlockState state )
-{
-   auto [ cc, local ] = WorldToChunk( wx, wy, wz );
-
-   Chunk& chunk = EnsureChunk( cc );
-   chunk.SetBlock( local.x, local.y, local.z, state );
+   Chunk& chunk = EnsureChunk( cpos );
+   chunk.SetBlock( local, state );
 
    // Changing a boundary block can affect neighbor faces.
    if( local.x == 0 || local.x == CHUNK_SIZE_X - 1 || local.z == 0 || local.z == CHUNK_SIZE_Z - 1 )
-      MarkChunkAndNeighborsMeshDirty( cc );
+      MarkChunkAndNeighborsMeshDirty( cpos );
    else
       chunk.MarkDirty( ChunkDirty::Mesh );
 }
 
 
-void Level::Explode( int wx, int wy, int wz, uint8_t radius )
+void Level::Explode( WorldBlockPos pos, uint8_t radius )
 {
    float radiusSq = radius * radius;
-   int   minX     = static_cast< int >( std::floor( wx - radius ) );
-   int   maxX     = static_cast< int >( std::ceil( wx + radius ) );
-   int   minY     = static_cast< int >( std::floor( wy - radius ) );
-   int   maxY     = static_cast< int >( std::ceil( wy + radius ) );
-   int   minZ     = static_cast< int >( std::floor( wz - radius ) );
-   int   maxZ     = static_cast< int >( std::ceil( wz + radius ) );
+   int   minX     = static_cast< int >( std::floor( pos.x - radius ) );
+   int   maxX     = static_cast< int >( std::ceil( pos.x + radius ) );
+   int   minY     = static_cast< int >( std::floor( pos.y - radius ) );
+   int   maxY     = static_cast< int >( std::ceil( pos.y + radius ) );
+   int   minZ     = static_cast< int >( std::floor( pos.z - radius ) );
+   int   maxZ     = static_cast< int >( std::ceil( pos.z + radius ) );
 
-   std::unordered_set< ChunkCoord, ChunkCoordHash > touched;
+   std::unordered_set< ChunkPos, ChunkPosHash > touched;
    for( int x = minX; x <= maxX; ++x )
    {
       for( int y = minY; y <= maxY; ++y )
       {
          for( int z = minZ; z <= maxZ; ++z )
          {
-            float dx = x + 0.5f - wx;
-            float dy = y + 0.5f - wy;
-            float dz = z + 0.5f - wz;
+            float dx = x + 0.5f - pos.x;
+            float dy = y + 0.5f - pos.y;
+            float dz = z + 0.5f - pos.z;
             if( dx * dx + dy * dy + dz * dz > radiusSq )
                continue;
 
-            auto [ cc, local ] = WorldToChunk( x, y, z );
-            Chunk& chunk       = EnsureChunk( cc );
-            chunk.SetBlock( local.x, local.y, local.z, BlockState( BlockId::Air ) );
-            touched.insert( cc );
+            auto [ cpos, local ] = WorldToChunk( WorldBlockPos { x, y, z } );
+            Chunk& chunk         = EnsureChunk( cpos );
+            chunk.SetBlock( local, BlockState( BlockId::Air ) );
+            touched.insert( cpos );
          }
       }
    }
 
-   for( const ChunkCoord& cc : touched )
-      MarkChunkAndNeighborsMeshDirty( cc );
+   for( const ChunkPos& cpos : touched )
+      MarkChunkAndNeighborsMeshDirty( cpos );
 }
 
 
-int Level::GetSurfaceY( int wx, int wz ) noexcept
+int Level::GetSurfaceY( WorldBlockPos pos ) noexcept
 {
-   const Chunk& chunk = EnsureChunk( ChunkCoord { .x = wx, .z = wz } );
+   const Chunk& chunk = EnsureChunk( ChunkPos { .x = pos.x, .z = pos.z } );
    for( int wy = CHUNK_SIZE_Y; wy >= 0; --wy )
    {
-      auto [ _, local ] = WorldToChunk( wx, wy, wz );
-      if( chunk.GetBlock( local.x, local.y, local.z ).GetId() != BlockId::Air )
+      auto [ _, local ] = WorldToChunk( WorldBlockPos { pos.x, wy, pos.z } );
+      if( chunk.GetBlock( local ).GetId() != BlockId::Air )
          return wy;
    }
 
@@ -301,37 +281,20 @@ int Level::GetSurfaceY( int wx, int wz ) noexcept
 }
 
 
-Chunk& Level::EnsureChunk( const ChunkCoord& cc )
-{
-   if( auto it = m_chunks.find( cc ); it != m_chunks.end() )
-      return it->second;
-
-   Chunk& chunk = m_chunks.try_emplace( cc, *this, cc.x, 0, cc.z ).first->second;
-
-   if( !chunk.FLoadFromDisk() )
-      GenerateChunkData( chunk );
-
-   MarkChunkAndNeighborsMeshDirty( cc );
-
-   return chunk;
-}
-
-
 void Level::UpdateStreaming( const glm::vec3& playerPos, uint8_t viewRadius )
 {
-   auto [ playerChunk, _ ] = WorldToChunk( static_cast< int >( playerPos.x ), static_cast< int >( playerPos.y ), static_cast< int >( playerPos.z ) );
-
+   auto [ playerChunk, _ ] = WorldToChunk( WorldBlockPos { playerPos } );
    for( int dx = -viewRadius; dx <= viewRadius; ++dx )
    {
       for( int dz = -viewRadius; dz <= viewRadius; ++dz )
       {
-         const ChunkCoord cc { playerChunk.x + dx, playerChunk.z + dz };
-         if( !m_chunks.contains( cc ) )
-            EnsureChunk( cc );
+         const ChunkPos cpos { playerChunk.x + dx, playerChunk.z + dz };
+         if( !m_chunks.contains( cpos ) )
+            EnsureChunk( cpos );
       }
    }
 
-   auto inView = [ & ]( const ChunkCoord& cc ) { return std::abs( cc.x - playerChunk.x ) <= viewRadius && std::abs( cc.z - playerChunk.z ) <= viewRadius; };
+   auto inView = [ & ]( const ChunkPos& cpos ) { return std::abs( cpos.x - playerChunk.x ) <= viewRadius && std::abs( cpos.z - playerChunk.z ) <= viewRadius; };
    for( auto it = m_chunks.begin(); it != m_chunks.end(); )
    {
       if( !inView( it->first ) )
@@ -349,8 +312,8 @@ void Level::UpdateStreaming( const glm::vec3& playerPos, uint8_t viewRadius )
 
 void Level::GenerateChunkData( Chunk& chunk )
 {
-   const int baseX = chunk.ChunkX() * CHUNK_SIZE_X;
-   const int baseZ = chunk.ChunkZ() * CHUNK_SIZE_Z;
+   const int baseX = chunk.GetChunkPos().x * CHUNK_SIZE_X;
+   const int baseZ = chunk.GetChunkPos().z * CHUNK_SIZE_Z;
    for( int z = 0; z < CHUNK_SIZE_Z; ++z )
    {
       for( int x = 0; x < CHUNK_SIZE_X; ++x )
@@ -373,7 +336,7 @@ void Level::GenerateChunkData( Chunk& chunk )
             else
                id = BlockId::Dirt;
 
-            chunk.SetBlock( x, y, z, BlockState( id ) );
+            chunk.SetBlock( LocalBlockPos { x, y, z }, BlockState( id ) );
          }
       }
    }
@@ -381,4 +344,37 @@ void Level::GenerateChunkData( Chunk& chunk )
    // Mark chunk dirty and save
    chunk.MarkDirty( ChunkDirty::Save | ChunkDirty::Mesh );
    chunk.SaveToDisk();
+}
+
+
+void Level::MarkChunkAndNeighborsMeshDirty( const ChunkPos& cpos )
+{
+   auto mark = [ & ]( const ChunkPos& c )
+   {
+      auto it = m_chunks.find( c );
+      if( it == m_chunks.end() )
+         return;
+      it->second.MarkDirty( ChunkDirty::Mesh );
+   };
+
+   mark( cpos );
+   mark( { cpos.x - 1, cpos.z } );
+   mark( { cpos.x + 1, cpos.z } );
+   mark( { cpos.x, cpos.z - 1 } );
+   mark( { cpos.x, cpos.z + 1 } );
+}
+
+
+Chunk& Level::EnsureChunk( const ChunkPos& cpos )
+{
+   if( auto it = m_chunks.find( cpos ); it != m_chunks.end() )
+      return it->second;
+
+   Chunk& chunk = m_chunks.try_emplace( cpos, *this, cpos ).first->second;
+   if( !chunk.FLoadFromDisk() )
+      GenerateChunkData( chunk );
+
+   MarkChunkAndNeighborsMeshDirty( cpos );
+
+   return chunk;
 }

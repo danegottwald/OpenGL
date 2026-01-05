@@ -34,28 +34,25 @@ static constexpr int CHUNK_SIZE_Z       = CHUNK_SECTION_SIZE;
 static constexpr int CHUNK_VOLUME       = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z;
 static constexpr int SECTIONS_PER_CHUNK = CHUNK_SIZE_Y / CHUNK_SECTION_SIZE;
 
-struct ChunkCoord
+struct ChunkPos
 {
    int  x { INT32_MIN };
    int  z { INT32_MIN };
-   bool operator==( const ChunkCoord& ) const = default;
+   bool operator==( const ChunkPos& ) const = default;
 };
 
-struct ChunkCoordHash
+struct ChunkPosHash
 {
-   std::size_t operator()( const ChunkCoord& c ) const noexcept
+   std::size_t operator()( const ChunkPos& cpos ) const noexcept
    {
       std::size_t h   = 1469598103934665603ull;
       auto        mix = [ &h ]( int v ) { h ^= static_cast< std::size_t >( v ) + 0x9e3779b97f4a7c15ull + ( h << 6 ) + ( h >> 2 ); };
-      mix( c.x );
-      mix( c.z );
+      mix( cpos.x );
+      mix( cpos.z );
       return h;
    }
 };
 
-// ----------------------------------------------------------------
-// Chunk - world data for a fixed-size region (no rendering ownership)
-// ----------------------------------------------------------------
 enum class ChunkDirty : uint32_t
 {
    None = 0,
@@ -78,40 +75,93 @@ constexpr bool Any( ChunkDirty bits ) noexcept
    return static_cast< uint32_t >( bits ) != 0u;
 }
 
+// ----------------------------------------------------------------
+// BlockPos - integer 3D position in block coordinates
+// ----------------------------------------------------------------
+struct BlockPos
+{
+   int  x { INT32_MIN };
+   int  y { INT32_MIN };
+   int  z { INT32_MIN };
+   bool operator==( const BlockPos& ) const = default;
+
+   constexpr BlockPos( int x, int y, int z ) :
+      x( x ),
+      y( y ),
+      z( z )
+   {}
+   constexpr explicit BlockPos( const glm::ivec3& v ) :
+      BlockPos( v.x, v.y, v.z )
+   {}
+   constexpr explicit BlockPos( const glm::vec3& v ) :
+      BlockPos( static_cast< glm::ivec3 >( glm::floor( v ) ) )
+   {}
+
+   constexpr glm::ivec3 ToIVec3() const noexcept { return { x, y, z }; }
+};
+
+struct BlockPosHash
+{
+   std::size_t operator()( const BlockPos& bpos ) const noexcept
+   {
+      std::size_t h   = 1469598103934665603ull;
+      auto        mix = [ &h ]( int v ) { h ^= static_cast< std::size_t >( v ) + 0x9e3779b97f4a7c15ull + ( h << 6 ) + ( h >> 2 ); };
+      mix( bpos.x );
+      mix( bpos.y );
+      mix( bpos.z );
+      return h;
+   }
+};
+
+struct WorldBlockPos : BlockPos
+{
+   using BlockPos::BlockPos;
+};
+
+struct LocalBlockPos : BlockPos
+{
+   using BlockPos::BlockPos;
+};
+
+// ----------------------------------------------------------------
+// ChunkSection - 16x16x16 block subsection of a chunk
+// ----------------------------------------------------------------
 class ChunkSection
 {
 public:
    ChunkSection()  = default;
    ~ChunkSection() = default;
 
-   BlockState GetBlock( int x, int y, int z ) const noexcept;
-   void       SetBlock( int x, int y, int z, BlockState state );
-
-   bool FDirty() const noexcept { return m_fDirty; }
-   void ClearDirty() noexcept { m_fDirty = false; }
+   BlockState GetBlock( LocalBlockPos pos ) const noexcept;
+   void       SetBlock( LocalBlockPos pos, BlockState state );
 
 private:
    NO_COPY_MOVE( ChunkSection )
 
-   static size_t ToIndex( int x, int y, int z ) noexcept;
-   static bool   FInBounds( int x, int y, int z ) noexcept;
+   static size_t ToIndex( LocalBlockPos pos ) noexcept;
+   static bool   FInBounds( LocalBlockPos pos ) noexcept;
 
    std::array< BlockState, CHUNK_SECTION_VOLUME > m_blocks { BlockState( BlockId::Air ) };
    bool                                           m_fDirty { true };
+
+public:
+   bool FDirty() const noexcept { return m_fDirty; }
+   void ClearDirty() noexcept { m_fDirty = false; }
 };
 
+// ----------------------------------------------------------------
+// Chunk - world data for a fixed-size region (no rendering ownership)
+// ----------------------------------------------------------------
 class Chunk
 {
 public:
-   Chunk( class Level& level, int cx, int cy, int cz );
+   Chunk( class Level& level, const ChunkPos& cpos );
 
-   BlockState GetBlock( int x, int y, int z ) const noexcept;
-   void       SetBlock( int x, int y, int z, BlockState state );
+   BlockState GetBlock( LocalBlockPos pos ) const noexcept;
+   void       SetBlock( LocalBlockPos pos, BlockState state );
 
-   int  ChunkX() const { return m_chunkX; }
-   int  ChunkY() const { return m_chunkY; }
-   int  ChunkZ() const { return m_chunkZ; }
-   bool FInBounds( int x, int y, int z ) const noexcept;
+   ChunkPos GetChunkPos() const noexcept { return m_cpos; }
+   bool     FInBounds( LocalBlockPos pos ) const noexcept;
 
    bool FLoadFromDisk();
    void SaveToDisk();
@@ -130,10 +180,10 @@ private:
    static constexpr int ToSectionIndex( int y ) noexcept { return y / CHUNK_SECTION_SIZE; }
    static constexpr int ToSectionLocalY( int y ) noexcept { return y % CHUNK_SECTION_SIZE; }
 
-   World::ChunkCoord3 GetCoord3() const noexcept { return World::ChunkCoord3 { m_chunkX, m_chunkY, m_chunkZ }; }
+   World::ChunkPos3 GetCoord3() const noexcept { return World::ChunkPos3 { m_cpos.x, 0, m_cpos.z }; }
 
-   class Level& m_level;
-   int          m_chunkX, m_chunkY, m_chunkZ;
+   class Level&   m_level;
+   const ChunkPos m_cpos { INT32_MIN, INT32_MIN };
 
    std::array< ChunkSection, SECTIONS_PER_CHUNK > m_sections;
 
@@ -157,14 +207,12 @@ public:
    void SaveMeta() const;
    void SavePlayer( const glm::vec3& playerPos ) const;
 
-   BlockState GetBlock( int wx, int wy, int wz ) const noexcept;
-   void       SetBlock( int wx, int wy, int wz, BlockState state );
-   void       SetBlock( glm::ivec3 pos, BlockState state ) { SetBlock( pos.x, pos.y, pos.z, state ); }
+   BlockState GetBlock( WorldBlockPos pos ) const noexcept;
+   void       SetBlock( WorldBlockPos pos, BlockState state );
+   void       Explode( WorldBlockPos pos, uint8_t radius );
 
-   void Explode( int wx, int wy, int wz, uint8_t radius );
-   void Explode( glm::ivec3 pos, uint8_t radius ) { Explode( pos.x, pos.y, pos.z, radius ); }
-
-   int GetSurfaceY( int wx, int wz ) noexcept;
+   int GetSurfaceY( WorldBlockPos pos ) noexcept;
+   int GetSurfaceY( int wx, int wz ) noexcept { return GetSurfaceY( WorldBlockPos { wx, 0, wz } ); }
 
    // Streaming only: ensures chunk *data* exists around the player.
    // Rendering caches are owned elsewhere.
@@ -175,10 +223,10 @@ public:
 private:
    NO_COPY_MOVE( Level )
 
-   std::tuple< ChunkCoord, glm::ivec3 > WorldToChunk( int wx, int wy, int wz ) const noexcept;
-   Chunk&                               EnsureChunk( const ChunkCoord& cc );
-   void                                 GenerateChunkData( Chunk& chunk );
-   void                                 MarkChunkAndNeighborsMeshDirty( const ChunkCoord& cc );
+   std::tuple< ChunkPos, LocalBlockPos > WorldToChunk( WorldBlockPos wpos ) const noexcept;
+   Chunk&                                EnsureChunk( const ChunkPos& cpos );
+   void                                  GenerateChunkData( Chunk& chunk );
+   void                                  MarkChunkAndNeighborsMeshDirty( const ChunkPos& cpos );
 
    // World saving/loading
    static constexpr float AUTOSAVE_INTERVAL = 10.0f; // seconds
@@ -186,9 +234,9 @@ private:
    std::filesystem::path  m_worldDir;
    World::WorldMeta       m_meta;
 
-   ChunkCoord m_lastPlayerChunk { INT32_MIN, INT32_MIN };
+   ChunkPos m_lastPlayerChunk { INT32_MIN, INT32_MIN };
 
-   std::unordered_map< ChunkCoord, Chunk, ChunkCoordHash > m_chunks;
+   std::unordered_map< ChunkPos, Chunk, ChunkPosHash > m_chunks;
 
    FastNoiseLite m_noise;
 

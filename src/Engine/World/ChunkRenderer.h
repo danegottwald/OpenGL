@@ -56,11 +56,11 @@ private:
    void        Clear();
    static void DestroySectionGL( SectionEntry& e );
 
-   static bool                                 InView( const ChunkCoord& cc, const ChunkCoord& center, uint8_t viewRadius );
-   static std::tuple< ChunkCoord, glm::ivec3 > WorldToChunkCoord( int wx, int wy, int wz );
+   static bool                                  InView( const ChunkPos& cc, const ChunkPos& center, uint8_t viewRadius );
+   static std::tuple< ChunkPos, LocalBlockPos > WorldToChunkPos( WorldBlockPos wpos );
 
    static void BuildSectionMesh( const Level& level, const Chunk& chunk, int sectionIndex, MeshData& out );
    static void Upload( SectionEntry& e, const MeshData& mesh );
 
-   std::unordered_map< ChunkCoord, Entry, ChunkCoordHash > m_entries;
+   std::unordered_map< ChunkPos, Entry, ChunkPosHash > m_entries;
 }; // class ChunkRenderer

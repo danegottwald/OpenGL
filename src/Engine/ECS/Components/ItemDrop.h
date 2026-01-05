@@ -5,7 +5,7 @@
 
 struct CItemDrop
 {
-   BlockId blockId;
+   BlockId blockId { BlockId::Air };
 
    // System use only
    uint64_t maxTicks { 0 };
