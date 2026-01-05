@@ -9,46 +9,48 @@
 namespace Engine
 {
 
-// Used to sort draw calls to minimize state changes
 struct RenderKey
 {
-   // Bitfields are great for sorting:
-   // [ Transparent (1) | Layer (8) | Shader (8) | Material (15) ]
-   uint32_t value;
+   // [ Transparent (1) | Layer (8) | Shader (8) | Material (15) ] (implementation-defined by caller)
+   uint32_t value {};
    bool     operator<( const RenderKey& other ) const { return value < other.value; }
 };
 
-class RenderBuffer
+class RenderQueues
 {
 public:
-   RenderBuffer() { m_items.reserve( 1000 ); }
-
-   struct Item
+   struct IndexedDraw
    {
       RenderKey key;
-      uint32_t  vertexArrayId;
-      uint32_t  textureId;
-      uint32_t  indexCount;
-      glm::mat4 model; // heavy, bad for sorting
+      uint32_t  vertexArrayId {};
+      uint32_t  textureId {};
+      uint32_t  indexCount {};
+      glm::mat4 model { 1.0f };
    };
 
-   void Clear() { m_items.clear(); }
-   void Submit( const Item& item ) { m_items.push_back( item ); }
+   void Clear()
+   {
+      m_opaqueIndexed.clear();
+      m_overlayIndexed.clear();
+   }
+
+   void SubmitOpaque( const IndexedDraw& item ) { m_opaqueIndexed.push_back( item ); }
+   void SubmitOverlay( const IndexedDraw& item ) { m_overlayIndexed.push_back( item ); }
 
    void Sort()
    {
-      // Sorting by key ensures similar materials/shaders are drawn together
-      std::sort( m_items.begin(), m_items.end(), []( const Item& a, const Item& b ) { return a.key < b.key; } );
+      auto byKey = []( const IndexedDraw& a, const IndexedDraw& b ) { return a.key < b.key; };
+      std::sort( m_opaqueIndexed.begin(), m_opaqueIndexed.end(), byKey );
+      std::sort( m_overlayIndexed.begin(), m_overlayIndexed.end(), byKey );
    }
 
-   std::span< const Item > GetItems() const { return m_items; }
+   std::span< const IndexedDraw > GetOpaqueIndexed() const { return m_opaqueIndexed; }
+   std::span< const IndexedDraw > GetOverlayIndexed() const { return m_overlayIndexed; }
 
 private:
-   std::vector< Item > m_items;
+   std::vector< IndexedDraw > m_opaqueIndexed;
+   std::vector< IndexedDraw > m_overlayIndexed;
 };
-
-// global render buffer
-inline RenderBuffer g_renderBuffer;
 
 class RenderSystem
 {
@@ -68,13 +70,11 @@ public:
       glm::mat4 viewProjection { 1.0f };
       glm::vec3 viewPos { 0.0f };
 
-      std::optional< glm::ivec3 > optHighlightBlock; // currently aiming at block
+      std::optional< glm::ivec3 > optHighlightBlock;
    };
 
-   // Extensible entrypoint.
    void Run( const FrameContext& ctx );
 
-   // Toggles for optional features (can become proper sub-renderers later)
    void EnableSkybox( bool fEnable ) noexcept { m_fSkyboxEnabled = fEnable; }
    void EnableReticle( bool fEnable ) noexcept { m_fReticleEnabled = fEnable; }
    void EnableBlockHighlight( bool fEnable ) noexcept { m_fHighlightEnabled = fEnable; }
@@ -82,8 +82,13 @@ public:
 private:
    NO_COPY_MOVE( RenderSystem )
 
-   void DrawTerrain( const FrameContext& ctx );
-   void DrawItemDrops( const FrameContext& ctx );
+   void BuildQueues( const FrameContext& ctx, RenderQueues& outQueues );
+
+   void DrawTerrainPass( const FrameContext& ctx );
+   void DrawOpaquePass( const FrameContext& ctx, const RenderQueues& queues );
+   void DrawOverlayPass( const FrameContext& ctx, const RenderQueues& queues );
+
+   void QueueItemDrops( const FrameContext& ctx, RenderQueues& outQueues );
    void DrawBlockHighlight( const FrameContext& ctx );
    void DrawSkybox( const FrameContext& ctx );
    void DrawReticle( const FrameContext& ctx );

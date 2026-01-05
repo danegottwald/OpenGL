@@ -8,6 +8,8 @@
 namespace Engine
 {
 
+namespace
+{
 struct WireCubeGL
 {
    GLuint vao { 0 };
@@ -109,6 +111,55 @@ struct ReticleGL
 static WireCubeGL s_wireCube;
 static ReticleGL  s_reticle;
 
+class ViewFrustum
+{
+public:
+   explicit ViewFrustum( const glm::mat4& pv )
+   {
+      m_planes[ 0 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 0 ] );
+      m_planes[ 1 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 0 ] );
+      m_planes[ 2 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 1 ] );
+      m_planes[ 3 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 1 ] );
+      m_planes[ 4 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 2 ] );
+      m_planes[ 5 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 2 ] );
+      for( glm::vec4& plane : m_planes )
+         plane /= glm::length( glm::vec3( plane ) );
+   }
+
+   bool FInFrustum( const glm::vec3& min, const glm::vec3& max ) const
+   {
+      for( const glm::vec4& plane : m_planes )
+      {
+         const glm::vec3 point( plane.x >= 0 ? max.x : min.x, plane.y >= 0 ? max.y : min.y, plane.z >= 0 ? max.z : min.z );
+         if( glm::dot( glm::vec3( plane ), point ) + plane.w < 0 )
+            return false;
+      }
+
+      return true;
+   }
+
+private:
+   std::array< glm::vec4, 6 > m_planes;
+};
+
+struct TerrainLighting
+{
+   glm::vec3 sunDir { glm::normalize( glm::vec3( -0.35f, 0.85f, -0.25f ) ) };
+   glm::vec3 sunColor { glm::vec3( 1.0f, 0.98f, 0.92f ) * 3.0f };
+   glm::vec3 ambientColor { glm::vec3( 0.12f, 0.16f, 0.22f ) };
+};
+
+static void SetTerrainCommonUniforms( Shader& shader, const glm::vec3& viewPos, const TerrainLighting& light )
+{
+   shader.SetUniform( "u_sunDirection", light.sunDir );
+   shader.SetUniform( "u_sunColor", light.sunColor );
+   shader.SetUniform( "u_ambientColor", light.ambientColor );
+   shader.SetUniform( "u_blockTextures", 0 );
+   shader.SetUniform( "u_viewPos", viewPos );
+}
+
+} // namespace
+
 
 RenderSystem::RenderSystem( Level& level ) noexcept :
    m_level( level )
@@ -121,106 +172,15 @@ void RenderSystem::Update( const glm::vec3& playerPos, uint8_t viewRadius )
 }
 
 
-class ViewFrustum
-{
-public:
-   ViewFrustum( const glm::mat4& pv )
-   {
-      m_planes[ 0 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 0 ] );
-      m_planes[ 1 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 0 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 0 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 0 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 0 ] );
-      m_planes[ 2 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 1 ] );
-      m_planes[ 3 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 1 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 1 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 1 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 1 ] );
-      m_planes[ 4 ] = glm::vec4( pv[ 0 ][ 3 ] + pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] + pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] + pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] + pv[ 3 ][ 2 ] );
-      m_planes[ 5 ] = glm::vec4( pv[ 0 ][ 3 ] - pv[ 0 ][ 2 ], pv[ 1 ][ 3 ] - pv[ 1 ][ 2 ], pv[ 2 ][ 3 ] - pv[ 2 ][ 2 ], pv[ 3 ][ 3 ] - pv[ 3 ][ 2 ] );
-      for( glm::vec4& plane : m_planes )
-         plane /= glm::length( glm::vec3( plane ) );
-   }
-
-   // Check if point is inside frustum
-   bool FInFrustum( const glm::vec3& point ) const
-   {
-      return std::none_of( m_planes.begin(), m_planes.end(), [ & ]( const glm::vec4& plane ) { return glm::dot( glm::vec3( plane ), point ) + plane.w < 0; } );
-   }
-
-   // Check if AABB is inside/intersecting frustum
-   bool FInFrustum( const glm::vec3& min, const glm::vec3& max ) const
-   {
-      for( const glm::vec4& plane : m_planes )
-      {
-         const glm::vec3 point( plane.x >= 0 ? max.x : min.x, plane.y >= 0 ? max.y : min.y, plane.z >= 0 ? max.z : min.z );
-         if( glm::dot( glm::vec3( plane ), point ) + plane.w < 0 )
-            return false;
-      }
-
-      return true; // inside or intersecting
-   }
-
-private:
-   std::array< glm::vec4, 6 > m_planes; // planes: left, right, top, bottom, near, far
-};
-
-
 void RenderSystem::Run( const FrameContext& ctx )
 {
-   //PROFILE_SCOPE( "RenderSystem::Run" );
    glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
-   DrawTerrain( ctx );
-   DrawItemDrops( ctx );
+   RenderQueues queues;
+   BuildQueues( ctx, queues );
 
-   TextureAtlasManager::Get().Bind();
-
-   uint32_t currentShader  = 0;
-   uint32_t currentTexture = 0;
-   uint32_t currentVao     = 0;
-   for( const auto& item : g_renderBuffer.GetItems() )
-   {
-      static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
-      s_terrainShader.Bind();
-
-      glm::mat4 mvp = ctx.viewProjection * item.model;
-      s_terrainShader.SetUniform( "u_mvp", mvp );
-      s_terrainShader.SetUniform( "u_model", item.model );
-
-      // Ensure lighting and texture uniforms (this is bad here)
-      {
-         glm::vec3 sunDir       = glm::normalize( glm::vec3( -0.35f, 0.85f, -0.25f ) );
-         glm::vec3 sunColor     = glm::vec3( 1.0f, 0.98f, 0.92f ) * 3.0f;
-         glm::vec3 ambientColor = glm::vec3( 0.12f, 0.16f, 0.22f );
-
-         s_terrainShader.SetUniform( "u_sunDirection", sunDir );
-         s_terrainShader.SetUniform( "u_sunColor", sunColor );
-         s_terrainShader.SetUniform( "u_ambientColor", ambientColor );
-         s_terrainShader.SetUniform( "u_blockTextures", 0 );
-         s_terrainShader.SetUniform( "u_viewPos", ctx.viewPos );
-      }
-
-      // 1. Only switch shader if it changes
-      //if( item.shaderId != currentShader )
-      //{
-      //   UseShader( item.shaderId );
-      //   currentShader = item.shaderId;
-      //}
-
-      // 2. Only bind texture if it changes
-      //if( item.textureId != currentTexture )
-      //{
-      //   BindTexture( item.textureId );
-      //   currentTexture = item.textureId;
-      //}
-
-      // 3. Only bind geometry if it changes
-      if( item.vertexArrayId != currentVao )
-      {
-         glBindVertexArray( item.vertexArrayId );
-         currentVao = item.vertexArrayId;
-      }
-
-      glDrawElements( GL_TRIANGLES, static_cast< GLsizei >( item.indexCount ), GL_UNSIGNED_INT, nullptr );
-      s_terrainShader.Unbind();
-   }
-   glBindVertexArray( 0 );
-   g_renderBuffer.Clear();
+   DrawTerrainPass( ctx );
+   DrawOpaquePass( ctx, queues );
 
    if( m_fHighlightEnabled )
       DrawBlockHighlight( ctx );
@@ -228,30 +188,32 @@ void RenderSystem::Run( const FrameContext& ctx )
    if( m_fSkyboxEnabled )
       DrawSkybox( ctx );
 
+   DrawOverlayPass( ctx, queues );
+
    if( m_fReticleEnabled )
       DrawReticle( ctx );
 }
 
 
-void RenderSystem::DrawTerrain( const FrameContext& ctx )
+void RenderSystem::BuildQueues( const FrameContext& ctx, RenderQueues& outQueues )
+{
+   outQueues.Clear();
+
+   QueueItemDrops( ctx, outQueues );
+
+   outQueues.Sort();
+}
+
+
+void RenderSystem::DrawTerrainPass( const FrameContext& ctx )
 {
    TextureAtlasManager::Get().Bind();
 
    static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
    s_terrainShader.Bind();
 
-   {
-      glm::vec3 sunDir       = glm::normalize( glm::vec3( -0.35f, 0.85f, -0.25f ) );
-      glm::vec3 sunColor     = glm::vec3( 1.0f, 0.98f, 0.92f ) * 3.0f;
-      glm::vec3 ambientColor = glm::vec3( 0.12f, 0.16f, 0.22f );
-
-      s_terrainShader.SetUniform( "u_sunDirection", sunDir );
-      s_terrainShader.SetUniform( "u_sunColor", sunColor );
-      s_terrainShader.SetUniform( "u_ambientColor", ambientColor );
-   }
-
-   s_terrainShader.SetUniform( "u_blockTextures", 0 );
-   s_terrainShader.SetUniform( "u_viewPos", ctx.viewPos );
+   TerrainLighting lighting;
+   SetTerrainCommonUniforms( s_terrainShader, ctx.viewPos, lighting );
 
    ViewFrustum frustum( ctx.viewProjection );
    for( const auto& [ cc, chunkEntry ] : m_chunkRenderer.GetEntries() )
@@ -288,11 +250,8 @@ void RenderSystem::DrawTerrain( const FrameContext& ctx )
 }
 
 
-void RenderSystem::DrawItemDrops( const FrameContext& ctx )
+void RenderSystem::QueueItemDrops( const FrameContext& ctx, RenderQueues& outQueues )
 {
-   static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
-   s_terrainShader.Bind();
-
    // Animation constants
    constexpr float ROTATION_SPEED = 45.0f; // degrees/sec
    constexpr float BOB_SPEED      = 4.0f;  // frequency
@@ -301,7 +260,6 @@ void RenderSystem::DrawItemDrops( const FrameContext& ctx )
    ViewFrustum frustum( ctx.viewProjection );
    for( auto [ tran, mesh, phys, drop ] : ctx.registry.CView< CTransform, CMesh, CPhysics, CItemDrop >() )
    {
-      // Frustum culling
       if( !frustum.FInFrustum( tran.position + phys.bbMin, tran.position + phys.bbMax ) )
          continue;
 
@@ -313,25 +271,65 @@ void RenderSystem::DrawItemDrops( const FrameContext& ctx )
       renderPos.y += std::sin( t * BOB_SPEED ) * BOB_HEIGHT + BOB_HEIGHT;
 
       // Rotation around Y axis
-      float rotationY = t * ROTATION_SPEED;
+      const float rotationY = t * ROTATION_SPEED;
 
       glm::mat4 model = glm::translate( glm::mat4( 1.0f ), renderPos );
       model           = glm::rotate( model, glm::radians( tran.rotation.x ), glm::vec3( 1, 0, 0 ) );
       model           = glm::rotate( model, glm::radians( rotationY ), glm::vec3( 0, 1, 0 ) );
       model           = glm::rotate( model, glm::radians( tran.rotation.z ), glm::vec3( 0, 0, 1 ) );
 
-      const glm::mat4 mvp = ctx.viewProjection * model;
-      s_terrainShader.SetUniform( "u_mvp", mvp );
-      s_terrainShader.SetUniform( "u_model", model );
+      outQueues.SubmitOpaque( RenderQueues::IndexedDraw { .key           = RenderKey { 0 },
+                                                          .vertexArrayId = mesh.mesh->GetMeshBuffer().GetVertexArrayID(),
+                                                          .textureId     = 0,
+                                                          .indexCount    = mesh.mesh->GetMeshBuffer().GetIndexCount(),
+                                                          .model         = model } );
+   }
+}
 
-      g_renderBuffer.Submit( { .key           = RenderKey { 0 },
-                               .vertexArrayId = mesh.mesh->GetMeshBuffer().GetVertexArrayID(),
-                               .textureId     = 0,
-                               .indexCount    = mesh.mesh->GetMeshBuffer().GetIndexCount(),
-                               .model         = model } );
+
+void RenderSystem::DrawOpaquePass( const FrameContext& ctx, const RenderQueues& queues )
+{
+   if( queues.GetOpaqueIndexed().empty() )
+      return;
+
+   TextureAtlasManager::Get().Bind();
+
+   static Shader s_terrainShader( Shader::FILE, "terrain_vert.glsl", "terrain_frag.glsl" );
+   s_terrainShader.Bind();
+
+   TerrainLighting lighting;
+   SetTerrainCommonUniforms( s_terrainShader, ctx.viewPos, lighting );
+
+   uint32_t currentVao = 0;
+   for( const auto& item : queues.GetOpaqueIndexed() )
+   {
+      const glm::mat4 mvp = ctx.viewProjection * item.model;
+      s_terrainShader.SetUniform( "u_mvp", mvp );
+      s_terrainShader.SetUniform( "u_model", item.model );
+
+      if( item.vertexArrayId != currentVao )
+      {
+         glBindVertexArray( item.vertexArrayId );
+         currentVao = item.vertexArrayId;
+      }
+
+      glDrawElements( GL_TRIANGLES, static_cast< GLsizei >( item.indexCount ), GL_UNSIGNED_INT, nullptr );
    }
 
+   glBindVertexArray( 0 );
+   TextureAtlasManager::Get().Unbind();
+
    s_terrainShader.Unbind();
+}
+
+
+void RenderSystem::DrawOverlayPass( const FrameContext& /*ctx*/, const RenderQueues& queues )
+{
+   if( queues.GetOverlayIndexed().empty() )
+      return;
+
+   // Reserved for future: transparent objects, UI meshes, debug.
+   // Currently unused.
 }
 
 
