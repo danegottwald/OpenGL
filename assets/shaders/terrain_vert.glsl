@@ -3,13 +3,13 @@
 // Vertex attributes
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normals;
-layout(location = 2) in vec2 a_uv;
+layout(location = 2) in vec3 a_uv;  // xy = texture coords, z = layer index
 layout(location = 3) in vec3 a_tint;
 
 // Vertex outputs
 out vec3 v_normal;
 out vec3 v_worldPos;
-out vec2 v_uv;
+out vec3 v_uv;
 out vec3 v_tint;
 
 // Uniforms

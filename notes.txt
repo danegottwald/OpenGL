@@ -1,87 +1,6 @@
 ﻿https://docs.unity3d.com/2017.1/Documentation/Manual/Components.html (older documentation 2017.1))
 https://docs.unity3d.com/Manual/Components.html
 
-Example of a game engine architecture using subsystems and systems:
-
-    GameLoop
-     ├─ InputSubsystem
-     │    ├─ KeyboardInputSystem
-     │    ├─ MouseInputSystem
-     │    └─ GamepadInputSystem
-     │
-     ├─ AISubsystem
-     │    ├─ DecisionMakingSystem
-     │    ├─ PathfindingSystem
-     │    ├─ BehaviorTreeSystem
-     │    └─ Faction/RelationshipSystem
-     │
-     ├─ PhysicsSubsystem
-     │    ├─ CollisionSystem
-     │    ├─ RigidBodySystem
-     │    ├─ CharacterControllerSystem
-     │    └─ PhysicsTriggerSystem
-     │
-     ├─ MovementSubsystem
-     │    ├─ PlayerMovementSystem
-     │    ├─ NPCMovementSystem
-     │    └─ VehicleMovementSystem
-     │
-     ├─ AnimationSubsystem
-     │    ├─ SkeletalAnimationSystem
-     │    ├─ BlendShapeSystem
-     │    └─ StateMachineAnimationSystem
-     │
-     ├─ HealthSubsystem
-     │    ├─ BuffSystem               // poison, regen, shields
-     │    ├─ DamageSystem             // apply queued damage/heals
-     │    └─ DeathSystem              // remove dead entities, trigger effects
-     │
-     ├─ CombatSubsystem
-     │    ├─ MeleeAttackSystem
-     │    ├─ RangedAttackSystem
-     │    ├─ AbilitySystem
-     │    └─ CooldownSystem
-     │
-     ├─ TickingSubsystem
-     │    ├─ ScheduledTickSystem      // one-shot or delayed events
-     │    ├─ PeriodicTickSystem       // repeated updates (blocks, timed effects)
-     │    └─ RandomTickSystem         // random block or environment updates
-     │
-     ├─ InventorySubsystem
-     │    ├─ PickupSystem
-     │    ├─ DropSystem
-     │    ├─ CraftingSystem
-     │    └─ ItemDecaySystem
-     │
-     ├─ RenderingSubsystem
-     │    ├─ MeshUpdateSystem
-     │    ├─ MaterialSystem
-     │    ├─ LightingSystem
-     │    ├─ ParticleSystem
-     │    └─ PostProcessingSystem
-     │
-     ├─ AudioSubsystem
-     │    ├─ SpatialAudioSystem
-     │    ├─ EventSoundSystem
-     │    └─ MusicSystem
-     │
-     ├─ NetworkingSubsystem
-     │    ├─ ClientPredictionSystem
-     │    ├─ ServerReconciliationSystem
-     │    ├─ EntitySyncSystem
-     │    └─ RemoteEventSystem
-     │
-     ├─ WorldSubsystem
-     │    ├─ ChunkLoadingSystem
-     │    ├─ TerrainGenerationSystem
-     │    ├─ DayNightCycleSystem
-     │    └─ WeatherSystem
-     │
-     └─ UISubsystem
-          ├─ HUDSystem
-          ├─ InventoryUISystem
-          ├─ TooltipSystem
-          └─ NotificationSystem
 
 Networking
     Use LZ4 compression for packets
@@ -96,3 +15,13 @@ Todo
 Thoughts?
     Global event manager? register an event then they get polled every refresh - https://gamedev.stackexchange.com/a/59627
     Formatting library? - #include <fmt/format.h>
+    miniaudio - audio library for AudioBackend
+
+Player
+    SendMessage
+
+Universe
+    Player[] - list of players in the universe
+        GetPlayer(id: string): Player - get player by id
+    Level[] - list of levels in the universe
+        

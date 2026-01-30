@@ -6,11 +6,11 @@ layout(location = 0) out vec4 frag_color;
 // Fragment inputs
 in vec3 v_normal;
 in vec3 v_worldPos;
-in vec2 v_uv;
+in vec3 v_uv;  // xy = texture coords, z = layer index
 in vec3 v_tint;
 
-uniform vec3      u_viewPos;
-uniform sampler2D u_blockTextures;
+uniform vec3           u_viewPos;
+uniform sampler2DArray u_blockTextures;
 
 // Sun (directional light). Direction points *from fragment toward light*.
 uniform vec3 u_sunDirection;
